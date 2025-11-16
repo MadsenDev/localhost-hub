@@ -1,0 +1,8 @@
+node_modules
+.dist
+.vscode
+.DS_Store
+dist
+dist-electron
+npm-debug.log*
+*.log
