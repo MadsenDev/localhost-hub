@@ -1,87 +1,24 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ProjectInfo, ScriptInfo } from './types/global';
 
-type Project = {
+type RunHistory = {
   id: string;
-  name: string;
-  path: string;
-  type: string;
-  tags: string[];
-  favorite?: boolean;
+  script: string;
+  status: 'Success' | 'Failed';
+  startedAt: number;
+  finishedAt: number;
+  exitCode: number | null;
 };
 
-type Script = {
-  name: string;
-  command: string;
-  description: string;
-  workspace?: string;
+const statusColor: Record<RunHistory['status'], string> = {
+  Success: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/40',
+  Failed: 'bg-rose-500/10 text-rose-200 border-rose-500/40'
 };
 
-const sampleProjects: Project[] = [
-  {
-    id: 'hub',
-    name: 'Localhost Hub',
-    path: '~/dev/localhost-hub',
-    type: 'Node + Electron',
-    tags: ['Electron', 'React', 'SQLite'],
-    favorite: true
-  },
-  {
-    id: 'api',
-    name: 'Payments API',
-    path: '~/work/payments-api',
-    type: 'Node Service',
-    tags: ['pnpm', 'Docker']
-  },
-  {
-    id: 'marketing',
-    name: 'Marketing Site',
-    path: '~/clients/marketing-site',
-    type: 'Next.js',
-    tags: ['Vercel']
-  }
-];
-
-const sampleScripts: Script[] = [
-  {
-    name: 'dev',
-    command: 'pnpm dev',
-    description: 'Start renderer (Vite) + Electron in watch mode',
-    workspace: 'Full Stack'
-  },
-  {
-    name: 'scan-projects',
-    command: 'tsx scripts/scan-projects.ts',
-    description: 'Rescan directories for package.json files'
-  },
-  {
-    name: 'sync-db',
-    command: 'pnpm prisma migrate deploy',
-    description: 'Apply latest schema changes',
-    workspace: 'Backend'
-  }
-];
-
-const runningProcesses = [
-  {
-    id: 'dev',
-    script: 'dev',
-    status: 'Running',
-    startedAt: '12:04 PM',
-    port: 5173
-  },
-  {
-    id: 'api',
-    script: 'sync-db',
-    status: 'Idle',
-    startedAt: '—',
-    port: 5432
-  }
-];
-
-const statusColor: Record<string, string> = {
-  Running: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/40',
-  Idle: 'bg-slate-700/30 text-slate-200 border-slate-600'
-};
+function formatTimestamp(timestamp: number) {
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -100,9 +37,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function App() {
-  const [selectedProject] = useState<Project>(sampleProjects[0]);
+  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [pingResponse, setPingResponse] = useState<string>('…');
   const [query, setQuery] = useState('');
+  const [isScanning, setIsScanning] = useState(false);
+  const [scriptInFlight, setScriptInFlight] = useState<string | null>(null);
+  const [runHistory, setRunHistory] = useState<RunHistory[]>([]);
+  const [logOutput, setLogOutput] = useState('Select a script to run and view logs.');
+  const [scanError, setScanError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -115,14 +58,114 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let ignore = false;
+    const bootstrap = async () => {
+      setIsScanning(true);
+      try {
+        const result = await window.electronAPI?.projects.scan();
+        if (!ignore && result) {
+          setProjects(result);
+          setSelectedProjectId((current) => current ?? result[0]?.id ?? null);
+          setScanError(result.length === 0 ? 'No package.json files detected in the configured directories.' : null);
+        }
+      } catch (error) {
+        if (!ignore) {
+          setScanError(error instanceof Error ? error.message : 'Failed to scan for projects.');
+        }
+      } finally {
+        if (!ignore) {
+          setIsScanning(false);
+        }
+      }
+    };
+    bootstrap();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const selectedProject = useMemo(
+    () => projects.find((project) => project.id === selectedProjectId) ?? null,
+    [projects, selectedProjectId]
+  );
+
   const filteredProjects = useMemo(() => {
-    if (!query) return sampleProjects;
-    return sampleProjects.filter((project) =>
+    if (!query) return projects;
+    return projects.filter((project) =>
       `${project.name} ${project.path} ${project.tags.join(' ')}`
         .toLowerCase()
         .includes(query.toLowerCase())
     );
-  }, [query]);
+  }, [projects, query]);
+
+  const projectScripts = selectedProject?.scripts ?? [];
+
+  const handleRescan = useCallback(async () => {
+    setIsScanning(true);
+    try {
+      const result = await window.electronAPI?.projects.scan();
+      if (result) {
+        setProjects(result);
+        setSelectedProjectId((current) => {
+          if (current && result.some((project) => project.id === current)) {
+            return current;
+          }
+          return result[0]?.id ?? null;
+        });
+        setScanError(result.length === 0 ? 'No package.json files detected in the configured directories.' : null);
+      }
+    } catch (error) {
+      setScanError(error instanceof Error ? error.message : 'Failed to scan for projects.');
+    } finally {
+      setIsScanning(false);
+    }
+  }, []);
+
+  const handleRunScript = useCallback(
+    async (script: ScriptInfo) => {
+      if (!selectedProject) return;
+      try {
+        setScriptInFlight(script.name);
+        setLogOutput(`Running ${script.name}...\n`);
+        const result = await window.electronAPI?.scripts.run({
+          projectPath: selectedProject.path,
+          script: script.name
+        });
+        if (!result) return;
+        setLogOutput(result.output || '(no output)');
+        const status: RunHistory['status'] = result.exitCode === 0 ? 'Success' : 'Failed';
+        setRunHistory((current) =>
+          [
+            {
+              id: `${result.startedAt}-${script.name}`,
+              script: script.name,
+              status,
+              startedAt: result.startedAt,
+              finishedAt: result.finishedAt,
+              exitCode: result.exitCode
+            },
+            ...current
+          ].slice(0, 5)
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to run script.';
+        setLogOutput(message);
+        const failureEntry: RunHistory = {
+          id: `${Date.now()}-${script.name}`,
+          script: script.name,
+          status: 'Failed',
+          startedAt: Date.now(),
+          finishedAt: Date.now(),
+          exitCode: null
+        };
+        setRunHistory((current) => [failureEntry, ...current].slice(0, 5));
+      } finally {
+        setScriptInFlight(null);
+      }
+    },
+    [selectedProject]
+  );
 
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-100">
@@ -145,22 +188,34 @@ function App() {
         <div className="space-y-4 overflow-y-auto pr-2">
           <div>
             <p className="text-xs uppercase tracking-widest text-slate-500">Projects</p>
-            <ul className="mt-3 space-y-2 text-sm">
-              {filteredProjects.map((project) => (
-                <li
-                  key={project.id}
-                  className={`rounded-xl border border-transparent px-3 py-2 hover:border-slate-800 hover:bg-slate-900/70 ${
-                    project.id === selectedProject.id ? 'bg-slate-900/80 border-indigo-400/50' : ''
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">{project.name}</span>
-                    {project.favorite && <span className="text-amber-400">★</span>}
-                  </div>
-                  <p className="text-xs text-slate-500">{project.path}</p>
-                </li>
-              ))}
-            </ul>
+            <div className="mt-3 space-y-2 text-sm">
+              {isScanning && <p className="text-xs text-slate-500">Scanning directories…</p>}
+              {filteredProjects.length === 0 && !isScanning ? (
+                <p className="text-xs text-slate-500">No projects discovered yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {filteredProjects.map((project) => (
+                    <li
+                      key={project.id}
+                      className={`cursor-pointer rounded-xl border border-transparent px-3 py-2 hover:border-slate-800 hover:bg-slate-900/70 ${
+                        project.id === selectedProjectId ? 'bg-slate-900/80 border-indigo-400/50' : ''
+                      }`}
+                      onClick={() => setSelectedProjectId(project.id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{project.name}</span>
+                        {project.tags.length > 0 && (
+                          <span className="text-[10px] uppercase tracking-widest text-slate-500">
+                            {project.tags[0]}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500">{project.path}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
           <div>
             <p className="text-xs uppercase tracking-widest text-slate-500">System</p>
@@ -175,88 +230,105 @@ function App() {
       <main className="flex flex-1 flex-col gap-6 p-8">
         <header className="flex flex-wrap items-center gap-4">
           <div>
-            <p className="text-sm text-slate-400">{selectedProject.path}</p>
-            <h1 className="text-3xl font-semibold text-white">{selectedProject.name}</h1>
+            <p className="text-sm text-slate-400">{selectedProject?.path ?? 'No project selected'}</p>
+            <h1 className="text-3xl font-semibold text-white">{selectedProject?.name ?? 'Localhost Hub'}</h1>
           </div>
           <div className="ml-auto flex gap-3">
-            <button className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-2 text-sm font-medium text-slate-200 hover:border-indigo-400 hover:text-white">
-              Open in VS Code
-            </button>
-            <button className="rounded-xl border border-indigo-500/60 bg-indigo-600/20 px-4 py-2 text-sm font-semibold text-indigo-200 hover:bg-indigo-500/30">
-              Run Workspace
+            <button
+              className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-2 text-sm font-medium text-slate-200 hover:border-indigo-400 hover:text-white disabled:opacity-40"
+              disabled={isScanning}
+              onClick={handleRescan}
+            >
+              {isScanning ? 'Scanning…' : 'Rescan directories'}
             </button>
           </div>
         </header>
 
+        {scanError && (
+          <div className="rounded-xl border border-rose-500/60 bg-rose-500/5 p-4 text-sm text-rose-200">{scanError}</div>
+        )}
+
         <div className="grid gap-6 lg:grid-cols-3">
           <Section title="Scripts">
-            <div className="space-y-3">
-              {sampleScripts.map((script) => (
-                <div
-                  key={script.name}
-                  className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 transition hover:border-indigo-400/40"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-base font-semibold">{script.name}</p>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        {script.workspace ?? 'Single'} workspace
-                      </p>
+            {projectScripts.length === 0 ? (
+              <p className="text-sm text-slate-400">No scripts detected for this project.</p>
+            ) : (
+              <div className="space-y-3">
+                {projectScripts.map((script) => (
+                  <div
+                    key={script.name}
+                    className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 transition hover:border-indigo-400/40"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-base font-semibold">{script.name}</p>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">npm run</p>
+                      </div>
+                      <button
+                        className="rounded-full border border-indigo-500/40 bg-indigo-500/10 px-4 py-1 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/30 disabled:opacity-40"
+                        onClick={() => handleRunScript(script)}
+                        disabled={scriptInFlight === script.name}
+                      >
+                        {scriptInFlight === script.name ? 'Running…' : 'Run'}
+                      </button>
                     </div>
-                    <button className="rounded-full border border-indigo-500/40 bg-indigo-500/10 px-4 py-1 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/30">
-                      Run
-                    </button>
+                    {script.description && <p className="mt-2 text-sm text-slate-400">{script.description}</p>}
+                    <code className="mt-3 block rounded-lg bg-slate-950/80 px-3 py-2 text-xs text-slate-300">
+                      {script.command}
+                    </code>
                   </div>
-                  <p className="mt-2 text-sm text-slate-400">{script.description}</p>
-                  <code className="mt-3 block rounded-lg bg-slate-950/80 px-3 py-2 text-xs text-slate-300">
-                    {script.command}
-                  </code>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </Section>
 
           <Section title="Activity">
-            <div className="space-y-4">
-              {runningProcesses.map((process) => (
-                <div key={process.id} className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-slate-400">Script</p>
-                      <p className="text-lg font-semibold text-white">{process.script}</p>
+            {runHistory.length === 0 ? (
+              <p className="text-sm text-slate-400">No scripts have been run yet.</p>
+            ) : (
+              <div className="space-y-4">
+                {runHistory.map((process) => (
+                  <div key={process.id} className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-slate-400">Script</p>
+                        <p className="text-lg font-semibold text-white">{process.script}</p>
+                      </div>
+                      <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusColor[process.status]}`}>
+                        {process.status}
+                      </span>
                     </div>
-                    <span
-                      className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusColor[process.status]}`}
-                    >
-                      {process.status}
-                    </span>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400">
+                      <div>
+                        <p className="text-slate-500">Started</p>
+                        <p>{formatTimestamp(process.startedAt)}</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Ended</p>
+                        <p>{formatTimestamp(process.finishedAt)}</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Exit code</p>
+                        <p>{process.exitCode ?? '—'}</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400">
-                    <div>
-                      <p className="text-slate-500">Started</p>
-                      <p>{process.startedAt}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500">Port</p>
-                      <p>{process.port}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </Section>
 
           <Section title="Logs">
             <div className="space-y-3 text-sm text-slate-300">
               <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500">
-                <span>dev • Vite</span>
-                <span>Live</span>
+                <span>{scriptInFlight ? `${scriptInFlight} • running` : 'Last run'}</span>
+                <span>{runHistory[0] ? formatTimestamp(runHistory[0].startedAt) : 'Idle'}</span>
               </div>
-              <pre className="h-64 overflow-y-auto rounded-xl bg-black/60 p-4 font-mono text-xs text-emerald-300">
-                {`12:04:08 PM  ready in 1022 ms\n12:04:09 PM  launching electron...\n12:04:10 PM  compiled renderer + main\n12:04:12 PM  websocket connected`}
+              <pre className="h-64 overflow-y-auto rounded-xl bg-black/60 p-4 font-mono text-xs text-emerald-300 whitespace-pre-wrap">
+                {logOutput}
               </pre>
               <button className="w-full rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2 text-xs font-semibold text-slate-200">
-                Open detailed log
+                Export log (coming soon)
               </button>
             </div>
           </Section>
