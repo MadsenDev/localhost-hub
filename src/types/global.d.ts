@@ -13,6 +13,15 @@ export type ProjectInfo = {
   scripts: ScriptInfo[];
 };
 
+export type RunHistory = {
+  id: string;
+  script: string;
+  status: 'Success' | 'Failed';
+  startedAt: number;
+  finishedAt: number;
+  exitCode: number | null;
+};
+
 export type RunScriptResult = {
   runId: string;
   startedAt: number;
