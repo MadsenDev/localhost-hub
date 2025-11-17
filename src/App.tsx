@@ -93,6 +93,7 @@ function App() {
   const [currentRun, setCurrentRun] = useState<{ id: string; script: string } | null>(null);
   const [activeProcesses, setActiveProcesses] = useState<ActiveProcessInfo[]>([]);
   const [isExportingLog, setIsExportingLog] = useState(false);
+  const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
 
   const logContainerRef = useRef<HTMLPreElement | null>(null);
   const currentRunRef = useRef<string | null>(null);
@@ -102,11 +103,14 @@ function App() {
   }, [currentRun]);
 
   useEffect(() => {
+    if (!isAutoScrollEnabled) {
+      return;
+    }
     const element = logContainerRef.current;
     if (element) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [logOutput]);
+  }, [isAutoScrollEnabled, logOutput]);
 
   useEffect(() => {
     if (!electronAPI) {
@@ -274,6 +278,8 @@ function App() {
   const latestRun = runHistory[0] ?? null;
   const logStatusLabel = scriptInFlight ? `${scriptInFlight} • running` : latestRun ? 'Last run' : 'Idle';
   const canExportLog = Boolean(logOutput && logOutput.trim().length > 0);
+  const canCopyLog = canExportLog;
+  const canClearLog = Boolean(logOutput.length);
 
   const handleRescan = useCallback(async () => {
     if (!electronAPI || scanDirectories === null) {
@@ -402,6 +408,47 @@ function App() {
     URL.revokeObjectURL(url);
   }, [canExportLog, electronAPI, logOutput]);
 
+  const handleToggleAutoScroll = useCallback(() => {
+    setIsAutoScrollEnabled((current) => !current);
+  }, []);
+
+  const handleClearLog = useCallback(() => {
+    setLogOutput('');
+  }, []);
+
+  const handleCopyLog = useCallback(async () => {
+    if (!canCopyLog || typeof window === 'undefined') {
+      return;
+    }
+
+    const copyText = logOutput;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(copyText);
+        return;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to copy log contents.';
+      setLogOutput((current) => `${current}\n[error] ${message}`);
+      return;
+    }
+
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = copyText;
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-1000px';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to copy log contents.';
+      setLogOutput((current) => `${current}\n[error] ${message}`);
+    }
+  }, [canCopyLog, logOutput]);
+
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-100">
       <ProjectSidebar
@@ -478,6 +525,12 @@ function App() {
               onExportLog={handleExportLog}
               isExporting={isExportingLog}
               canExport={canExportLog}
+              isAutoScrollEnabled={isAutoScrollEnabled}
+              onToggleAutoScroll={handleToggleAutoScroll}
+              onClearLog={handleClearLog}
+              onCopyLog={handleCopyLog}
+              canCopy={canCopyLog}
+              canClear={canClearLog}
             />
           </Section>
         </div>
