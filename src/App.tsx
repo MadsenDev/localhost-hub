@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ProjectInfo, RunHistory, ScriptInfo } from './types/global';
+import type { ActiveProcessInfo, ProjectInfo, RunHistory, ScriptInfo } from './types/global';
 import ProjectSidebar from './components/ProjectSidebar';
 import ScriptsPanel from './components/ScriptsPanel';
 import ActivityPanel from './components/ActivityPanel';
 import LogsPanel from './components/LogsPanel';
 import SetupModal from './components/SetupModal';
 import Section from './components/Section';
+import ActiveProcessesPanel from './components/ActiveProcessesPanel';
 
 const STORAGE_KEY = 'localhost-hub:scan-directories';
+const HISTORY_STORAGE_KEY = 'localhost-hub:run-history';
+const MAX_HISTORY = 20;
 
 const mockProjects: ProjectInfo[] = [
   {
@@ -59,7 +62,16 @@ function App() {
   const [query, setQuery] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [scriptInFlight, setScriptInFlight] = useState<string | null>(null);
-  const [runHistory, setRunHistory] = useState<RunHistory[]>([]);
+  const [runHistory, setRunHistory] = useState<RunHistory[]>(() => {
+    if (typeof window === 'undefined') return [];
+    const stored = window.localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!stored) return [];
+    try {
+      return JSON.parse(stored) as RunHistory[];
+    } catch {
+      return [];
+    }
+  });
   const [logOutput, setLogOutput] = useState('Select a script to run and view logs.');
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanDirectories, setScanDirectories] = useState<string[] | null>(() => {
@@ -79,6 +91,8 @@ function App() {
   const [setupInput, setSetupInput] = useState(() => (scanDirectories ?? []).join('\n'));
   const [setupError, setSetupError] = useState<string | null>(null);
   const [currentRun, setCurrentRun] = useState<{ id: string; script: string } | null>(null);
+  const [activeProcesses, setActiveProcesses] = useState<ActiveProcessInfo[]>([]);
+  const [isExportingLog, setIsExportingLog] = useState(false);
 
   const logContainerRef = useRef<HTMLPreElement | null>(null);
   const currentRunRef = useRef<string | null>(null);
@@ -117,6 +131,11 @@ function App() {
       window.localStorage.removeItem(STORAGE_KEY);
     }
   }, [scanDirectories]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(runHistory));
+  }, [runHistory]);
 
   useEffect(() => {
     if (isMockMode) {
@@ -180,7 +199,7 @@ function App() {
         finishedAt: payload.finishedAt,
         exitCode: payload.exitCode
       };
-      setRunHistory((history) => [entry, ...history].slice(0, 5));
+      setRunHistory((history) => [entry, ...history].slice(0, MAX_HISTORY));
       if (currentRunRef.current === payload.runId) {
         setCurrentRun(null);
         setScriptInFlight(null);
@@ -198,7 +217,7 @@ function App() {
         finishedAt: Date.now(),
         exitCode: null
       };
-      setRunHistory((history) => [entry, ...history].slice(0, 5));
+      setRunHistory((history) => [entry, ...history].slice(0, MAX_HISTORY));
       setLogOutput((current) => `${current}\n[error] ${payload.message}`);
       setCurrentRun(null);
       setScriptInFlight(null);
@@ -208,6 +227,34 @@ function App() {
       offLog?.();
       offExit?.();
       offError?.();
+    };
+  }, [electronAPI]);
+
+  useEffect(() => {
+    if (!electronAPI) {
+      setActiveProcesses([]);
+      return;
+    }
+
+    let ignore = false;
+    const fetchProcesses = async () => {
+      try {
+        const list = await electronAPI.processes.active();
+        if (!ignore) {
+          setActiveProcesses(list);
+        }
+      } catch {
+        if (!ignore) {
+          setActiveProcesses([]);
+        }
+      }
+    };
+
+    fetchProcesses();
+    const interval = window.setInterval(fetchProcesses, 3000);
+    return () => {
+      ignore = true;
+      window.clearInterval(interval);
     };
   }, [electronAPI]);
 
@@ -226,6 +273,7 @@ function App() {
   const projectScripts = selectedProject?.scripts ?? [];
   const latestRun = runHistory[0] ?? null;
   const logStatusLabel = scriptInFlight ? `${scriptInFlight} • running` : latestRun ? 'Last run' : 'Idle';
+  const canExportLog = Boolean(logOutput && logOutput.trim().length > 0);
 
   const handleRescan = useCallback(async () => {
     if (!electronAPI || scanDirectories === null) {
@@ -277,7 +325,7 @@ function App() {
           finishedAt: Date.now(),
           exitCode: null
         };
-        setRunHistory((current) => [failureEntry, ...current].slice(0, 5));
+        setRunHistory((current) => [failureEntry, ...current].slice(0, MAX_HISTORY));
         setScriptInFlight(null);
         setCurrentRun(null);
       }
@@ -319,6 +367,40 @@ function App() {
     setSetupError(null);
     setShowSetup(true);
   }, [scanDirectories]);
+
+  const handleExportLog = useCallback(async () => {
+    if (!canExportLog) return;
+    const contents = logOutput;
+    const suggestedName = `localhost-hub-log-${new Date()
+      .toISOString()
+      .replace(/[:.]/g, '-')}.txt`;
+    if (electronAPI?.logs?.export) {
+      try {
+        setIsExportingLog(true);
+        await electronAPI.logs.export({ contents, suggestedName });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to export log.';
+        setLogOutput((current) => `${current}\n[error] ${message}`);
+      } finally {
+        setIsExportingLog(false);
+      }
+      return;
+    }
+
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      return;
+    }
+
+    const blob = new Blob([contents], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = suggestedName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [canExportLog, electronAPI, logOutput]);
 
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-100">
@@ -377,11 +459,26 @@ function App() {
           </Section>
 
           <Section title="Activity">
-            <ActivityPanel runHistory={runHistory} />
+            <div className="space-y-6">
+              <div>
+                <p className="mb-3 text-xs uppercase tracking-wide text-slate-500">Live processes</p>
+                <ActiveProcessesPanel processes={activeProcesses} />
+              </div>
+              <div>
+                <p className="mb-3 text-xs uppercase tracking-wide text-slate-500">Recent history</p>
+                <ActivityPanel runHistory={runHistory} />
+              </div>
+            </div>
           </Section>
 
           <Section title="Logs" action={<span className="text-xs uppercase tracking-wide text-slate-500">{logStatusLabel}</span>}>
-            <LogsPanel logOutput={logOutput} logContainerRef={logContainerRef} />
+            <LogsPanel
+              logOutput={logOutput}
+              logContainerRef={logContainerRef}
+              onExportLog={handleExportLog}
+              isExporting={isExportingLog}
+              canExport={canExportLog}
+            />
           </Section>
         </div>
       </main>

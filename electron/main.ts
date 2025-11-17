@@ -1,8 +1,9 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
 import { scanProjects, type ProjectInfo } from './projectScanner';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -197,4 +198,21 @@ ipcMain.handle('processes:active', () => {
     projectPath,
     startedAt
   }));
+});
+
+ipcMain.handle('logs:export', async (_event, payload: { contents?: string; suggestedName?: string }) => {
+  const window = BrowserWindow.getFocusedWindow() ?? mainWindow ?? undefined;
+  const suggestedName = payload?.suggestedName ?? `localhost-hub-log-${new Date().toISOString()}.txt`;
+  const result = await dialog.showSaveDialog(window, {
+    title: 'Save logs',
+    defaultPath: suggestedName,
+    filters: [{ name: 'Text Files', extensions: ['txt', 'log'] }]
+  });
+
+  if (result.canceled || !result.filePath) {
+    return { saved: false };
+  }
+
+  await writeFile(result.filePath, payload?.contents ?? '', 'utf8');
+  return { saved: true, filePath: result.filePath };
 });
