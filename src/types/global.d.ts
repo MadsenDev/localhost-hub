@@ -10,6 +10,7 @@ export type ActiveProcessInfo = {
   command: string;
   projectPath: string;
   startedAt: number;
+  isExternal?: boolean;
 };
 
 export type ProjectInfo = {

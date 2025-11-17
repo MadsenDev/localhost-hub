@@ -32,10 +32,22 @@ export function ActiveProcessesPanel({ processes }: ActiveProcessesPanelProps) {
   return (
     <div className="space-y-3">
       {processes.map((process) => (
-        <div key={process.id} className="rounded-2xl border border-indigo-500/30 bg-indigo-500/5 p-4">
+        <div
+          key={process.id}
+          className={`rounded-2xl border p-4 ${
+            process.isExternal
+              ? 'border-purple-500/30 bg-purple-500/5'
+              : 'border-indigo-500/30 bg-indigo-500/5'
+          }`}
+        >
           <div className="flex items-center gap-3">
             <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400" aria-hidden />
             <p className="text-sm font-semibold text-white">{process.script}</p>
+            {process.isExternal && (
+              <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-semibold text-purple-300">
+                External
+              </span>
+            )}
             <span className="text-xs text-slate-400">{formatTimestamp(process.startedAt)}</span>
             <span className="ml-auto text-xs text-slate-300">{formatDuration(process.startedAt)}</span>
           </div>

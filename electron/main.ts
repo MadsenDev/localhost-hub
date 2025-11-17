@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { scanProjects, type ProjectInfo } from './projectScanner';
 import { initializeDatabase, loadProjects, saveProjects } from './database';
+import { scanExternalProcesses } from './externalProcessScanner';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -204,14 +205,22 @@ ipcMain.handle('scripts:stop', async (_event, runId: string) => {
   return { success: true };
 });
 
-ipcMain.handle('processes:active', () => {
-  return Array.from(activeProcesses.values()).map(({ id, script, command, projectPath, startedAt }) => ({
+ipcMain.handle('processes:active', async () => {
+  // Get internal processes (scripts run through the app)
+  const internalProcesses = Array.from(activeProcesses.values()).map(({ id, script, command, projectPath, startedAt }) => ({
     id,
     script,
     command,
     projectPath,
-    startedAt
+    startedAt,
+    isExternal: false
   }));
+  
+  // Get external processes (detected from system)
+  const externalProcesses = await scanExternalProcesses();
+  
+  // Combine and return
+  return [...internalProcesses, ...externalProcesses];
 });
 
 ipcMain.handle('logs:export', async (_event, payload: { contents?: string; suggestedName?: string }) => {
