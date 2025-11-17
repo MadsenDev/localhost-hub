@@ -359,6 +359,36 @@ function App() {
     [electronAPI, selectedProject]
   );
 
+  const handleRestartScript = useCallback(
+    async (script: ScriptInfo) => {
+      if (!electronAPI) {
+        setLogOutput('Script execution is available when running the desktop app.');
+        return;
+      }
+
+      if (!selectedProject) {
+        return;
+      }
+
+      const somethingRunning = Boolean(currentRun);
+      if (somethingRunning && currentRun?.id) {
+        setLogOutput((current) => `${current}\nRestarting ${script.name}…`);
+        try {
+          await electronAPI.scripts.stop(currentRun.id);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unable to stop running script before restart.';
+          setLogOutput((current) => `${current}\n${message}`);
+        }
+
+        // Give the process a short moment to exit before relaunching
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+
+      await handleRunScript(script);
+    },
+    [currentRun, electronAPI, handleRunScript, selectedProject]
+  );
+
   const handleStopScript = useCallback(async () => {
     if (!electronAPI || !currentRun) return;
     try {
@@ -566,6 +596,7 @@ function App() {
               scriptInFlight={scriptInFlight}
               onRunScript={handleRunScript}
               onStopScript={handleStopScript}
+              onRestartScript={handleRestartScript}
             />
           </Section>
 
