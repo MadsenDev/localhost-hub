@@ -98,34 +98,32 @@ async function scanProcessesLinux(): Promise<ExternalProcess[]> {
     try {
       const { stdout: psOutput } = await execAsync('ps aux | grep -E "(node|npm|vite|react)" | grep -v grep || true');
       const psLines = psOutput.trim().split('\n').filter(Boolean);
-      
+
       for (const line of psLines) {
         const parts = line.trim().split(/\s+/);
         if (parts.length < 11) continue;
-        
+
         const pid = parseInt(parts[1], 10);
         if (isNaN(pid) || processMap.has(pid)) continue;
-        
+
         const command = parts.slice(10).join(' ');
-        if (isRelevantProcess(command, '')) {
-          // Try to find the port this process is using
-          try {
-            const { stdout: portOutput } = await execAsync(`lsof -p ${pid} -i -P -n | grep LISTEN | head -1 || true`);
-            const portMatch = portOutput.match(/:(\d+)\s*\(LISTEN\)/);
-            const port = portMatch ? parseInt(portMatch[1], 10) : null;
-            
-            if (port && DEV_PORTS.includes(port)) {
-              processMap.set(pid, { command, port });
-            } else if (isRelevantProcess(command, '')) {
-              // Include even without port if it's clearly a dev server
-              processMap.set(pid, { command, port: 0 });
-            }
-          } catch {
-            // If we can't find port, still include if it's clearly relevant
-            if (command.includes('vite') || command.includes('dev') || command.includes('serve')) {
-              processMap.set(pid, { command, port: 0 });
-            }
+        if (!isRelevantProcess(command, '')) {
+          continue;
+        }
+
+        // Try to find the port this process is using. If we can't match it to one
+        // of the known dev server ports, skip it so that helper/child processes
+        // (like Vite's worker processes) aren't shown as separate entries.
+        try {
+          const { stdout: portOutput } = await execAsync(`lsof -p ${pid} -i -P -n | grep LISTEN | head -1 || true`);
+          const portMatch = portOutput.match(/:(\d+)\s*\(LISTEN\)/);
+          const port = portMatch ? parseInt(portMatch[1], 10) : null;
+
+          if (port && DEV_PORTS.includes(port)) {
+            processMap.set(pid, { command, port });
           }
+        } catch {
+          // Process might have exited between the ps and lsof calls; ignore it.
         }
       }
     } catch {
