@@ -2,7 +2,7 @@ import type { RefObject } from 'react';
 
 interface LogsPanelProps {
   logOutput: string;
-  logContainerRef: RefObject<HTMLPreElement>;
+  logContainerRef: RefObject<HTMLPreElement | null>;
   onExportLog: () => void;
   onClearLog: () => void;
   onCopyLog: () => void;

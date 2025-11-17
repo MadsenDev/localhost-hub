@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { scanProjects, type ProjectInfo } from './projectScanner';
+import { initializeDatabase, loadProjects, saveProjects } from './database';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -57,6 +58,8 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  initializeDatabase();
+  cachedProjects = loadProjects();
   createWindow();
 
   app.on('activate', () => {
@@ -97,11 +100,16 @@ async function performProjectScan(directories?: string[]) {
   const scanRoots = (directories && directories.length > 0 ? directories : await getDefaultScanDirectories()).map((dir) =>
     resolve(dir)
   );
+  const scannedAt = Date.now();
   cachedProjects = await scanProjects(scanRoots);
+  saveProjects(cachedProjects, scannedAt);
   return cachedProjects;
 }
 
 ipcMain.handle('projects:list', async () => {
+  if (cachedProjects.length === 0) {
+    cachedProjects = loadProjects();
+  }
   if (cachedProjects.length === 0) {
     await performProjectScan();
   }
@@ -203,11 +211,12 @@ ipcMain.handle('processes:active', () => {
 ipcMain.handle('logs:export', async (_event, payload: { contents?: string; suggestedName?: string }) => {
   const window = BrowserWindow.getFocusedWindow() ?? mainWindow ?? undefined;
   const suggestedName = payload?.suggestedName ?? `localhost-hub-log-${new Date().toISOString()}.txt`;
-  const result = await dialog.showSaveDialog(window, {
+  const dialogOptions = {
     title: 'Save logs',
     defaultPath: suggestedName,
     filters: [{ name: 'Text Files', extensions: ['txt', 'log'] }]
-  });
+  };
+  const result = window ? await dialog.showSaveDialog(window, dialogOptions) : await dialog.showSaveDialog(dialogOptions);
 
   if (result.canceled || !result.filePath) {
     return { saved: false };
