@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -9,6 +10,18 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
 const isMac = process.platform === 'darwin';
+let mainWindow: BrowserWindow | null = null;
+
+type ActiveProcess = {
+  id: string;
+  script: string;
+  command: string;
+  projectPath: string;
+  startedAt: number;
+  child: ReturnType<typeof spawn>;
+};
+
+const activeProcesses = new Map<string, ActiveProcess>();
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -38,6 +51,8 @@ function createWindow() {
     shell.openExternal(url);
     return { action: 'deny' };
   });
+
+  mainWindow = window;
 }
 
 app.whenReady().then(() => {
@@ -57,6 +72,12 @@ app.on('window-all-closed', () => {
 });
 
 ipcMain.handle('ping', () => 'pong');
+
+function broadcast(channel: string, payload: unknown) {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send(channel, payload);
+  }
+}
 
 let cachedProjects: ProjectInfo[] = [];
 
@@ -104,27 +125,76 @@ ipcMain.handle('scripts:run', async (_event, payload: { projectPath: string; scr
     shell: process.platform === 'win32'
   });
 
-  let output = '';
+  const runId = randomUUID();
+  const commandString = command.join(' ');
+  const record: ActiveProcess = {
+    id: runId,
+    script,
+    command: commandString,
+    projectPath,
+    startedAt,
+    child
+  };
+  activeProcesses.set(runId, record);
 
   child.stdout?.on('data', (chunk) => {
-    output += chunk.toString();
-  });
-  child.stderr?.on('data', (chunk) => {
-    output += chunk.toString();
+    broadcast('scripts:log', { runId, chunk: chunk.toString(), source: 'stdout', timestamp: Date.now() });
   });
 
-  return await new Promise<{ exitCode: number | null; output: string; command: string; startedAt: number; finishedAt: number }>(
-    (resolvePromise, rejectPromise) => {
-      child.once('error', (error) => rejectPromise(error));
-      child.once('close', (code) => {
-        resolvePromise({
-          exitCode: code,
-          output,
-          command: command.join(' '),
-          startedAt,
-          finishedAt: Date.now()
-        });
-      });
+  child.stderr?.on('data', (chunk) => {
+    broadcast('scripts:log', { runId, chunk: chunk.toString(), source: 'stderr', timestamp: Date.now() });
+  });
+
+  child.once('error', (error) => {
+    broadcast('scripts:error', {
+      runId,
+      script,
+      projectPath,
+      message: error.message,
+      startedAt,
+      timestamp: Date.now()
+    });
+    activeProcesses.delete(runId);
+  });
+
+  child.once('close', (code) => {
+    activeProcesses.delete(runId);
+    broadcast('scripts:exit', {
+      runId,
+      exitCode: code,
+      finishedAt: Date.now(),
+      script,
+      command: commandString,
+      projectPath,
+      startedAt
+    });
+  });
+
+  return { runId, startedAt, command: commandString, script, projectPath };
+});
+
+ipcMain.handle('scripts:stop', async (_event, runId: string) => {
+  const active = activeProcesses.get(runId);
+  if (!active) {
+    return { success: false };
+  }
+
+  active.child.kill('SIGTERM');
+  setTimeout(() => {
+    if (!active.child.killed) {
+      active.child.kill('SIGKILL');
     }
-  );
+  }, 3000);
+
+  return { success: true };
+});
+
+ipcMain.handle('processes:active', () => {
+  return Array.from(activeProcesses.values()).map(({ id, script, command, projectPath, startedAt }) => ({
+    id,
+    script,
+    command,
+    projectPath,
+    startedAt
+  }));
 });

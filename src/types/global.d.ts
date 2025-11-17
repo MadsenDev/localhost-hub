@@ -14,11 +14,36 @@ export type ProjectInfo = {
 };
 
 export type RunScriptResult = {
-  exitCode: number | null;
-  output: string;
-  command: string;
+  runId: string;
   startedAt: number;
+  command: string;
+  script: string;
+  projectPath: string;
+};
+
+export type ScriptLogChunk = {
+  runId: string;
+  chunk: string;
+  source: 'stdout' | 'stderr';
+  timestamp: number;
+};
+
+export type ScriptExitEvent = {
+  runId: string;
+  exitCode: number | null;
   finishedAt: number;
+  startedAt: number;
+  script: string;
+  command: string;
+  projectPath: string;
+};
+
+export type ScriptErrorEvent = {
+  runId: string;
+  message: string;
+  script: string;
+  projectPath: string;
+  startedAt: number;
 };
 
 export interface ElectronAPI {
@@ -27,13 +52,20 @@ export interface ElectronAPI {
     list: () => Promise<ProjectInfo[]>;
     scan: (directories?: string[]) => Promise<ProjectInfo[]>;
   };
+  processes: {
+    active: () => Promise<{ id: string; script: string; command: string; projectPath: string; startedAt: number }[]>;
+  };
   scripts: {
     run: (payload: { projectPath: string; script: string }) => Promise<RunScriptResult>;
+    stop: (runId: string) => Promise<{ success: boolean }>;
+    onLog: (callback: (payload: ScriptLogChunk) => void) => () => void;
+    onExit: (callback: (payload: ScriptExitEvent) => void) => () => void;
+    onError: (callback: (payload: ScriptErrorEvent) => void) => () => void;
   };
 }
 
 declare global {
   interface Window {
-    electronAPI: ElectronAPI;
+    electronAPI?: ElectronAPI;
   }
 }
