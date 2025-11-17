@@ -4,7 +4,7 @@ interface ActiveProcessesPanelProps {
   processes: ActiveProcessInfo[];
 }
 
-function formatDuration(startedAt: number) {
+export function formatDuration(startedAt: number) {
   const durationMs = Date.now() - startedAt;
   const seconds = Math.floor(durationMs / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -15,7 +15,7 @@ function formatDuration(startedAt: number) {
   return `${minutes}m ${remainingSeconds.toString().padStart(2, '0')}s`;
 }
 
-function formatTimestamp(timestamp: number) {
+export function formatTimestamp(timestamp: number) {
   const date = new Date(timestamp);
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }

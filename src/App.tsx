@@ -2,11 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ActiveProcessInfo, ProjectInfo, RunHistory, ScriptInfo } from './types/global';
 import ProjectSidebar from './components/ProjectSidebar';
 import ScriptsPanel from './components/ScriptsPanel';
-import ActivityPanel from './components/ActivityPanel';
 import LogsPanel from './components/LogsPanel';
 import SetupModal from './components/SetupModal';
 import Section from './components/Section';
-import ActiveProcessesPanel from './components/ActiveProcessesPanel';
 
 const STORAGE_KEY = 'localhost-hub:scan-directories';
 const HISTORY_STORAGE_KEY = 'localhost-hub:run-history';
@@ -195,10 +193,19 @@ function App() {
       setLogOutput((current) => `${current}${payload.chunk}`);
     });
     const offExit = electronAPI.scripts.onExit((payload) => {
+      let status: 'Success' | 'Failed' | 'Stopped';
+      if (payload.wasStopped) {
+        status = 'Stopped';
+      } else if (payload.exitCode === 0) {
+        status = 'Success';
+      } else {
+        status = 'Failed';
+      }
+
       const entry: RunHistory = {
         id: payload.runId,
         script: payload.script,
-        status: payload.exitCode === 0 ? 'Success' : 'Failed',
+        status,
         startedAt: payload.startedAt,
         finishedAt: payload.finishedAt,
         exitCode: payload.exitCode
@@ -254,10 +261,15 @@ function App() {
       }
     };
 
+    // Fetch immediately on mount
     fetchProcesses();
-    const interval = window.setInterval(fetchProcesses, 3000);
+    // Then fetch again after a short delay to catch any processes that started during initialization
+    const immediateTimeout = window.setTimeout(fetchProcesses, 500);
+    // Then poll every 2 seconds (reduced from 3 for more responsive updates)
+    const interval = window.setInterval(fetchProcesses, 2000);
     return () => {
       ignore = true;
+      window.clearTimeout(immediateTimeout);
       window.clearInterval(interval);
     };
   }, [electronAPI]);
@@ -320,6 +332,14 @@ function App() {
         });
         if (!run) return;
         setCurrentRun({ id: run.runId, script: script.name });
+        
+        // Immediately fetch active processes to show the newly started script
+        try {
+          const processes = await electronAPI.processes.active();
+          setActiveProcesses(processes);
+        } catch {
+          // Ignore errors, polling will catch it
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to run script.';
         setLogOutput(message);
@@ -344,6 +364,14 @@ function App() {
     try {
       await electronAPI.scripts.stop(currentRun.id);
       setLogOutput((current) => `${current}\nStopping process…`);
+      
+      // Immediately fetch active processes to remove the stopped script from the list
+      try {
+        const processes = await electronAPI.processes.active();
+        setActiveProcesses(processes);
+      } catch {
+        // Ignore errors, polling will catch it
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to stop process.';
       setLogOutput((current) => `${current}\n${message}`);
@@ -373,6 +401,40 @@ function App() {
     setSetupError(null);
     setShowSetup(true);
   }, [scanDirectories]);
+
+  const handleSelectFolder = useCallback(async () => {
+    if (!electronAPI) {
+      console.error('electronAPI is not available. Preload script may not be loading correctly.');
+      setSetupError('Electron API is not available. Please check the console for errors.');
+      return;
+    }
+    try {
+      const result = await electronAPI.dialog.selectDirectory();
+      if (!result.canceled && result.path) {
+        const currentDirs = parseDirectories(setupInput);
+        // Add the new folder if it's not already in the list
+        if (!currentDirs.includes(result.path)) {
+          const newDirs = [...currentDirs, result.path].join('\n');
+          setSetupInput(newDirs);
+          setSetupError(null);
+        } else {
+          setSetupError('This directory is already in the list.');
+        }
+      }
+    } catch (error) {
+      setSetupError('Failed to select directory. Please try again.');
+    }
+  }, [electronAPI, setupInput]);
+
+  const handleRemoveFolder = useCallback(
+    (pathToRemove: string) => {
+      const currentDirs = parseDirectories(setupInput);
+      const newDirs = currentDirs.filter((dir) => dir !== pathToRemove).join('\n');
+      setSetupInput(newDirs);
+      setSetupError(null);
+    },
+    [setupInput]
+  );
 
   const handleExportLog = useCallback(async () => {
     if (!canExportLog) return;
@@ -450,7 +512,7 @@ function App() {
   }, [canCopyLog, logOutput]);
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100">
+    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden">
       <ProjectSidebar
         query={query}
         onQueryChange={setQuery}
@@ -460,9 +522,11 @@ function App() {
         onSelectProject={(id) => setSelectedProjectId(id)}
         pingResponse={pingResponse}
         scanDirectories={scanDirectories}
+        activeProcesses={activeProcesses}
+        runHistory={runHistory}
       />
 
-      <main className="flex flex-1 flex-col gap-6 p-8">
+      <main className="flex flex-1 flex-col gap-6 p-8 overflow-y-auto">
         <header className="flex flex-wrap items-center gap-4">
           <div>
             <p className="text-sm text-slate-400">{selectedProject?.path ?? 'No project selected'}</p>
@@ -505,19 +569,6 @@ function App() {
             />
           </Section>
 
-          <Section title="Activity">
-            <div className="space-y-6">
-              <div>
-                <p className="mb-3 text-xs uppercase tracking-wide text-slate-500">Live processes</p>
-                <ActiveProcessesPanel processes={activeProcesses} />
-              </div>
-              <div>
-                <p className="mb-3 text-xs uppercase tracking-wide text-slate-500">Recent history</p>
-                <ActivityPanel runHistory={runHistory} />
-              </div>
-            </div>
-          </Section>
-
           <Section title="Logs" action={<span className="text-xs uppercase tracking-wide text-slate-500">{logStatusLabel}</span>}>
             <LogsPanel
               logOutput={logOutput}
@@ -544,6 +595,8 @@ function App() {
           onUseRepoRoot={handleUseRepoRoot}
           onClose={() => setShowSetup(false)}
           setupError={setupError}
+          onSelectFolder={handleSelectFolder}
+          onRemoveFolder={handleRemoveFolder}
         />
     </div>
   );

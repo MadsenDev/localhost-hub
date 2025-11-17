@@ -24,7 +24,7 @@ export type ProjectInfo = {
 export type RunHistory = {
   id: string;
   script: string;
-  status: 'Success' | 'Failed';
+  status: 'Success' | 'Failed' | 'Stopped';
   startedAt: number;
   finishedAt: number;
   exitCode: number | null;
@@ -53,6 +53,7 @@ export type ScriptExitEvent = {
   script: string;
   command: string;
   projectPath: string;
+  wasStopped?: boolean;
 };
 
 export type ScriptErrorEvent = {
@@ -74,6 +75,9 @@ export interface ElectronAPI {
   };
   logs: {
     export: (payload: { contents: string; suggestedName?: string }) => Promise<{ saved: boolean; filePath?: string }>;
+  };
+  dialog: {
+    selectDirectory: () => Promise<{ canceled: boolean; path: string | null }>;
   };
   scripts: {
     run: (payload: { projectPath: string; script: string }) => Promise<RunScriptResult>;

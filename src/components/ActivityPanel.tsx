@@ -26,6 +26,8 @@ export function ActivityPanel({ runHistory }: ActivityPanelProps) {
             <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
               process.status === 'Success'
                 ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/40'
+                : process.status === 'Stopped'
+                ? 'bg-amber-500/10 text-amber-300 border-amber-500/40'
                 : 'bg-rose-500/10 text-rose-200 border-rose-500/40'
             }`}
             >

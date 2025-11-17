@@ -7,7 +7,14 @@ export default defineConfig(({ mode }) => ({
     react(),
     electron({
       main: {
-        entry: 'electron/main.ts'
+        entry: 'electron/main.ts',
+        vite: {
+          build: {
+            rollupOptions: {
+              external: ['sql.js']
+            }
+          }
+        }
       },
       preload: {
         input: 'electron/preload.ts'

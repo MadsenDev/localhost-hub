@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   logs: {
     export: (payload: { contents: string; suggestedName?: string }) => ipcRenderer.invoke('logs:export', payload)
   },
+  dialog: {
+    selectDirectory: () => ipcRenderer.invoke('dialog:selectDirectory')
+  },
   scripts: {
     run: (payload: { projectPath: string; script: string }) => ipcRenderer.invoke('scripts:run', payload),
     stop: (runId: string) => ipcRenderer.invoke('scripts:stop', runId),
@@ -35,6 +38,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         script: string;
         command: string;
         projectPath: string;
+        wasStopped?: boolean;
       }) => void
     ) =>
       registerListener<{
@@ -45,6 +49,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         script: string;
         command: string;
         projectPath: string;
+        wasStopped?: boolean;
       }>('scripts:exit', (_event, payload) => callback(payload)),
     onError: (
       callback: (payload: { runId: string; message: string; script: string; projectPath: string; startedAt: number }) => void

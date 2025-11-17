@@ -1,10 +1,13 @@
-import Database from 'better-sqlite3';
 import { app } from 'electron';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { ProjectInfo, ScriptInfo } from './projectScanner';
 
-let database: Database.Database | null = null;
+// Use dynamic require to avoid bundling issues
+let initSqlJs: any;
+let Database: any;
+let database: any = null;
+let sqlJsModule: any = null;
 
 export type StoredProject = ProjectInfo & {
   lastScannedAt: number;
@@ -21,17 +24,57 @@ function ensureDirectory(path: string) {
   }
 }
 
-export function initializeDatabase() {
+async function initSqlJsModule() {
+  if (!sqlJsModule) {
+    // Dynamically require sql.js to avoid bundling issues
+    if (!initSqlJs) {
+      const sqljs = require('sql.js');
+      initSqlJs = sqljs.default || sqljs;
+      Database = sqljs.Database;
+    }
+    
+    // sql.js will automatically find the .wasm file in node_modules
+    // In Electron, we may need to provide the path explicitly
+    const path = require('path');
+    const sqlJsWasmPath = require.resolve('sql.js/dist/sql-wasm.wasm');
+    sqlJsModule = await initSqlJs({
+      locateFile: (file: string) => {
+        // Return the path to the wasm file
+        if (file.endsWith('.wasm')) {
+          return sqlJsWasmPath;
+        }
+        // For other files, try to resolve them relative to sql.js
+        const sqlJsDir = path.dirname(require.resolve('sql.js/package.json'));
+        return path.join(sqlJsDir, 'dist', file);
+      }
+    });
+  }
+  return sqlJsModule;
+}
+
+export async function initializeDatabase() {
   if (database) {
     return database;
   }
+
+  const SQL = await initSqlJsModule();
   const dbPath = getDatabasePath();
   ensureDirectory(dirname(dbPath));
-  const instance = new Database(dbPath);
-  instance.pragma('journal_mode = WAL');
-  instance.pragma('foreign_keys = ON');
 
-  instance.exec(`
+  // Load existing database or create new one
+  let db: any;
+  if (existsSync(dbPath)) {
+    const buffer = readFileSync(dbPath);
+    db = new SQL.Database(buffer);
+  } else {
+    db = new SQL.Database();
+  }
+
+  // Enable foreign keys
+  db.run('PRAGMA foreign_keys = ON;');
+
+  // Create tables
+  db.run(`
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -51,84 +94,127 @@ export function initializeDatabase() {
     );
   `);
 
-  database = instance;
-  return instance;
+  // Save the initial schema
+  saveDatabase(db, dbPath);
+
+  database = db;
+  return db;
 }
 
-function getDatabase() {
-  return database ?? initializeDatabase();
+function saveDatabase(db: any, path: string) {
+  const data = db.export();
+  const buffer = Buffer.from(data);
+  writeFileSync(path, buffer);
 }
 
-export function saveProjects(projects: ProjectInfo[], scannedAt = Date.now()) {
-  const db = getDatabase();
-  if (projects.length === 0) {
-    db.exec('DELETE FROM project_scripts; DELETE FROM projects;');
-    return;
+function getDatabase(): any {
+  if (!database) {
+    throw new Error('Database not initialized. Call initializeDatabase() first.');
   }
-  const insertProject = db.prepare(`
-    INSERT INTO projects (id, name, path, type, tags, last_scanned_at)
-    VALUES (@id, @name, @path, @type, @tags, @last_scanned_at)
-    ON CONFLICT(id) DO UPDATE SET
-      name = excluded.name,
-      path = excluded.path,
-      type = excluded.type,
-      tags = excluded.tags,
-      last_scanned_at = excluded.last_scanned_at;
-  `);
-  const deleteScripts = db.prepare('DELETE FROM project_scripts WHERE project_id = ?');
-  const insertScript = db.prepare(`
-    INSERT INTO project_scripts (project_id, name, command, description)
-    VALUES (@project_id, @name, @command, @description)
-    ON CONFLICT(project_id, name) DO UPDATE SET
-      command = excluded.command,
-      description = excluded.description;
-  `);
+  return database;
+}
 
-  const transaction = db.transaction((entries: ProjectInfo[]) => {
-    for (const project of entries) {
-      insertProject.run({
-        id: project.id,
-        name: project.name,
-        path: project.path,
-        type: project.type,
-        tags: JSON.stringify(project.tags ?? []),
-        last_scanned_at: scannedAt
-      });
-      deleteScripts.run(project.id);
-      for (const script of project.scripts ?? []) {
-        insertScript.run({
-          project_id: project.id,
-          name: script.name,
-          command: script.command,
-          description: script.description ?? null
-        });
+export async function saveProjects(projects: ProjectInfo[], scannedAt = Date.now()) {
+  const db = getDatabase();
+  const dbPath = getDatabasePath();
+
+  // Begin transaction
+  db.run('BEGIN TRANSACTION;');
+
+  try {
+    if (projects.length === 0) {
+      db.run('DELETE FROM project_scripts;');
+      db.run('DELETE FROM projects;');
+    } else {
+      // For sql.js, we'll use a simpler approach: delete and reinsert
+      // First, delete all existing data
+      db.run('DELETE FROM project_scripts;');
+      db.run('DELETE FROM projects;');
+
+      // Then insert all projects and scripts
+      for (const project of projects) {
+        db.run(
+          'INSERT INTO projects (id, name, path, type, tags, last_scanned_at) VALUES (?, ?, ?, ?, ?, ?)',
+          [
+            project.id,
+            project.name,
+            project.path,
+            project.type,
+            JSON.stringify(project.tags ?? []),
+            scannedAt
+          ]
+        );
+
+        for (const script of project.scripts ?? []) {
+          db.run(
+            'INSERT INTO project_scripts (project_id, name, command, description) VALUES (?, ?, ?, ?)',
+            [project.id, script.name, script.command, script.description ?? null]
+          );
+        }
       }
     }
-  });
 
-  transaction(projects);
+    // Commit transaction
+    db.run('COMMIT;');
+    saveDatabase(db, dbPath);
+  } catch (error) {
+    db.run('ROLLBACK;');
+    throw error;
+  }
 }
 
 export function loadProjects(): StoredProject[] {
   const db = getDatabase();
-  const projectRows = db
-    .prepare<[], { id: string; name: string; path: string; type: string; tags: string; last_scanned_at: number }>(
-      'SELECT * FROM projects ORDER BY name ASC'
-    )
-    .all();
-  const scriptRows = db
-    .prepare<[], { project_id: string; name: string; command: string; description: string | null }>(
-      'SELECT * FROM project_scripts'
-    )
-    .all();
-  const scriptsByProject = new Map<string, ScriptInfo[]>();
-  for (const row of scriptRows) {
-    const list = scriptsByProject.get(row.project_id) ?? [];
-    list.push({ name: row.name, command: row.command, description: row.description ?? undefined });
-    scriptsByProject.set(row.project_id, list);
+
+  // Get all projects
+  const projectResult = db.exec('SELECT * FROM projects ORDER BY name ASC');
+  if (projectResult.length === 0) {
+    return [];
   }
 
-  return projectRows.map((row) => ({
+  const projectRows = projectResult[0];
+  const projects: Array<{
+    id: string;
+    name: string;
+    path: string;
+    type: string;
+    tags: string;
+    last_scanned_at: number;
+  }> = [];
+
+  // sql.js returns results as arrays, we need to map column names
+  const columns = projectRows.columns;
+  for (const row of projectRows.values) {
+    const project: any = {};
+    columns.forEach((col: string, idx: number) => {
+      project[col] = row[idx];
+    });
+    projects.push(project);
+  }
+
+  // Get all scripts
+  const scriptResult = db.exec('SELECT * FROM project_scripts');
+  const scriptsByProject = new Map<string, ScriptInfo[]>();
+
+  if (scriptResult.length > 0) {
+    const scriptRows = scriptResult[0];
+    const scriptColumns = scriptRows.columns;
+    for (const row of scriptRows.values) {
+      const script: any = {};
+      scriptColumns.forEach((col: string, idx: number) => {
+        script[col] = row[idx];
+      });
+      const list = scriptsByProject.get(script.project_id) ?? [];
+      list.push({
+        name: script.name,
+        command: script.command,
+        description: script.description ?? undefined
+      });
+      scriptsByProject.set(script.project_id, list);
+    }
+  }
+
+  return projects.map((row) => ({
     id: row.id,
     name: row.name,
     path: row.path,

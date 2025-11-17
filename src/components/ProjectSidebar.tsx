@@ -1,4 +1,8 @@
-import type { ProjectInfo } from '../types/global';
+import { useState, useRef } from 'react';
+import { HiPlay, HiClock } from 'react-icons/hi2';
+import type { ProjectInfo, ActiveProcessInfo, RunHistory } from '../types/global';
+import { LiveProcessesPopover } from './LiveProcessesPopover';
+import { HistoryModal } from './HistoryModal';
 
 interface ProjectSidebarProps {
   query: string;
@@ -9,6 +13,8 @@ interface ProjectSidebarProps {
   onSelectProject: (id: string) => void;
   pingResponse: string;
   scanDirectories: string[] | null;
+  activeProcesses: ActiveProcessInfo[];
+  runHistory: RunHistory[];
 }
 
 export function ProjectSidebar({
@@ -19,15 +25,47 @@ export function ProjectSidebar({
   selectedProjectId,
   onSelectProject,
   pingResponse,
-  scanDirectories
+  scanDirectories,
+  activeProcesses,
+  runHistory
 }: ProjectSidebarProps) {
+  const [showLiveProcesses, setShowLiveProcesses] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const liveProcessesButtonRef = useRef<HTMLButtonElement>(null);
+
   return (
-    <aside className="flex w-72 flex-col border-r border-slate-900 bg-slate-950/80 p-5">
-      <div className="mb-4 space-y-1">
-        <p className="text-xs uppercase tracking-[0.2em] text-indigo-400">Localhost</p>
-        <h1 className="text-xl font-semibold">Hub</h1>
+    <aside className="flex h-full w-72 flex-col border-r border-slate-900 bg-slate-950/80 p-5">
+      <div className="mb-4 flex-shrink-0">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="space-y-1">
+            <p className="text-xs uppercase tracking-[0.2em] text-indigo-400">Localhost</p>
+            <h1 className="text-xl font-semibold">Hub</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              ref={liveProcessesButtonRef}
+              onClick={() => setShowLiveProcesses(!showLiveProcesses)}
+              className="relative rounded-lg border border-slate-700 bg-slate-800/50 p-2 text-slate-300 hover:border-slate-600 hover:bg-slate-800"
+              title="Live processes"
+            >
+              <HiPlay className="h-4 w-4" />
+              {activeProcesses.length > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-500 text-[10px] font-semibold text-white">
+                  {activeProcesses.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setShowHistory(true)}
+              className="rounded-lg border border-slate-700 bg-slate-800/50 p-2 text-slate-300 hover:border-slate-600 hover:bg-slate-800"
+              title="Recent history"
+            >
+              <HiClock className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       </div>
-      <div className="relative mb-5">
+      <div className="relative mb-5 flex-shrink-0">
         <input
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
@@ -36,7 +74,7 @@ export function ProjectSidebar({
         />
         <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-500 text-xs">⌘K</span>
       </div>
-      <div className="space-y-4 overflow-y-auto pr-2">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-4 -mr-5 pr-5">
         <div>
           <p className="text-xs uppercase tracking-widest text-slate-500">Projects</p>
           <div className="mt-3 space-y-2 text-sm">
@@ -53,25 +91,25 @@ export function ProjectSidebar({
                     }`}
                     onClick={() => onSelectProject(project.id)}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">{project.name}</span>
+                    <div className="flex items-center justify-between gap-2 min-w-0">
+                      <span className="font-medium truncate flex-1 min-w-0">{project.name}</span>
                       {project.tags.length > 0 && (
-                        <span className="text-[10px] uppercase tracking-widest text-slate-500">{project.tags[0]}</span>
+                        <span className="text-[10px] uppercase tracking-widest text-slate-500 flex-shrink-0">{project.tags[0]}</span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-500">{project.path}</p>
+                    <p className="text-xs text-slate-500 truncate">{project.path}</p>
                   </li>
                 ))}
               </ul>
             )}
           </div>
         </div>
-        <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-400">
-          <div>
+        <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-400 flex-shrink-0 min-w-0">
+          <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">System</p>
-            <p>IPC ping: {pingResponse}</p>
+            <p className="truncate">IPC ping: {pingResponse}</p>
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Scan roots</p>
             {scanDirectories && scanDirectories.length > 0 ? (
               <ul className="mt-1 space-y-1">
@@ -87,6 +125,13 @@ export function ProjectSidebar({
           </div>
         </div>
       </div>
+      <LiveProcessesPopover
+        processes={activeProcesses}
+        isOpen={showLiveProcesses}
+        onClose={() => setShowLiveProcesses(false)}
+        anchorRef={liveProcessesButtonRef}
+      />
+      <HistoryModal isOpen={showHistory} onClose={() => setShowHistory(false)} runHistory={runHistory} />
     </aside>
   );
 }

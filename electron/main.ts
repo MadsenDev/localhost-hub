@@ -24,6 +24,7 @@ type ActiveProcess = {
 };
 
 const activeProcesses = new Map<string, ActiveProcess>();
+const stoppedProcesses = new Set<string>();
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -34,7 +35,7 @@ function createWindow() {
     title: 'Localhost Hub',
     backgroundColor: '#0f172a',
     webPreferences: {
-      preload: join(__dirname, '../preload.js'),
+      preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
@@ -57,8 +58,8 @@ function createWindow() {
   mainWindow = window;
 }
 
-app.whenReady().then(() => {
-  initializeDatabase();
+app.whenReady().then(async () => {
+  await initializeDatabase();
   cachedProjects = loadProjects();
   createWindow();
 
@@ -167,7 +168,9 @@ ipcMain.handle('scripts:run', async (_event, payload: { projectPath: string; scr
   });
 
   child.once('close', (code) => {
+    const wasStopped = stoppedProcesses.has(runId);
     activeProcesses.delete(runId);
+    stoppedProcesses.delete(runId);
     broadcast('scripts:exit', {
       runId,
       exitCode: code,
@@ -175,7 +178,8 @@ ipcMain.handle('scripts:run', async (_event, payload: { projectPath: string; scr
       script,
       command: commandString,
       projectPath,
-      startedAt
+      startedAt,
+      wasStopped
     });
   });
 
@@ -188,6 +192,8 @@ ipcMain.handle('scripts:stop', async (_event, runId: string) => {
     return { success: false };
   }
 
+  // Mark that this process was manually stopped
+  stoppedProcesses.add(runId);
   active.child.kill('SIGTERM');
   setTimeout(() => {
     if (!active.child.killed) {
@@ -224,4 +230,23 @@ ipcMain.handle('logs:export', async (_event, payload: { contents?: string; sugge
 
   await writeFile(result.filePath, payload?.contents ?? '', 'utf8');
   return { saved: true, filePath: result.filePath };
+});
+
+ipcMain.handle('dialog:selectDirectory', async () => {
+  const window = BrowserWindow.getFocusedWindow() ?? mainWindow ?? undefined;
+  const result = window
+    ? await dialog.showOpenDialog(window, {
+        properties: ['openDirectory'],
+        title: 'Select directory to scan for projects'
+      })
+    : await dialog.showOpenDialog({
+        properties: ['openDirectory'],
+        title: 'Select directory to scan for projects'
+      });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true, path: null };
+  }
+
+  return { canceled: false, path: result.filePaths[0] };
 });
