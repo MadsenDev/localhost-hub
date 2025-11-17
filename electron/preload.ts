@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   processes: {
     active: () => ipcRenderer.invoke('processes:active')
   },
+  logs: {
+    export: (payload: { contents: string; suggestedName?: string }) => ipcRenderer.invoke('logs:export', payload)
+  },
   scripts: {
     run: (payload: { projectPath: string; script: string }) => ipcRenderer.invoke('scripts:run', payload),
     stop: (runId: string) => ipcRenderer.invoke('scripts:stop', runId),

@@ -4,6 +4,14 @@ export type ScriptInfo = {
   description?: string;
 };
 
+export type ActiveProcessInfo = {
+  id: string;
+  script: string;
+  command: string;
+  projectPath: string;
+  startedAt: number;
+};
+
 export type ProjectInfo = {
   id: string;
   name: string;
@@ -62,7 +70,10 @@ export interface ElectronAPI {
     scan: (directories?: string[]) => Promise<ProjectInfo[]>;
   };
   processes: {
-    active: () => Promise<{ id: string; script: string; command: string; projectPath: string; startedAt: number }[]>;
+    active: () => Promise<ActiveProcessInfo[]>;
+  };
+  logs: {
+    export: (payload: { contents: string; suggestedName?: string }) => Promise<{ saved: boolean; filePath?: string }>;
   };
   scripts: {
     run: (payload: { projectPath: string; script: string }) => Promise<RunScriptResult>;
