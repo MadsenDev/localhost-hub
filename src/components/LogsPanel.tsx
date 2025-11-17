@@ -4,26 +4,70 @@ interface LogsPanelProps {
   logOutput: string;
   logContainerRef: RefObject<HTMLPreElement>;
   onExportLog: () => void;
+  onClearLog: () => void;
+  onCopyLog: () => void;
+  onToggleAutoScroll: () => void;
   isExporting: boolean;
   canExport: boolean;
+  canCopy: boolean;
+  canClear: boolean;
+  isAutoScrollEnabled: boolean;
 }
 
-export function LogsPanel({ logOutput, logContainerRef, onExportLog, isExporting, canExport }: LogsPanelProps) {
+export function LogsPanel({
+  logOutput,
+  logContainerRef,
+  onExportLog,
+  onClearLog,
+  onCopyLog,
+  onToggleAutoScroll,
+  isExporting,
+  canExport,
+  canCopy,
+  canClear,
+  isAutoScrollEnabled
+}: LogsPanelProps) {
   return (
     <div className="space-y-3 text-sm text-slate-300">
       <pre
         ref={logContainerRef}
         className="h-64 overflow-y-auto rounded-xl bg-black/60 p-4 font-mono text-xs text-emerald-300 whitespace-pre-wrap"
       >
-        {logOutput}
+        {logOutput || ' '}
       </pre>
-      <button
-        className="w-full rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2 text-xs font-semibold text-slate-200 disabled:opacity-40"
-        onClick={onExportLog}
-        disabled={!canExport || isExporting}
-      >
-        {isExporting ? 'Saving…' : 'Export log'}
-      </button>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <button
+          className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-indigo-400 hover:text-white disabled:opacity-40"
+          onClick={onToggleAutoScroll}
+          type="button"
+        >
+          {isAutoScrollEnabled ? 'Pause auto-scroll' : 'Resume auto-scroll'}
+        </button>
+        <button
+          className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-rose-400 hover:text-white disabled:opacity-40"
+          onClick={onClearLog}
+          disabled={!canClear}
+          type="button"
+        >
+          Clear log
+        </button>
+        <button
+          className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-emerald-400 hover:text-white disabled:opacity-40"
+          onClick={onCopyLog}
+          disabled={!canCopy}
+          type="button"
+        >
+          Copy log
+        </button>
+        <button
+          className="rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-100 transition hover:bg-indigo-500/30 disabled:opacity-40"
+          onClick={onExportLog}
+          disabled={!canExport || isExporting}
+          type="button"
+        >
+          {isExporting ? 'Saving…' : 'Export log'}
+        </button>
+      </div>
     </div>
   );
 }
