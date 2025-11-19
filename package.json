@@ -5,6 +5,10 @@
   "main": "dist-electron/main.js",
   "license": "MIT",
   "type": "commonjs",
+  "author": {
+    "name": "Christoffer Madsen",
+    "email": "chris@madsens.dev"
+  },
   "scripts": {
     "dev": "vite dev",
     "dev:electron": "vite dev",
@@ -13,7 +17,17 @@
     "electron": "electron .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "generate:icons": "node scripts/generate-icons.cjs",
+    "prebuild:electron": "npm run generate:icons && rimraf dist dist-electron",
+    "build:electron": "npm run prebuild:electron && cross-env VITE_DEV_SERVER_URL= vite build && electron-builder --config build.config.cjs",
+    "build:linux": "npm run build:electron -- --linux",
+    "build:mac": "npm run build:electron -- --mac",
+    "build:win": "npm run build:electron -- --win nsis",
+    "build:win:unsigned": "npm run build:electron -- --win zip",
+    "build:all": "npm run build:electron -- --mac --linux --win nsis",
+    "build:all:unsigned": "npm run build:electron -- --mac --linux --win zip",
+    "build:all:signed-win": "npm run build:electron -- --mac --linux && cross-env WIN_SIGN=true npm run build:electron -- --win nsis"
   },
   "keywords": [
     "electron",
@@ -30,24 +44,56 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.2.0",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@types/sql.js": "^1.4.9",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.22",
-    "concurrently": "^9.1.2",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
     "electron": "^39.2.1",
     "electron-builder": "^26.0.12",
+    "jsdom": "^26.0.0",
+    "png2icons": "^2.0.1",
     "postcss": "^8.5.6",
+    "rimraf": "^6.1.2",
     "tailwindcss": "^3.4.11",
     "typescript": "^5.9.3",
-    "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.2.0",
-    "jsdom": "^26.0.0",
     "vite": "^7.2.2",
     "vite-plugin-electron": "^0.29.0",
     "vitest": "^2.1.5",
     "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.localhost.hub",
+    "productName": "Localhost Hub",
+    "directories": {
+      "buildResources": "buildResources"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "buildResources",
+        "to": "."
+      }
+    ],
+    "mac": {
+      "icon": "buildResources/icon.icns",
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "icon": "buildResources/icon.ico"
+    },
+    "linux": {
+      "icon": "buildResources/icon.png",
+      "category": "Development"
+    }
   }
 }

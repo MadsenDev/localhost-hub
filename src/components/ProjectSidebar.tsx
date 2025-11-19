@@ -139,6 +139,17 @@ export function ProjectSidebar({
               <AnimatePresence mode="popLayout">
                 {filteredProjects.map((project, index) => {
                   const gitStatus = gitStatuses?.get(project.id);
+                  const isRunning = activeProcesses.some(
+                    (proc) => proc.projectPath === project.path && !proc.isExternal
+                  );
+                  const baseClasses =
+                    'cursor-pointer rounded-xl border px-3 py-2 transition relative overflow-hidden';
+                  const stateClasses =
+                    project.id === selectedProjectId
+                      ? 'border-indigo-300 dark:border-indigo-400/50 bg-indigo-50 dark:bg-slate-900/80'
+                      : isRunning
+                        ? 'border-emerald-200 dark:border-emerald-500/40 bg-emerald-50/70 dark:bg-emerald-500/10'
+                        : 'border-transparent hover:border-slate-200 dark:hover:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-900/70';
                   return (
                     <motion.li
                       key={project.id}
@@ -147,18 +158,22 @@ export function ProjectSidebar({
                       exit={{ opacity: 0, x: -10 }}
                       transition={{ duration: 0.2, delay: index * 0.02 }}
                       whileHover={{ x: 2 }}
-                      className={`cursor-pointer rounded-xl border px-3 py-2 transition ${
-                        project.id === selectedProjectId
-                          ? 'border-indigo-300 dark:border-indigo-400/50 bg-indigo-50 dark:bg-slate-900/80'
-                          : 'border-transparent hover:border-slate-200 dark:hover:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-900/70'
-                      }`}
+                      className={`${baseClasses} ${stateClasses}`}
                       onClick={() => onSelectProject(project.id)}
                     >
                       <div className="flex items-center justify-between gap-2 min-w-0">
                         <span className="font-medium truncate flex-1 min-w-0 text-slate-800 dark:text-slate-100">{project.name}</span>
-                        {project.tags.length > 0 && (
-                          <span className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-500 flex-shrink-0">{project.tags[0]}</span>
-                        )}
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {isRunning && (
+                            <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-300">
+                              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                              Running
+                            </span>
+                          )}
+                          {project.tags.length > 0 && (
+                            <span className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-500 flex-shrink-0">{project.tags[0]}</span>
+                          )}
+                        </div>
                       </div>
                       <p className="text-xs text-slate-500 dark:text-slate-500 truncate">{project.path}</p>
                       {gitStatus &&

@@ -11,10 +11,23 @@ npm run dev
 
 Running `npm run dev` starts Vite in development mode and boots Electron with live reloading for the main, preload, and renderer processes. The UI renders a sidebar with sample projects plus script/activity/log panels so we can iterate on real layouts before wiring up data.
 
-To produce a production build run:
+### Packaging
+
+Build renderer + main bundles:
 
 ```bash
 npm run build
 ```
 
-The command emits bundled renderer assets to `dist/renderer` along with compiled Electron entry points in `dist-electron` via `vite-plugin-electron`.
+Generate platform installers (requires `npm run build` first):
+
+| Command | Notes |
+| --- | --- |
+| `npm run build:linux` | AppImage + .deb |
+| `npm run build:mac` | universal macOS dmg |
+| `npm run build:win` | Windows NSIS installer (expects signing env vars if `WIN_SIGN=true`) |
+| `npm run build:win:unsigned` | Windows ZIP (no signing, works on Linux CI) |
+| `npm run build:all` | mac + linux + signed Windows |
+| `npm run build:all:unsigned` | mac + linux + unsigned Windows |
+
+All installers land in `release/`.

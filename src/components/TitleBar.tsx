@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import logoWordmark from '../assets/logo_wordmark.svg';
 
 export function TitleBar() {
   const [isMaximized, setIsMaximized] = useState(false);
@@ -64,9 +65,9 @@ export function TitleBar() {
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       <div className="flex items-center gap-2">
-        <img 
-          src="/logo_wordmark.svg" 
-          alt="Localhost Hub" 
+        <img
+          src={logoWordmark}
+          alt="Localhost Hub"
           className="h-5 w-auto opacity-80"
         />
       </div>

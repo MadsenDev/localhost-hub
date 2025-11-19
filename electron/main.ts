@@ -51,6 +51,31 @@ let mainWindow: BrowserWindow | null = null;
 let appTray: Tray | null = null;
 let isQuitting = false;
 
+const getIconAssetPath = (fileName: string) => {
+  const packagedPath = join(process.resourcesPath, fileName);
+  const buildResourcePath = join(process.cwd(), 'buildResources', fileName);
+  const fallbackMap: Record<string, string> = {
+    'icon.png': join(process.cwd(), 'public', 'logo-icons', 'desktop', 'icon-256.png'),
+    'icon.ico': join(process.cwd(), 'public', 'logo-icons', 'windows', 'app.ico'),
+    'icon.icns': join(process.cwd(), 'public', 'logo-icons', 'ios', 'AppIcon~ios-marketing.png')
+  };
+
+  if (app.isPackaged && existsSync(packagedPath)) {
+    return packagedPath;
+  }
+
+  if (!app.isPackaged && existsSync(buildResourcePath)) {
+    return buildResourcePath;
+  }
+
+  const fallbackPath = fallbackMap[fileName];
+  if (fallbackPath && existsSync(fallbackPath)) {
+    return fallbackPath;
+  }
+
+  return app.isPackaged ? packagedPath : buildResourcePath;
+};
+
 type ActiveProcess = {
   id: string;
   script: string;
@@ -71,6 +96,7 @@ const workspaceRunMap = new Map<number, Set<string>>();
 const runWorkspaceMap = new Map<string, { workspaceId: number; itemId?: number; runMode: 'parallel' | 'sequential' }>();
 
 function createWindow() {
+  const windowIcon = getIconAssetPath('icon.png');
   const window = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -80,6 +106,7 @@ function createWindow() {
     backgroundColor: '#0f172a',
     frame: false,
     titleBarStyle: 'hidden',
+    icon: windowIcon,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -93,7 +120,10 @@ function createWindow() {
     window.loadURL(devServerUrl);
     window.webContents.openDevTools({ mode: 'detach' });
   } else {
-    window.loadFile(join(__dirname, '../renderer/index.html'));
+    const rendererPath = join(__dirname, '../renderer/index.html');
+    const distRendererPath = join(__dirname, '../dist/renderer/index.html');
+    const loadPath = existsSync(rendererPath) ? rendererPath : distRendererPath;
+    window.loadFile(loadPath);
   }
 
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -122,13 +152,10 @@ function createWindow() {
 }
 
 function createTray() {
-  // Try to load tray icon (you'll need to add an icon file)
-  // For now, we'll create a simple icon or use a default
   try {
-    const iconPath = join(__dirname, '../assets/icon.png');
-    const icon = existsSync(iconPath) 
-      ? nativeImage.createFromPath(iconPath)
-      : nativeImage.createEmpty();
+    const trayIconName = process.platform === 'win32' ? 'icon.ico' : process.platform === 'darwin' ? 'icon.icns' : 'icon.png';
+    const iconPath = getIconAssetPath(trayIconName);
+    const icon = existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty();
     
     appTray = new Tray(icon);
     
