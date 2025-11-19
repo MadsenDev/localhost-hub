@@ -1,65 +1,92 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ActiveProcessInfo, ProjectInfo, RunHistory, ScriptInfo } from './types/global';
+import type { ActiveProcessInfo, RunHistory, ScriptInfo, ProjectInfo, GitStatusInfo } from './types/global';
 import ProjectSidebar from './components/ProjectSidebar';
-import ScriptsPanel from './components/ScriptsPanel';
-import LogsPanel from './components/LogsPanel';
 import SetupModal from './components/SetupModal';
-import Section from './components/Section';
+import SettingsModal from './components/SettingsModal';
+import { TitleBar } from './components/TitleBar';
+import ProjectEmptyState from './components/ProjectEmptyState';
+import ScanStatusBanner from './components/ScanStatusBanner';
+import ProjectView from './components/ProjectView';
+import { useSettings } from './hooks/useSettings';
+import { useWorkspaces } from './hooks/useWorkspaces';
+import WorkspacesModal from './components/WorkspacesModal';
+import { ToastProvider, useToast } from './hooks/useToasts';
+import ToastViewport from './components/ToastViewport';
+import { useProjects } from './hooks/useProjects';
 
-const STORAGE_KEY = 'localhost-hub:scan-directories';
 const HISTORY_STORAGE_KEY = 'localhost-hub:run-history';
 const MAX_HISTORY = 20;
 
-const mockProjects: ProjectInfo[] = [
-  {
-    id: 'mock-app',
-    name: 'Localhost Hub (preview)',
-    path: '/Users/dev/projects/localhost-hub',
-    type: 'React + Vite',
-    tags: ['TypeScript'],
-    scripts: [
-      {
-        name: 'dev',
-        command: 'vite dev',
-        description: 'Starts the Vite development server.'
-      },
-      {
-        name: 'build',
-        command: 'vite build',
-        description: 'Creates an optimized production build.'
-      }
-    ]
-  },
-  {
-    id: 'mock-api',
-    name: 'Payments API',
-    path: '/Users/dev/projects/payments-api',
-    type: 'Node Project',
-    tags: ['TypeScript'],
-    scripts: [
-      { name: 'dev', command: 'npm run dev', description: 'Run API in watch mode.' },
-      { name: 'test', command: 'npm run test', description: 'Execute unit tests.' }
-    ]
-  }
-];
-
-function parseDirectories(value: string) {
-  return value
-    .split(/\n|,/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
-function App() {
+function AppContent() {
   const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
-  const isMockMode = !electronAPI;
+  const settings = useSettings(electronAPI);
+  const { pushToast } = useToast();
+  const {
+    workspaces,
+    loading: workspacesLoading,
+    createWorkspace,
+    deleteWorkspace,
+    addWorkspaceItem,
+    updateWorkspaceItem,
+    removeWorkspaceItem,
+    startWorkspace,
+    stopWorkspace
+  } = useWorkspaces(electronAPI);
+  const {
+    projects,
+    filteredProjects,
+    selectedProjectId,
+    selectProject,
+    query,
+    setQuery,
+    scanDirectories,
+    isScanning,
+    scanError,
+    showSetup,
+    setupInput,
+    setSetupInput,
+    setupError,
+    openSetup,
+    closeSetup,
+    saveDirectories,
+    useRepoRoot,
+    selectFolder,
+    removeFolder,
+    rescan
+  } = useProjects({ electronAPI });
+  const projectsById = useMemo(() => new Map(projects.map((project) => [project.id, project] as const)), [projects]);
+  const projectPathToId = useMemo(() => new Map(projects.map((project) => [project.path, project.id] as const)), [projects]);
+  const selectedProject = useMemo(
+    () => projects.find((project) => project.id === selectedProjectId) ?? null,
+    [projects, selectedProjectId]
+  );
 
-  const [projects, setProjects] = useState<ProjectInfo[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  // Reload settings when they might have changed (e.g., from settings modal)
+  useEffect(() => {
+    if (!electronAPI) return;
+    
+    // Listen for theme change events from settings panel
+    const handleThemeChange = () => {
+      settings.reload();
+    };
+    window.addEventListener('settings:themeChanged', handleThemeChange);
+    
+    // Also listen for focus events to reload settings when user returns to window
+    const handleFocus = () => {
+      settings.reload();
+    };
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      window.removeEventListener('settings:themeChanged', handleThemeChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [electronAPI, settings]);
+
+  const [activeTab, setActiveTab] = useState<'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git'>('scripts');
+  const [showSettings, setShowSettings] = useState(false);
+  const [showWorkspaces, setShowWorkspaces] = useState(false);
   const [pingResponse, setPingResponse] = useState<string>('…');
-  const [query, setQuery] = useState('');
-  const [isScanning, setIsScanning] = useState(false);
-  const [scriptInFlight, setScriptInFlight] = useState<string | null>(null);
   const [runHistory, setRunHistory] = useState<RunHistory[]>(() => {
     if (typeof window === 'undefined') return [];
     const stored = window.localStorage.getItem(HISTORY_STORAGE_KEY);
@@ -70,35 +97,48 @@ function App() {
       return [];
     }
   });
-  const [logOutput, setLogOutput] = useState('Select a script to run and view logs.');
-  const [scanError, setScanError] = useState<string | null>(null);
-  const [scanDirectories, setScanDirectories] = useState<string[] | null>(() => {
-    if (typeof window === 'undefined') return null;
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) return null;
-    try {
-      return JSON.parse(stored) as string[];
-    } catch {
-      return null;
-    }
-  });
-  const [showSetup, setShowSetup] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return !window.localStorage.getItem(STORAGE_KEY);
-  });
-  const [setupInput, setSetupInput] = useState(() => (scanDirectories ?? []).join('\n'));
-  const [setupError, setSetupError] = useState<string | null>(null);
-  const [currentRun, setCurrentRun] = useState<{ id: string; script: string } | null>(null);
+  // Store logs per project ID
+  const [projectLogs, setProjectLogs] = useState<Map<string, string>>(new Map());
+  // Track current run per project
+  const [projectRuns, setProjectRuns] =
+    useState<Map<string, { id: string; script: string; projectPath: string }>>(new Map());
   const [activeProcesses, setActiveProcesses] = useState<ActiveProcessInfo[]>([]);
   const [isExportingLog, setIsExportingLog] = useState(false);
-  const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
+  const [expectedPorts, setExpectedPorts] = useState<Map<string, Record<string, number>>>(new Map());
+  const [detectedUrls, setDetectedUrls] = useState<Map<string, string>>(new Map());
+  const [gitStatusMap, setGitStatusMap] = useState<Map<string, GitStatusInfo>>(new Map());
+  const [gitLoadingProjectId, setGitLoadingProjectId] = useState<string | null>(null);
+  
+  // Get auto-scroll setting (default true)
+  const isAutoScrollEnabled = settings.getSettingAsBoolean('autoScrollLogs', true);
 
   const logContainerRef = useRef<HTMLPreElement | null>(null);
-  const currentRunRef = useRef<string | null>(null);
+  // Track runId to projectId mapping
+  const runIdToProjectId = useRef<Map<string, string>>(new Map());
 
-  useEffect(() => {
-    currentRunRef.current = currentRun?.id ?? null;
+  // Get logs for the currently selected project
+  const logOutput = useMemo(() => {
+    if (!selectedProjectId) {
+      return 'Select a project to view logs.';
+    }
+    return projectLogs.get(selectedProjectId) || 'Select a script to run and view logs.';
+  }, [selectedProjectId, projectLogs]);
+
+  // Get current run for the selected project
+  const currentRun = useMemo(() => {
+    if (!selectedProjectId) return null;
+    return projectRuns.get(selectedProjectId) || null;
+  }, [selectedProjectId, projectRuns]);
+
+  // Get script in flight for the selected project
+  const scriptInFlight = useMemo(() => {
+    return currentRun?.script || null;
   }, [currentRun]);
+  const currentGitStatus = useMemo(() => {
+    if (!selectedProject) return null;
+    return gitStatusMap.get(selectedProject.id) || null;
+  }, [gitStatusMap, selectedProject]);
+  const isGitStatusLoading = selectedProject ? gitLoadingProjectId === selectedProject.id : false;
 
   useEffect(() => {
     if (!isAutoScrollEnabled) {
@@ -127,72 +167,46 @@ function App() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (scanDirectories) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(scanDirectories));
-    } else {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
-  }, [scanDirectories]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
     window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(runHistory));
   }, [runHistory]);
-
-  useEffect(() => {
-    if (isMockMode) {
-      setProjects(mockProjects);
-      setSelectedProjectId(mockProjects[0]?.id ?? null);
-      setScanError('Electron bridge not detected. Showing preview data only.');
-      setIsScanning(false);
-      return;
-    }
-    if (!electronAPI) {
-      return;
-    }
-    if (scanDirectories === null) {
-      setProjects([]);
-      setScanError('Choose one or more directories to begin scanning.');
-      return;
-    }
-
-    let ignore = false;
-    const performScan = async () => {
-      setIsScanning(true);
-      try {
-        const result = await electronAPI.projects.scan(scanDirectories);
-        if (ignore) return;
-        setProjects(result);
-        setSelectedProjectId((current) => current ?? result[0]?.id ?? null);
-        setScanError(result.length === 0 ? 'No package.json files detected in the configured directories.' : null);
-      } catch (error) {
-        if (!ignore) {
-          setScanError(error instanceof Error ? error.message : 'Failed to scan for projects.');
-        }
-      } finally {
-        if (!ignore) {
-          setIsScanning(false);
-        }
-      }
-    };
-
-    performScan();
-    return () => {
-      ignore = true;
-    };
-  }, [electronAPI, isMockMode, scanDirectories]);
 
   useEffect(() => {
     if (!electronAPI) {
       return;
     }
     const offLog = electronAPI.scripts.onLog((payload) => {
-      if (currentRunRef.current !== payload.runId) {
-        return;
+      let projectId = runIdToProjectId.current.get(payload.runId);
+      if (!projectId && payload.projectId) {
+        projectId = payload.projectId;
+        runIdToProjectId.current.set(payload.runId, projectId);
       }
-      setLogOutput((current) => `${current}${payload.chunk}`);
+      if (!projectId) return;
+
+      // Update logs for that project
+      setProjectLogs((current) => {
+        const updated = new Map(current);
+        const existing = updated.get(projectId) || '';
+        updated.set(projectId, existing + payload.chunk);
+        return updated;
+      });
+
+      const urlMatch = payload.chunk.match(/https?:\/\/localhost:\d+[^\s)"]*/i);
+      if (urlMatch && projectId) {
+        setDetectedUrls((current) => {
+          const next = new Map(current);
+          next.set(projectId, urlMatch[0]);
+          return next;
+        });
+      }
     });
     const offExit = electronAPI.scripts.onExit((payload) => {
+      let projectId = runIdToProjectId.current.get(payload.runId);
+      if (!projectId && payload.projectId) {
+        projectId = payload.projectId;
+        runIdToProjectId.current.set(payload.runId, projectId);
+      }
+      runIdToProjectId.current.delete(payload.runId);
+
       let status: 'Success' | 'Failed' | 'Stopped';
       if (payload.wasStopped) {
         status = 'Stopped';
@@ -211,15 +225,53 @@ function App() {
         exitCode: payload.exitCode
       };
       setRunHistory((history) => [entry, ...history].slice(0, MAX_HISTORY));
-      if (currentRunRef.current === payload.runId) {
-        setCurrentRun(null);
-        setScriptInFlight(null);
+
+      if (projectId) {
+        const projectName = projectsById.get(projectId)?.name ?? 'Project';
+        if (status === 'Failed') {
+          pushToast({
+            title: `${projectName}: ${payload.script} failed`,
+            description:
+              payload.exitCode !== null
+                ? `Exited with code ${payload.exitCode}`
+                : 'Process exited unexpectedly.',
+            variant: 'error'
+          });
+        } else if (status === 'Success') {
+          pushToast({
+            title: `${projectName}: ${payload.script} completed`,
+            variant: 'success',
+            duration: 4000
+          });
+        } else if (status === 'Stopped') {
+          pushToast({
+            title: `${projectName}: ${payload.script} stopped`,
+            variant: 'info',
+            duration: 3500
+          });
+        }
+      }
+
+      // Clear the run for this project
+      if (projectId) {
+        setProjectRuns((current) => {
+          const updated = new Map(current);
+          const existing = updated.get(projectId);
+          if (existing?.id === payload.runId) {
+            updated.delete(projectId);
+          }
+          return updated;
+        });
       }
     });
     const offError = electronAPI.scripts.onError((payload) => {
-      if (currentRunRef.current !== payload.runId) {
-        return;
+      let projectId = runIdToProjectId.current.get(payload.runId);
+      if (!projectId && payload.projectId) {
+        projectId = payload.projectId;
+        runIdToProjectId.current.set(payload.runId, projectId);
       }
+      if (!projectId) return;
+
       const entry: RunHistory = {
         id: `${payload.runId}-error`,
         script: payload.script,
@@ -229,9 +281,31 @@ function App() {
         exitCode: null
       };
       setRunHistory((history) => [entry, ...history].slice(0, MAX_HISTORY));
-      setLogOutput((current) => `${current}\n[error] ${payload.message}`);
-      setCurrentRun(null);
-      setScriptInFlight(null);
+
+      // Update logs for that project
+      setProjectLogs((current) => {
+        const updated = new Map(current);
+        const existing = updated.get(projectId) || '';
+        updated.set(projectId, existing + `\n[error] ${payload.message}`);
+        return updated;
+      });
+
+      // Clear the run for this project
+      setProjectRuns((current) => {
+        const updated = new Map(current);
+        const existing = updated.get(projectId);
+        if (existing?.id === payload.runId) {
+          updated.delete(projectId);
+        }
+        return updated;
+      });
+
+      const projectName = projectId ? projectsById.get(projectId)?.name ?? 'Project' : 'Project';
+      pushToast({
+        title: `${projectName}: ${payload.script}`,
+        description: payload.message,
+        variant: 'error'
+      });
     });
 
     return () => {
@@ -239,7 +313,7 @@ function App() {
       offExit?.();
       offError?.();
     };
-  }, [electronAPI]);
+  }, [electronAPI, projectsById, pushToast]);
 
   useEffect(() => {
     if (!electronAPI) {
@@ -265,26 +339,148 @@ function App() {
     fetchProcesses();
     // Then fetch again after a short delay to catch any processes that started during initialization
     const immediateTimeout = window.setTimeout(fetchProcesses, 500);
-    // Then poll every 2 seconds (reduced from 3 for more responsive updates)
-    const interval = window.setInterval(fetchProcesses, 2000);
+    // Get port refresh interval from settings (default 2 seconds)
+    const refreshInterval = settings.getSettingAsNumber('portRefreshInterval', 2) * 1000;
+    // Poll at configured interval
+    const interval = window.setInterval(fetchProcesses, refreshInterval);
     return () => {
       ignore = true;
       window.clearTimeout(immediateTimeout);
       window.clearInterval(interval);
     };
-  }, [electronAPI]);
+  }, [electronAPI, settings.getSettingAsNumber('portRefreshInterval', 2)]);
 
-  const selectedProject = useMemo(
-    () => projects.find((project) => project.id === selectedProjectId) ?? null,
-    [projects, selectedProjectId]
+
+  useEffect(() => {
+    setDetectedUrls((current) => {
+      if (current.size === 0) {
+        return current;
+      }
+      const activeProjectIds = new Set<string>();
+      activeProcesses.forEach((proc) => {
+        const id = projectPathToId.get(proc.projectPath);
+        if (id) {
+          activeProjectIds.add(id);
+        }
+      });
+      let changed = false;
+      const next = new Map(current);
+      for (const key of current.keys()) {
+        if (!activeProjectIds.has(key)) {
+          next.delete(key);
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [activeProcesses, projectPathToId]);
+
+
+  // Load expected ports when project is selected
+  useEffect(() => {
+    if (!electronAPI?.scripts?.getAllExpectedPorts || !selectedProject) {
+      return;
+    }
+
+    let ignore = false;
+    const loadPorts = async () => {
+      try {
+        const ports = await electronAPI.scripts.getAllExpectedPorts(selectedProject.id);
+        if (!ignore) {
+          setExpectedPorts((prev) => {
+            const updated = new Map(prev);
+            updated.set(selectedProject.id, ports);
+            return updated;
+          });
+        }
+      } catch (error) {
+        console.error('Error loading expected ports:', error);
+      }
+    };
+
+    loadPorts();
+    return () => {
+      ignore = true;
+    };
+  }, [electronAPI, selectedProject]);
+
+  const fetchGitStatus = useCallback(
+    async (project: ProjectInfo) => {
+      if (!electronAPI?.git?.status) {
+        return;
+      }
+      setGitLoadingProjectId(project.id);
+      try {
+        const status = await electronAPI.git.status(project.path);
+        setGitStatusMap((prev) => {
+          const next = new Map(prev);
+          next.set(project.id, status);
+          return next;
+        });
+      } catch (error) {
+        console.error('Error loading git status:', error);
+        setGitStatusMap((prev) => {
+          const next = new Map(prev);
+          next.set(project.id, { isRepo: false });
+          return next;
+        });
+      } finally {
+        setGitLoadingProjectId((current) => (current === project.id ? null : current));
+      }
+    },
+    [electronAPI]
   );
 
-  const filteredProjects = useMemo(() => {
-    if (!query) return projects;
-    return projects.filter((project) =>
-      `${project.name} ${project.path} ${project.tags.join(' ')}`.toLowerCase().includes(query.toLowerCase())
-    );
-  }, [projects, query]);
+  useEffect(() => {
+    if (!selectedProject) {
+      return;
+    }
+    fetchGitStatus(selectedProject);
+  }, [selectedProject, fetchGitStatus]);
+
+  useEffect(() => {
+    if (!electronAPI?.git?.status || projects.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const projectsNeedingStatus = projects.filter((project) => !gitStatusMap.has(project.id));
+    if (projectsNeedingStatus.length === 0) {
+      return;
+    }
+
+    (async () => {
+      for (const project of projectsNeedingStatus) {
+        if (cancelled) break;
+        try {
+          const status = await electronAPI.git.status(project.path);
+          if (cancelled) break;
+          setGitStatusMap((prev) => {
+            if (prev.has(project.id)) {
+              return prev;
+            }
+            const next = new Map(prev);
+            next.set(project.id, status);
+            return next;
+          });
+        } catch {
+          if (cancelled) break;
+          setGitStatusMap((prev) => {
+            if (prev.has(project.id)) {
+              return prev;
+            }
+            const next = new Map(prev);
+            next.set(project.id, { isRepo: false });
+            return next;
+          });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [electronAPI, projects, gitStatusMap]);
 
   const projectScripts = selectedProject?.scripts ?? [];
   const latestRun = runHistory[0] ?? null;
@@ -293,46 +489,46 @@ function App() {
   const canCopyLog = canExportLog;
   const canClearLog = Boolean(logOutput.length);
 
-  const handleRescan = useCallback(async () => {
-    if (!electronAPI || scanDirectories === null) {
-      setShowSetup(true);
-      return;
-    }
-    setIsScanning(true);
-    try {
-      const result = await electronAPI.projects.scan(scanDirectories);
-      setProjects(result);
-      setSelectedProjectId((current) => {
-        if (current && result.some((project) => project.id === current)) {
-          return current;
-        }
-        return result[0]?.id ?? null;
-      });
-      setScanError(result.length === 0 ? 'No package.json files detected in the configured directories.' : null);
-    } catch (error) {
-      setScanError(error instanceof Error ? error.message : 'Failed to scan for projects.');
-    } finally {
-      setIsScanning(false);
-    }
-  }, [electronAPI, scanDirectories]);
-
   const handleRunScript = useCallback(
     async (script: ScriptInfo) => {
       if (!selectedProject) return;
       if (!electronAPI) {
-        setLogOutput('Script execution is available when running the desktop app.');
+        setProjectLogs((current) => {
+          const updated = new Map(current);
+          updated.set(selectedProject.id, 'Script execution is available when running the desktop app.');
+          return updated;
+        });
         return;
       }
       try {
-        setScriptInFlight(script.name);
-        setLogOutput(`Running ${script.name}...\n`);
+        // Initialize log for this project if needed
+        setProjectLogs((current) => {
+          const updated = new Map(current);
+          updated.set(selectedProject.id, `Running ${script.name}...\n`);
+          return updated;
+        });
+
         const run = await electronAPI.scripts.run({
           projectPath: selectedProject.path,
+          projectId: selectedProject.id,
           script: script.name
         });
         if (!run) return;
-        setCurrentRun({ id: run.runId, script: script.name });
-        
+
+        // Map runId to projectId
+        runIdToProjectId.current.set(run.runId, selectedProject.id);
+
+        // Set the current run for this project
+        setProjectRuns((current) => {
+          const updated = new Map(current);
+          updated.set(selectedProject.id, {
+            id: run.runId,
+            script: script.name,
+            projectPath: selectedProject.path
+          });
+          return updated;
+        });
+
         // Immediately fetch active processes to show the newly started script
         try {
           const processes = await electronAPI.processes.active();
@@ -342,7 +538,11 @@ function App() {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to run script.';
-        setLogOutput(message);
+        setProjectLogs((current) => {
+          const updated = new Map(current);
+          updated.set(selectedProject.id, message);
+          return updated;
+        });
         const failureEntry: RunHistory = {
           id: `${Date.now()}-${script.name}`,
           script: script.name,
@@ -352,8 +552,6 @@ function App() {
           exitCode: null
         };
         setRunHistory((current) => [failureEntry, ...current].slice(0, MAX_HISTORY));
-        setScriptInFlight(null);
-        setCurrentRun(null);
       }
     },
     [electronAPI, selectedProject]
@@ -362,7 +560,13 @@ function App() {
   const handleRestartScript = useCallback(
     async (script: ScriptInfo) => {
       if (!electronAPI) {
-        setLogOutput('Script execution is available when running the desktop app.');
+        if (selectedProject) {
+          setProjectLogs((current) => {
+            const updated = new Map(current);
+            updated.set(selectedProject.id, 'Script execution is available when running the desktop app.');
+            return updated;
+          });
+        }
         return;
       }
 
@@ -370,14 +574,24 @@ function App() {
         return;
       }
 
-      const somethingRunning = Boolean(currentRun);
-      if (somethingRunning && currentRun?.id) {
-        setLogOutput((current) => `${current}\nRestarting ${script.name}…`);
+      const projectRun = projectRuns.get(selectedProject.id);
+      if (projectRun?.id) {
+        setProjectLogs((current) => {
+          const updated = new Map(current);
+          const existing = updated.get(selectedProject.id) || '';
+          updated.set(selectedProject.id, existing + `\nRestarting ${script.name}…\n`);
+          return updated;
+        });
         try {
-          await electronAPI.scripts.stop(currentRun.id);
+          await electronAPI.scripts.stop(projectRun.id);
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unable to stop running script before restart.';
-          setLogOutput((current) => `${current}\n${message}`);
+          setProjectLogs((current) => {
+            const updated = new Map(current);
+            const existing = updated.get(selectedProject.id) || '';
+            updated.set(selectedProject.id, existing + `\n${message}\n`);
+            return updated;
+          });
         }
 
         // Give the process a short moment to exit before relaunching
@@ -386,15 +600,20 @@ function App() {
 
       await handleRunScript(script);
     },
-    [currentRun, electronAPI, handleRunScript, selectedProject]
+    [electronAPI, handleRunScript, selectedProject, projectRuns]
   );
 
   const handleStopScript = useCallback(async () => {
-    if (!electronAPI || !currentRun) return;
+    if (!electronAPI || !selectedProject || !currentRun) return;
     try {
       await electronAPI.scripts.stop(currentRun.id);
-      setLogOutput((current) => `${current}\nStopping process…`);
-      
+      setProjectLogs((current) => {
+        const updated = new Map(current);
+        const existing = updated.get(selectedProject.id) || '';
+        updated.set(selectedProject.id, existing + '\nStopping process…\n');
+        return updated;
+      });
+
       // Immediately fetch active processes to remove the stopped script from the list
       try {
         const processes = await electronAPI.processes.active();
@@ -404,72 +623,20 @@ function App() {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to stop process.';
-      setLogOutput((current) => `${current}\n${message}`);
+      setProjectLogs((current) => {
+        const updated = new Map(current);
+        const existing = updated.get(selectedProject.id) || '';
+        updated.set(selectedProject.id, existing + `\n${message}\n`);
+        return updated;
+      });
     }
-  }, [currentRun, electronAPI]);
-
-  const handleSaveDirectories = useCallback(() => {
-    const directories = parseDirectories(setupInput);
-    if (directories.length === 0) {
-      setSetupError('Enter at least one directory path.');
-      return;
-    }
-    setScanDirectories(directories);
-    setShowSetup(false);
-    setSetupError(null);
-  }, [setupInput]);
-
-  const handleUseRepoRoot = useCallback(() => {
-    setScanDirectories(['.']);
-    setShowSetup(false);
-    setSetupInput('.');
-    setSetupError(null);
-  }, []);
-
-  const handleOpenSetup = useCallback(() => {
-    setSetupInput((scanDirectories ?? []).join('\n'));
-    setSetupError(null);
-    setShowSetup(true);
-  }, [scanDirectories]);
-
-  const handleSelectFolder = useCallback(async () => {
-    if (!electronAPI) {
-      console.error('electronAPI is not available. Preload script may not be loading correctly.');
-      setSetupError('Electron API is not available. Please check the console for errors.');
-      return;
-    }
-    try {
-      const result = await electronAPI.dialog.selectDirectory();
-      if (!result.canceled && result.path) {
-        const currentDirs = parseDirectories(setupInput);
-        // Add the new folder if it's not already in the list
-        if (!currentDirs.includes(result.path)) {
-          const newDirs = [...currentDirs, result.path].join('\n');
-          setSetupInput(newDirs);
-          setSetupError(null);
-        } else {
-          setSetupError('This directory is already in the list.');
-        }
-      }
-    } catch (error) {
-      setSetupError('Failed to select directory. Please try again.');
-    }
-  }, [electronAPI, setupInput]);
-
-  const handleRemoveFolder = useCallback(
-    (pathToRemove: string) => {
-      const currentDirs = parseDirectories(setupInput);
-      const newDirs = currentDirs.filter((dir) => dir !== pathToRemove).join('\n');
-      setSetupInput(newDirs);
-      setSetupError(null);
-    },
-    [setupInput]
-  );
+  }, [currentRun, electronAPI, selectedProject]);
 
   const handleExportLog = useCallback(async () => {
-    if (!canExportLog) return;
+    if (!canExportLog || !selectedProject) return;
     const contents = logOutput;
-    const suggestedName = `localhost-hub-log-${new Date()
+    const projectName = selectedProject.name.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const suggestedName = `${projectName}-log-${new Date()
       .toISOString()
       .replace(/[:.]/g, '-')}.txt`;
     if (electronAPI?.logs?.export) {
@@ -478,7 +645,12 @@ function App() {
         await electronAPI.logs.export({ contents, suggestedName });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unable to export log.';
-        setLogOutput((current) => `${current}\n[error] ${message}`);
+        setProjectLogs((current) => {
+          const updated = new Map(current);
+          const existing = updated.get(selectedProject.id) || '';
+          updated.set(selectedProject.id, existing + `\n[error] ${message}\n`);
+          return updated;
+        });
       } finally {
         setIsExportingLog(false);
       }
@@ -498,15 +670,243 @@ function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  }, [canExportLog, electronAPI, logOutput]);
+  }, [canExportLog, electronAPI, logOutput, selectedProject]);
 
+  // Auto-scroll is now controlled by settings, so this is a no-op
+  // but kept for compatibility with LogsPanel
   const handleToggleAutoScroll = useCallback(() => {
-    setIsAutoScrollEnabled((current) => !current);
+    // Settings-based auto-scroll is read-only from UI
+    // User should change it in settings
   }, []);
 
   const handleClearLog = useCallback(() => {
-    setLogOutput('');
-  }, []);
+    if (!selectedProject) return;
+    setProjectLogs((current) => {
+      const updated = new Map(current);
+      updated.set(selectedProject.id, '');
+      return updated;
+    });
+  }, [selectedProject]);
+
+  const handleOpenInBrowser = useCallback(async (url: string) => {
+    if (electronAPI?.shell?.openExternal) {
+      await electronAPI.shell.openExternal(url);
+    } else if (typeof window !== 'undefined') {
+      window.open(url, '_blank');
+    }
+  }, [electronAPI]);
+
+  const handleRefreshGit = useCallback(() => {
+    if (!selectedProject) {
+      return;
+    }
+    fetchGitStatus(selectedProject);
+  }, [selectedProject, fetchGitStatus]);
+
+  const handleInstall = useCallback(
+    async (packageManager: string) => {
+      if (!electronAPI?.scripts?.install || !selectedProject) return;
+      try {
+        setProjectLogs((current) => {
+          const updated = new Map(current);
+          const existing = updated.get(selectedProject.id) || '';
+          updated.set(selectedProject.id, existing + `\nRunning ${packageManager} install...\n`);
+          return updated;
+        });
+
+        const run = await electronAPI.scripts.install({
+          projectPath: selectedProject.path,
+          packageManager
+        });
+
+        setProjectRuns((current) => {
+          const updated = new Map(current);
+          updated.set(selectedProject.id, {
+            id: run.runId,
+            script: 'install',
+            projectPath: selectedProject.path
+          });
+          return updated;
+        });
+
+        runIdToProjectId.current.set(run.runId, selectedProject.id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to start install';
+        setProjectLogs((current) => {
+          const updated = new Map(current);
+          const existing = updated.get(selectedProject.id) || '';
+          updated.set(selectedProject.id, existing + `\n[error] ${message}\n`);
+          return updated;
+        });
+      }
+    },
+    [electronAPI, selectedProject]
+  );
+
+  const handleInstallPackage = useCallback(
+    async (packageName: string, version?: string, isDev?: boolean) => {
+      if (!electronAPI?.packages?.installPackage || !selectedProject) return;
+      
+      // Detect package manager
+      let packageManager: string | undefined;
+      if (electronAPI.scripts?.detectPackageManager) {
+        try {
+          packageManager = await electronAPI.scripts.detectPackageManager(selectedProject.path);
+        } catch {
+          // Use default
+        }
+      }
+
+      try {
+        setProjectLogs((current) => {
+          const updated = new Map(current);
+          const existing = updated.get(selectedProject.id) || '';
+          const packageSpec = version ? `${packageName}@${version}` : packageName;
+          updated.set(selectedProject.id, existing + `\nInstalling ${packageSpec}...\n`);
+          return updated;
+        });
+
+        const run = await electronAPI.packages.installPackage({
+          projectPath: selectedProject.path,
+          packageName,
+          version,
+          isDev,
+          packageManager
+        });
+
+        setProjectRuns((current) => {
+          const updated = new Map(current);
+          updated.set(selectedProject.id, {
+            id: run.runId,
+            script: `install-${packageName}`,
+            projectPath: selectedProject.path
+          });
+          return updated;
+        });
+
+        runIdToProjectId.current.set(run.runId, selectedProject.id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to install package';
+        setProjectLogs((current) => {
+          const updated = new Map(current);
+          const existing = updated.get(selectedProject.id) || '';
+          updated.set(selectedProject.id, existing + `\n[error] ${message}\n`);
+          return updated;
+        });
+      }
+    },
+    [electronAPI, selectedProject]
+  );
+
+  const handleGitCommit = useCallback(
+    async ({ message, stageAll = true }: { message: string; stageAll?: boolean }) => {
+      if (!electronAPI?.git?.commit || !selectedProject) {
+        return;
+      }
+      const trimmed = message.trim();
+      if (!trimmed) {
+        return;
+      }
+      const project = selectedProject;
+      try {
+        await electronAPI.git.commit({
+          projectPath: project.path,
+          message: trimmed,
+          stageAll
+        });
+        pushToast({
+          title: `${project.name}: Commit created`,
+          variant: 'success',
+          duration: 4000
+        });
+        fetchGitStatus(project);
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : 'Git commit failed';
+        pushToast({
+          title: `${project.name}: Commit failed`,
+          description: messageText,
+          variant: 'error'
+        });
+        throw error;
+      }
+    },
+    [electronAPI, selectedProject, pushToast, fetchGitStatus]
+  );
+
+  const handleGitPull = useCallback(
+    async ({ remote, branch }: { remote?: string; branch?: string }) => {
+      if (!electronAPI?.git?.pull || !selectedProject) {
+        return;
+      }
+      const project = selectedProject;
+      const status = gitStatusMap.get(project.id);
+      const upstreamParts = status?.upstream ? status.upstream.split('/') : [];
+      const defaultRemote = upstreamParts[0] ?? 'origin';
+      const upstreamBranch = upstreamParts.slice(1).join('/') || status?.branch;
+      const resolvedRemote = remote?.trim() || defaultRemote;
+      const resolvedBranch = branch?.trim() || upstreamBranch;
+      try {
+        await electronAPI.git.pull({
+          projectPath: project.path,
+          remote: resolvedRemote,
+          branch: resolvedBranch
+        });
+        pushToast({
+          title: `${project.name}: Pulled latest changes`,
+          variant: 'success',
+          duration: 3500
+        });
+        fetchGitStatus(project);
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : 'Git pull failed';
+        pushToast({
+          title: `${project.name}: Pull failed`,
+          description: messageText,
+          variant: 'error'
+        });
+        throw error;
+      }
+    },
+    [electronAPI, selectedProject, pushToast, fetchGitStatus, gitStatusMap]
+  );
+
+  const handleGitPush = useCallback(
+    async ({ remote, branch, setUpstream }: { remote?: string; branch?: string; setUpstream?: boolean }) => {
+      if (!electronAPI?.git?.push || !selectedProject) {
+        return;
+      }
+      const project = selectedProject;
+      const status = gitStatusMap.get(project.id);
+      const upstreamParts = status?.upstream ? status.upstream.split('/') : [];
+      const defaultRemote = upstreamParts[0] ?? 'origin';
+      const upstreamBranch = upstreamParts.slice(1).join('/') || status?.branch;
+      const resolvedRemote = remote?.trim() || defaultRemote;
+      const resolvedBranch = branch?.trim() || upstreamBranch;
+      try {
+        await electronAPI.git.push({
+          projectPath: project.path,
+          remote: resolvedRemote,
+          branch: resolvedBranch,
+          setUpstream
+        });
+        pushToast({
+          title: `${project.name}: Pushed to ${resolvedRemote}`,
+          variant: 'success',
+          duration: 3500
+        });
+        fetchGitStatus(project);
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : 'Git push failed';
+        pushToast({
+          title: `${project.name}: Push failed`,
+          description: messageText,
+          variant: 'error'
+        });
+        throw error;
+      }
+    },
+    [electronAPI, selectedProject, pushToast, fetchGitStatus, gitStatusMap]
+  );
 
   const handleCopyLog = useCallback(async () => {
     if (!canCopyLog || typeof window === 'undefined') {
@@ -521,7 +921,14 @@ function App() {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to copy log contents.';
-      setLogOutput((current) => `${current}\n[error] ${message}`);
+      if (selectedProject) {
+        setProjectLogs((current) => {
+          const updated = new Map(current);
+          const existing = updated.get(selectedProject.id) || '';
+          updated.set(selectedProject.id, existing + `\n[error] ${message}\n`);
+          return updated;
+        });
+      }
       return;
     }
 
@@ -537,100 +944,169 @@ function App() {
       document.body.removeChild(textarea);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to copy log contents.';
-      setLogOutput((current) => `${current}\n[error] ${message}`);
+      if (selectedProject) {
+        setProjectLogs((current) => {
+          const updated = new Map(current);
+          const existing = updated.get(selectedProject.id) || '';
+          updated.set(selectedProject.id, existing + `\n[error] ${message}\n`);
+          return updated;
+        });
+      }
     }
-  }, [canCopyLog, logOutput]);
+  }, [canCopyLog, logOutput, selectedProject]);
+
+  // Apply UI settings
+  const sidebarWidth = settings.getSettingAsNumber('sidebarWidth', 288);
+  const compactMode = settings.getSettingAsBoolean('compactMode', false);
+  const fontSize = settings.getSettingAsString('fontSize', 'medium');
+  const reduceAnimations = settings.getSettingAsBoolean('reduceAnimations', false);
+  
+  const theme = settings.getSettingAsString('theme', 'dark');
+  const fontSizeClass = fontSize === 'small' ? 'text-sm' : fontSize === 'large' ? 'text-base' : 'text-sm';
+  const compactClass = compactMode ? 'gap-2' : 'gap-6';
+  const animationClass = reduceAnimations ? '' : '';
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const root = document.documentElement;
+    if (theme === 'light') {
+      root.classList.remove('dark');
+    } else if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (prefersDark) {
+        root.classList.add('dark');
+      } else {
+        root.classList.remove('dark');
+      }
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const handleChange = (event: MediaQueryListEvent) => {
+        if (event.matches) {
+          root.classList.add('dark');
+        } else {
+          root.classList.remove('dark');
+        }
+      };
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    }
+  }, [theme]);
 
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden">
-      <ProjectSidebar
-        query={query}
-        onQueryChange={setQuery}
-        filteredProjects={filteredProjects}
-        isScanning={isScanning}
-        selectedProjectId={selectedProjectId}
-        onSelectProject={(id) => setSelectedProjectId(id)}
-        pingResponse={pingResponse}
-        scanDirectories={scanDirectories}
-        activeProcesses={activeProcesses}
-        runHistory={runHistory}
-      />
+    <div className={`flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden flex-col ${fontSizeClass}`}>
+      {electronAPI && <TitleBar />}
+      <div className="flex flex-1 overflow-hidden">
+        <ProjectSidebar
+          style={{ width: `${sidebarWidth}px` }}
+          query={query}
+          onQueryChange={setQuery}
+          filteredProjects={filteredProjects}
+          allProjects={projects}
+          isScanning={isScanning}
+          selectedProjectId={selectedProjectId}
+          onSelectProject={selectProject}
+          pingResponse={pingResponse}
+          scanDirectories={scanDirectories}
+          activeProcesses={activeProcesses}
+          runHistory={runHistory}
+          gitStatuses={gitStatusMap}
+          onOpenSettings={() => setShowSettings(true)}
+          onRescan={rescan}
+          onOpenSetup={openSetup}
+          onOpenWorkspaces={() => setShowWorkspaces(true)}
+        />
 
-      <main className="flex flex-1 flex-col gap-6 p-8 overflow-y-auto">
-        <header className="flex flex-wrap items-center gap-4">
-          <div>
-            <p className="text-sm text-slate-400">{selectedProject?.path ?? 'No project selected'}</p>
-            <h1 className="text-3xl font-semibold text-white">{selectedProject?.name ?? 'Localhost Hub'}</h1>
-          </div>
-          <div className="ml-auto flex flex-wrap gap-3">
-            <button
-              className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-2 text-sm font-medium text-slate-200 hover:border-indigo-400 hover:text-white"
-              onClick={handleOpenSetup}
-            >
-              {scanDirectories ? 'Edit scan directories' : 'Choose directories'}
-            </button>
-            <button
-              className="rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-4 py-2 text-sm font-medium text-indigo-200 hover:bg-indigo-500/30 disabled:opacity-40"
-              disabled={isScanning || scanDirectories === null}
-              onClick={handleRescan}
-            >
-              {isScanning ? 'Scanning…' : 'Rescan directories'}
-            </button>
-          </div>
-        </header>
-
-        {scanDirectories === null && (
-          <div className="rounded-xl border border-indigo-500/40 bg-indigo-500/5 p-4 text-sm text-indigo-100">
-            Add directories to scan so Localhost Hub knows where to discover projects.
-          </div>
+      <main className={`flex flex-1 flex-col ${compactClass} p-8 overflow-y-auto`}>
+        {!selectedProject && (
+          <ProjectEmptyState
+            scanDirectories={scanDirectories}
+            isScanning={isScanning}
+            onOpenSetup={openSetup}
+            onRescan={rescan}
+          />
         )}
 
-        {scanError && (
-          <div className="rounded-xl border border-rose-500/60 bg-rose-500/5 p-4 text-sm text-rose-200">{scanError}</div>
+        <ScanStatusBanner scanDirectories={scanDirectories} scanError={scanError} />
+
+        {selectedProject && (
+          <ProjectView
+            project={selectedProject}
+            scriptInFlight={scriptInFlight}
+            activeProcesses={activeProcesses}
+            expectedPorts={expectedPorts.get(selectedProject.id) || {}}
+            detectedUrl={detectedUrls.get(selectedProject.id) || null}
+            currentRunId={currentRun?.id || null}
+            gitStatus={currentGitStatus}
+            gitStatusLoading={isGitStatusLoading}
+            onRefreshGit={handleRefreshGit}
+            onOpenInBrowser={handleOpenInBrowser}
+            onInstall={handleInstall}
+            onStopScript={handleStopScript}
+            onRestartScript={handleRestartScript}
+            electronAPI={electronAPI}
+            activeTab={activeTab}
+            onChangeTab={setActiveTab}
+            projectScripts={projectScripts}
+            onRunScript={handleRunScript}
+            logStatusLabel={logStatusLabel}
+            logOutput={logOutput}
+            logContainerRef={logContainerRef}
+            onExportLog={handleExportLog}
+            isExportingLog={isExportingLog}
+            canExportLog={canExportLog}
+            isAutoScrollEnabled={isAutoScrollEnabled}
+            onToggleAutoScroll={handleToggleAutoScroll}
+            onClearLog={handleClearLog}
+            onCopyLog={handleCopyLog}
+            canCopyLog={canCopyLog}
+            canClearLog={canClearLog}
+            onInstallPackage={handleInstallPackage}
+            onGitCommit={handleGitCommit}
+            onGitPull={handleGitPull}
+            onGitPush={handleGitPush}
+          />
         )}
-
-        <div className="grid gap-6 lg:grid-cols-3">
-          <Section title="Scripts">
-            <ScriptsPanel
-              scripts={projectScripts}
-              scriptInFlight={scriptInFlight}
-              onRunScript={handleRunScript}
-              onStopScript={handleStopScript}
-              onRestartScript={handleRestartScript}
-            />
-          </Section>
-
-          <Section title="Logs" action={<span className="text-xs uppercase tracking-wide text-slate-500">{logStatusLabel}</span>}>
-            <LogsPanel
-              logOutput={logOutput}
-              logContainerRef={logContainerRef}
-              onExportLog={handleExportLog}
-              isExporting={isExportingLog}
-              canExport={canExportLog}
-              isAutoScrollEnabled={isAutoScrollEnabled}
-              onToggleAutoScroll={handleToggleAutoScroll}
-              onClearLog={handleClearLog}
-              onCopyLog={handleCopyLog}
-              canCopy={canCopyLog}
-              canClear={canClearLog}
-            />
-          </Section>
-        </div>
       </main>
 
         <SetupModal
           isOpen={showSetup}
           setupInput={setupInput}
           onChange={setSetupInput}
-          onSave={handleSaveDirectories}
-          onUseRepoRoot={handleUseRepoRoot}
-          onClose={() => setShowSetup(false)}
+          onSave={saveDirectories}
+          onUseRepoRoot={useRepoRoot}
+          onClose={closeSetup}
           setupError={setupError}
-          onSelectFolder={handleSelectFolder}
-          onRemoveFolder={handleRemoveFolder}
+          onSelectFolder={selectFolder}
+          onRemoveFolder={removeFolder}
         />
+        <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} electronAPI={electronAPI} />
+        <WorkspacesModal
+          isOpen={showWorkspaces}
+          onClose={() => setShowWorkspaces(false)}
+          workspaces={workspaces}
+          projects={projects}
+          loading={workspacesLoading}
+          onCreateWorkspace={createWorkspace}
+          onDeleteWorkspace={deleteWorkspace}
+          onAddItem={addWorkspaceItem}
+          onUpdateItem={updateWorkspaceItem}
+          onRemoveItem={removeWorkspaceItem}
+          onStartWorkspace={startWorkspace}
+          onStopWorkspace={stopWorkspace}
+        />
+      </div>
     </div>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <ToastProvider>
+      <AppContent />
+      <ToastViewport />
+    </ToastProvider>
+  );
+}

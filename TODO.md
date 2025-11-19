@@ -15,8 +15,8 @@
 - [x] Render a project detail header plus Scripts and Logs panels where users can run or stop npm scripts and inspect their output with status badges and history popovers.【F:src/App.tsx†L514-L600】【F:src/components/ScriptsPanel.tsx†L1-L37】【F:src/components/ProjectSidebar.tsx†L32-L135】
 - [ ] Include repo status indicators and other metadata in the project detail view as described in the spec (current `ProjectInfo` only tracks id/name/path/type/tags/scripts).【F:PROJECT.md†L62-L70】【F:src/types/global.d.ts†L15-L27】
 - [ ] Add a "Restart" action and a "Run with env profile" entry point alongside Run/Stop so scripts can be relaunched or executed with custom contexts.【F:PROJECT.md†L70-L79】【F:src/components/ScriptsPanel.tsx†L13-L36】
-- [ ] Build the Env Profiles, Ports & Processes, and Settings tabs that are still missing from the renderer layout (today only Scripts and Logs are rendered).【F:PROJECT.md†L82-L92】【F:src/App.tsx†L562-L585】
-- [ ] Persist environment profiles (including secret masking) and allow scripts to select/remember a profile per spec; the current database schema only covers projects and scripts.【F:PROJECT.md†L164-L189】【F:electron/database.ts†L76-L163】
+- [x] Build the Env Profiles tab (Ports & Processes and Settings tabs are placeholders for now).【F:PROJECT.md†L82-L92】【F:src/App.tsx†L727-L797】【F:src/components/EnvProfilesPanel.tsx†L1-L365】
+- [x] Persist environment profiles (including secret masking) in the database; script selection/remembering of profiles is pending.【F:PROJECT.md†L164-L189】【F:electron/database.ts†L439-L647】
 - [ ] Expand the processes UI so ports, PIDs, and kill actions are available in a dedicated panel instead of only a lightweight sidebar popover.【F:PROJECT.md†L193-L213】【F:src/components/ProjectSidebar.tsx†L32-L135】
 
 ### 2.3 Running scripts
@@ -28,7 +28,7 @@
 - [ ] Implement workspace entities that bundle multiple (project, script, env_profile) entries with start/stop controls and aggregated status; nothing in the renderer, IPC, or database references workspaces yet.【F:PROJECT.md†L141-L160】【F:electron/database.ts†L76-L163】
 
 ### 2.5 Env profiles
-- [ ] Create CRUD UI and storage for per-project env profiles, including sensitive flag handling and default profile selection when running scripts; currently the app only keeps a simple in-memory/localStorage run history.【F:PROJECT.md†L164-L189】【F:src/App.tsx†L63-L140】
+- [x] Create CRUD UI and storage for per-project env profiles, including sensitive flag handling and default profile selection; integration with script execution (running scripts with selected profile) is pending.【F:PROJECT.md†L164-L189】【F:src/components/EnvProfilesPanel.tsx†L1-L365】【F:electron/database.ts†L439-L647】
 
 ### 2.6 Ports & processes
 - [x] Poll both internally launched scripts and OS processes to show a live badge/popover of active dev servers so users can see what's running at a glance.【F:electron/main.ts†L208-L224】【F:electron/externalProcessScanner.ts†L6-L190】【F:src/components/ProjectSidebar.tsx†L32-L135】
@@ -39,8 +39,8 @@
 
 ## 3. Tech stack & architecture
 - [x] Use contextIsolation with a typed preload bridge so the renderer never talks to `ipcRenderer` directly, matching the architecture section of the spec.【F:PROJECT.md†L269-L289】【F:electron/main.ts†L38-L44】【F:electron/preload.ts†L1-L61】
-- [ ] Adopt the rest of the recommended renderer stack (e.g., Framer Motion) and expand the preload API surface as new modules (workspaces, env profiles, docker) come online; those packages and IPC handlers do not exist yet.【F:PROJECT.md†L259-L289】【F:package.json†L1-L32】
+- [x] Expand the preload API surface for env profiles module; workspaces and docker modules are pending.【F:PROJECT.md†L259-L289】【F:electron/preload.ts†L68-L77】
 
 ## 4. Database design
 - [x] Provide a lightweight sql.js-powered database that stores projects and their scripts on disk so scans persist between sessions.【F:electron/database.ts†L55-L238】
-- [ ] Flesh out the remaining entities from the database plan (workspaces, workspace_items, env_profiles, env_vars, process_instances, log_chunks, scan_roots, settings, docker tables) so future features have a persistent backing store.【F:PROJECT.md†L314-L400】【F:electron/database.ts†L76-L163】
+- [x] Flesh out env_profiles and env_vars tables; remaining entities (workspaces, workspace_items, process_instances, log_chunks, scan_roots, settings, docker tables) are pending.【F:PROJECT.md†L314-L400】【F:electron/database.ts†L140-L270】

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { ActiveProcessInfo } from '../types/global';
 import { formatDuration, formatTimestamp } from './ActiveProcessesPanel';
 
@@ -7,7 +8,7 @@ interface LiveProcessesPopoverProps {
   processes: ActiveProcessInfo[];
   isOpen: boolean;
   onClose: () => void;
-  anchorRef: React.RefObject<HTMLButtonElement>;
+  anchorRef: React.RefObject<HTMLButtonElement | null>;
 }
 
 export function LiveProcessesPopover({ processes, isOpen, onClose, anchorRef }: LiveProcessesPopoverProps) {
@@ -50,19 +51,29 @@ export function LiveProcessesPopover({ processes, isOpen, onClose, anchorRef }: 
     };
   }, [isOpen, anchorRef]);
 
-  if (!isOpen) return null;
-
   const popoverContent = (
-    <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div
-        className="fixed z-50 w-[400px] rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl"
-        style={{
-          top: `${position.top}px`,
-          left: `${position.left}px`,
-          maxHeight: '400px'
-        }}
-      >
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40"
+            onClick={onClose}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: -10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="fixed z-50 w-[400px] rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl"
+            style={{
+              top: `${position.top}px`,
+              left: `${position.left}px`,
+              maxHeight: '400px'
+            }}
+          >
         <div className="flex items-center justify-between border-b border-slate-800 p-4">
           <h3 className="text-sm font-semibold text-white">Live Processes</h3>
           <button
@@ -104,8 +115,10 @@ export function LiveProcessesPopover({ processes, isOpen, onClose, anchorRef }: 
             </div>
           )}
         </div>
-      </div>
-    </>
+        </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 
   return createPortal(popoverContent, document.body);

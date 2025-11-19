@@ -30,10 +30,27 @@ type PackageJson = {
 };
 
 const DEFAULT_MAX_DEPTH = Number(process.env.LOCALHOST_HUB_SCAN_DEPTH ?? '2');
-const IGNORED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build']);
+const DEFAULT_IGNORED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build']);
 
-export async function scanProjects(scanRoots: string[]): Promise<ProjectInfo[]> {
-  const maxDepth = Number.isFinite(DEFAULT_MAX_DEPTH) ? DEFAULT_MAX_DEPTH : 2;
+export async function scanProjects(
+  scanRoots: string[],
+  options?: { maxDepth?: number; ignorePatterns?: string[] }
+): Promise<ProjectInfo[]> {
+  const maxDepth = options?.maxDepth !== undefined 
+    ? (Number.isFinite(options.maxDepth) ? options.maxDepth : DEFAULT_MAX_DEPTH)
+    : DEFAULT_MAX_DEPTH;
+  
+  // Build ignore set from patterns
+  const ignoredDirs = new Set(DEFAULT_IGNORED_DIRS);
+  if (options?.ignorePatterns) {
+    for (const pattern of options.ignorePatterns) {
+      const trimmed = pattern.trim();
+      if (trimmed) {
+        ignoredDirs.add(trimmed);
+      }
+    }
+  }
+  
   const projects: ProjectInfo[] = [];
   const seenPaths = new Set<string>();
 
@@ -43,7 +60,7 @@ export async function scanProjects(scanRoots: string[]): Promise<ProjectInfo[]> 
       continue;
     }
     seenPaths.add(absoluteRoot);
-    const fromRoot = await findProjectsInDirectory(absoluteRoot, maxDepth);
+    const fromRoot = await findProjectsInDirectory(absoluteRoot, maxDepth, ignoredDirs);
     projects.push(...fromRoot);
   }
 
@@ -51,13 +68,13 @@ export async function scanProjects(scanRoots: string[]): Promise<ProjectInfo[]> 
   return Array.from(uniqueByPath.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function findProjectsInDirectory(root: string, maxDepth: number): Promise<ProjectInfo[]> {
+async function findProjectsInDirectory(root: string, maxDepth: number, ignoredDirs: Set<string>): Promise<ProjectInfo[]> {
   const results: ProjectInfo[] = [];
   await walk(root, 0);
   return results;
 
   async function walk(directory: string, depth: number) {
-    if (depth > maxDepth) {
+    if (maxDepth > 0 && depth > maxDepth) {
       return;
     }
 
@@ -83,7 +100,7 @@ async function findProjectsInDirectory(root: string, maxDepth: number): Promise<
         continue;
       }
       const entryName = normalizeName(entry.name);
-      if (IGNORED_DIRS.has(entryName)) {
+      if (ignoredDirs.has(entryName)) {
         continue;
       }
       await walk(join(directory, entryName), depth + 1);

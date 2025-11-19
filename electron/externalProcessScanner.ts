@@ -10,6 +10,8 @@ export type ExternalProcess = {
   projectPath: string;
   startedAt: number;
   isExternal: true;
+  pid?: number;
+  port?: number;
 };
 
 // Common development ports
@@ -41,12 +43,13 @@ function isRelevantProcess(command: string, processName: string): boolean {
   const lowerCommand = command.toLowerCase();
   const lowerName = processName.toLowerCase();
   
-  // Exclude Electron processes and this app itself
-  if (lowerCommand.includes('electron') && lowerCommand.includes('localhost-hub')) {
+  // Exclude the Electron main process (the app itself), but NOT dev servers running for localhost-hub
+  // The Electron main process will have 'electron' and the path to main.js or similar
+  if (lowerCommand.includes('electron') && (lowerCommand.includes('main.js') || lowerCommand.includes('dist-electron'))) {
     return false;
   }
   
-  // Exclude grep processes
+  // Exclude grep/lsof/ps processes used for scanning
   if (lowerCommand.includes('grep') || lowerCommand.includes('lsof') || lowerCommand.includes('ps ')) {
     return false;
   }
@@ -86,7 +89,16 @@ async function scanProcessesLinux(): Promise<ExternalProcess[]> {
         const { stdout: cmdOutput } = await execAsync(`ps -p ${pid} -o command= 2>/dev/null || true`);
         const command = cmdOutput.trim();
         
-        if (command && isRelevantProcess(command, '')) {
+        if (!command) continue;
+        
+        // If it's listening on a dev port, include it if it's relevant OR if it's a node process
+        // (node processes on dev ports are likely dev servers)
+        const isNodeProcess = command.includes('node') || command.includes('npm');
+        if (isRelevantProcess(command, '') || (isNodeProcess && !command.includes('grep') && !command.includes('lsof'))) {
+          // Double-check: exclude the Electron main process
+          if (command.includes('electron') && (command.includes('main.js') || command.includes('dist-electron'))) {
+            continue;
+          }
           processMap.set(pid, { command, port });
         }
       } catch {
@@ -134,12 +146,28 @@ async function scanProcessesLinux(): Promise<ExternalProcess[]> {
     for (const [pid, { command, port }] of processMap.entries()) {
       // Extract a meaningful name from the command
       let script = 'dev server';
-      if (command.includes('vite')) script = 'vite';
+      if (command.includes('vite')) {
+        // Check if it's a specific vite command
+        if (command.includes('vite dev') || command.includes('vite --')) {
+          script = 'vite dev';
+        } else {
+          script = 'vite';
+        }
+      } else if (command.includes('react-scripts')) script = 'react-scripts';
       else if (command.includes('react')) script = 'react';
+      else if (command.includes('next dev')) script = 'next dev';
       else if (command.includes('next')) script = 'next';
       else if (command.includes('npm run')) {
         const match = command.match(/npm run (\w+)/);
         if (match) script = match[1];
+      } else if (command.includes('node')) {
+        // Try to extract script name from node command
+        const nodeMatch = command.match(/node\s+(?:.*\/)?(\w+\.(?:js|ts|mjs))/);
+        if (nodeMatch) {
+          script = nodeMatch[1].replace(/\.(js|ts|mjs)$/, '');
+        } else {
+          script = 'node server';
+        }
       }
       
       // Try to extract project path from command
@@ -179,7 +207,9 @@ async function scanProcessesLinux(): Promise<ExternalProcess[]> {
         command: command.substring(0, 200), // Truncate long commands
         projectPath,
         startedAt: Date.now() - 3600000, // Estimate: started 1 hour ago (we don't have exact time)
-        isExternal: true
+        isExternal: true,
+        pid,
+        port
       });
     }
   } catch (error) {
@@ -241,7 +271,9 @@ async function scanProcessesWin32(): Promise<ExternalProcess[]> {
             command: command.substring(0, 200),
             projectPath: 'Unknown',
             startedAt: Date.now() - 3600000,
-            isExternal: true
+            isExternal: true,
+            pid,
+            port
           });
         }
       } catch {
