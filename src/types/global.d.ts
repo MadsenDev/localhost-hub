@@ -195,9 +195,6 @@ export interface ElectronAPI {
   };
   git: {
     status: (projectPath: string) => Promise<GitStatusInfo>;
-     commit: (payload: { projectPath: string; message: string; stageAll?: boolean }) => Promise<{ output: string }>;
-     pull: (payload: { projectPath: string; remote?: string; branch?: string }) => Promise<{ output: string }>;
-     push: (payload: { projectPath: string; remote?: string; branch?: string; setUpstream?: boolean }) => Promise<{ output: string }>;
   };
   workspaces: {
     list: () => Promise<Workspace[]>;

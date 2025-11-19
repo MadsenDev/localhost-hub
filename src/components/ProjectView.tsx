@@ -41,9 +41,6 @@ interface ProjectViewProps {
   canCopyLog: boolean;
   canClearLog: boolean;
   onInstallPackage: (packageName: string, version?: string, isDev?: boolean) => Promise<void>;
-  onGitCommit: (payload: { message: string; stageAll?: boolean }) => Promise<void>;
-  onGitPull: (payload: { remote?: string; branch?: string }) => Promise<void>;
-  onGitPush: (payload: { remote?: string; branch?: string; setUpstream?: boolean }) => Promise<void>;
 }
 
 export function ProjectView({
@@ -77,10 +74,7 @@ export function ProjectView({
   onCopyLog,
   canCopyLog,
   canClearLog,
-  onInstallPackage,
-  onGitCommit,
-  onGitPull,
-  onGitPush
+  onInstallPackage
 }: ProjectViewProps) {
   const handleHeaderRestart = () => {
     if (!scriptInFlight) return;
@@ -181,9 +175,6 @@ export function ProjectView({
               gitStatus={gitStatus}
               gitStatusLoading={gitStatusLoading}
               onRefreshGit={onRefreshGit}
-              onCommit={onGitCommit}
-              onPull={onGitPull}
-              onPush={onGitPush}
             />
           </Section>
         )}

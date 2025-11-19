@@ -13,12 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     scan: (directories?: string[]) => ipcRenderer.invoke('projects:scan', directories)
   },
   git: {
-    status: (projectPath: string) => ipcRenderer.invoke('git:status', projectPath),
-    commit: (payload: { projectPath: string; message: string; stageAll?: boolean }) =>
-      ipcRenderer.invoke('git:commit', payload),
-    pull: (payload: { projectPath: string; remote?: string; branch?: string }) => ipcRenderer.invoke('git:pull', payload),
-    push: (payload: { projectPath: string; remote?: string; branch?: string; setUpstream?: boolean }) =>
-      ipcRenderer.invoke('git:push', payload)
+    status: (projectPath: string) => ipcRenderer.invoke('git:status', projectPath)
   },
   processes: {
     active: () => ipcRenderer.invoke('processes:active'),

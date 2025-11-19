@@ -11,7 +11,7 @@ import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);
 import { scanProjects, type ProjectInfo } from './projectScanner';
-import { getGitStatus, gitCommit, gitPull, gitPush } from './gitStatus';
+import { getGitStatus } from './gitStatus';
 import {
   initializeDatabase,
   loadProjects,
@@ -911,31 +911,6 @@ ipcMain.handle('shell:openExternal', async (_event, url: string) => {
 
 ipcMain.handle('git:status', async (_event, projectPath: string) => {
   return getGitStatus(projectPath);
-});
-
-ipcMain.handle('git:commit', async (_event, payload: { projectPath: string; message: string; stageAll?: boolean }) => {
-  if (!payload?.projectPath || !payload?.message) {
-    throw new Error('projectPath and message are required');
-  }
-  return gitCommit(payload.projectPath, payload.message, { stageAll: payload.stageAll });
-});
-
-ipcMain.handle('git:pull', async (_event, payload: { projectPath: string; remote?: string; branch?: string }) => {
-  if (!payload?.projectPath) {
-    throw new Error('projectPath is required');
-  }
-  return gitPull(payload.projectPath, { remote: payload.remote, branch: payload.branch });
-});
-
-ipcMain.handle('git:push', async (_event, payload: { projectPath: string; remote?: string; branch?: string; setUpstream?: boolean }) => {
-  if (!payload?.projectPath) {
-    throw new Error('projectPath is required');
-  }
-  return gitPush(payload.projectPath, {
-    remote: payload.remote,
-    branch: payload.branch,
-    setUpstream: payload.setUpstream
-  });
 });
 
 // Detect package manager from lock files

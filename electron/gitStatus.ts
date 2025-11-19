@@ -1,4 +1,4 @@
-import { execSync, spawnSync } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
 export type GitStatusInfo = {
@@ -101,55 +101,5 @@ export function getGitStatus(projectPath: string): GitStatusInfo {
     changes,
     lastCommit
   };
-}
-
-function runGitCommand(projectPath: string, args: string[]) {
-  const cwd = resolve(projectPath);
-  const result = spawnSync('git', args, {
-    cwd,
-    encoding: 'utf-8'
-  });
-  if (result.status !== 0) {
-    const errorMessage = result.stderr?.trim() || `Git command failed: git ${args.join(' ')}`;
-    throw new Error(errorMessage);
-  }
-  return result.stdout?.trim() ?? '';
-}
-
-export function gitCommit(projectPath: string, message: string, options?: { stageAll?: boolean }) {
-  const stageAll = options?.stageAll ?? true;
-  if (stageAll) {
-    runGitCommand(projectPath, ['add', '--all']);
-  }
-  const output = runGitCommand(projectPath, ['commit', '-m', message]);
-  return { output };
-}
-
-export function gitPull(projectPath: string, options?: { remote?: string; branch?: string }) {
-  const args = ['pull'];
-  if (options?.remote) {
-    args.push(options.remote);
-  }
-  if (options?.branch) {
-    args.push(options.branch);
-  }
-  const output = runGitCommand(projectPath, args);
-  return { output };
-}
-
-export function gitPush(projectPath: string, options?: { remote?: string; branch?: string; setUpstream?: boolean }) {
-  const args = ['push'];
-  if (options?.setUpstream && options.remote && options.branch) {
-    args.push('-u', options.remote, options.branch);
-  } else {
-    if (options?.remote) {
-      args.push(options.remote);
-    }
-    if (options?.branch) {
-      args.push(options.branch);
-    }
-  }
-  const output = runGitCommand(projectPath, args);
-  return { output };
 }
 

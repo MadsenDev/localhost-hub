@@ -798,115 +798,6 @@ function AppContent() {
     [electronAPI, selectedProject]
   );
 
-  const handleGitCommit = useCallback(
-    async ({ message, stageAll = true }: { message: string; stageAll?: boolean }) => {
-      if (!electronAPI?.git?.commit || !selectedProject) {
-        return;
-      }
-      const trimmed = message.trim();
-      if (!trimmed) {
-        return;
-      }
-      const project = selectedProject;
-      try {
-        await electronAPI.git.commit({
-          projectPath: project.path,
-          message: trimmed,
-          stageAll
-        });
-        pushToast({
-          title: `${project.name}: Commit created`,
-          variant: 'success',
-          duration: 4000
-        });
-        fetchGitStatus(project);
-      } catch (error) {
-        const messageText = error instanceof Error ? error.message : 'Git commit failed';
-        pushToast({
-          title: `${project.name}: Commit failed`,
-          description: messageText,
-          variant: 'error'
-        });
-        throw error;
-      }
-    },
-    [electronAPI, selectedProject, pushToast, fetchGitStatus]
-  );
-
-  const handleGitPull = useCallback(
-    async ({ remote, branch }: { remote?: string; branch?: string }) => {
-      if (!electronAPI?.git?.pull || !selectedProject) {
-        return;
-      }
-      const project = selectedProject;
-      const status = gitStatusMap.get(project.id);
-      const upstreamParts = status?.upstream ? status.upstream.split('/') : [];
-      const defaultRemote = upstreamParts[0] ?? 'origin';
-      const upstreamBranch = upstreamParts.slice(1).join('/') || status?.branch;
-      const resolvedRemote = remote?.trim() || defaultRemote;
-      const resolvedBranch = branch?.trim() || upstreamBranch;
-      try {
-        await electronAPI.git.pull({
-          projectPath: project.path,
-          remote: resolvedRemote,
-          branch: resolvedBranch
-        });
-        pushToast({
-          title: `${project.name}: Pulled latest changes`,
-          variant: 'success',
-          duration: 3500
-        });
-        fetchGitStatus(project);
-      } catch (error) {
-        const messageText = error instanceof Error ? error.message : 'Git pull failed';
-        pushToast({
-          title: `${project.name}: Pull failed`,
-          description: messageText,
-          variant: 'error'
-        });
-        throw error;
-      }
-    },
-    [electronAPI, selectedProject, pushToast, fetchGitStatus, gitStatusMap]
-  );
-
-  const handleGitPush = useCallback(
-    async ({ remote, branch, setUpstream }: { remote?: string; branch?: string; setUpstream?: boolean }) => {
-      if (!electronAPI?.git?.push || !selectedProject) {
-        return;
-      }
-      const project = selectedProject;
-      const status = gitStatusMap.get(project.id);
-      const upstreamParts = status?.upstream ? status.upstream.split('/') : [];
-      const defaultRemote = upstreamParts[0] ?? 'origin';
-      const upstreamBranch = upstreamParts.slice(1).join('/') || status?.branch;
-      const resolvedRemote = remote?.trim() || defaultRemote;
-      const resolvedBranch = branch?.trim() || upstreamBranch;
-      try {
-        await electronAPI.git.push({
-          projectPath: project.path,
-          remote: resolvedRemote,
-          branch: resolvedBranch,
-          setUpstream
-        });
-        pushToast({
-          title: `${project.name}: Pushed to ${resolvedRemote}`,
-          variant: 'success',
-          duration: 3500
-        });
-        fetchGitStatus(project);
-      } catch (error) {
-        const messageText = error instanceof Error ? error.message : 'Git push failed';
-        pushToast({
-          title: `${project.name}: Push failed`,
-          description: messageText,
-          variant: 'error'
-        });
-        throw error;
-      }
-    },
-    [electronAPI, selectedProject, pushToast, fetchGitStatus, gitStatusMap]
-  );
 
   const handleCopyLog = useCallback(async () => {
     if (!canCopyLog || typeof window === 'undefined') {
@@ -1064,9 +955,6 @@ function AppContent() {
             canCopyLog={canCopyLog}
             canClearLog={canClearLog}
             onInstallPackage={handleInstallPackage}
-            onGitCommit={handleGitCommit}
-            onGitPull={handleGitPull}
-            onGitPush={handleGitPush}
           />
         )}
       </main>
