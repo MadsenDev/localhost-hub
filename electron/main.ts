@@ -3,9 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { writeFile, mkdir } from 'node:fs/promises';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -103,7 +104,7 @@ function createWindow() {
     minWidth: 1000,
     minHeight: 640,
     title: 'Localhost Hub',
-    backgroundColor: '#0f172a',
+    backgroundColor: '#0f172a', // Match loading screen background (slate-900)
     frame: false,
     titleBarStyle: 'hidden',
     icon: windowIcon,
@@ -720,16 +721,17 @@ ipcMain.handle('logs:export', async (_event, payload: { contents?: string; sugge
   return { saved: true, filePath: result.filePath };
 });
 
-ipcMain.handle('dialog:selectDirectory', async () => {
+ipcMain.handle('dialog:selectDirectory', async (_event, options?: { title?: string }) => {
   const window = BrowserWindow.getFocusedWindow() ?? mainWindow ?? undefined;
+  const title = options?.title || 'Select directory';
   const result = window
     ? await dialog.showOpenDialog(window, {
         properties: ['openDirectory'],
-        title: 'Select directory to scan for projects'
+        title
       })
     : await dialog.showOpenDialog({
         properties: ['openDirectory'],
-        title: 'Select directory to scan for projects'
+        title
       });
 
   if (result.canceled || result.filePaths.length === 0) {
@@ -1189,4 +1191,99 @@ ipcMain.handle('packages:installPackage', async (_event, payload: { projectPath:
   });
 
   return { runId, startedAt, command: commandString, script: `install-${packageName}`, projectPath };
+});
+
+// Create new project IPC handler
+ipcMain.handle('projects:create', async (_event, payload: {
+  name: string;
+  directory: string;
+  description?: string;
+  packages: string[];
+  packageManager: 'npm' | 'yarn' | 'pnpm' | 'bun';
+  installDependencies: boolean;
+}) => {
+  const { name, directory, description, packages, packageManager, installDependencies } = payload;
+
+  if (!name || !directory) {
+    throw new Error('Project name and directory are required');
+  }
+
+  // Create project path
+  const projectPath = join(directory, name);
+
+  // Check if directory already exists
+  if (existsSync(projectPath)) {
+    throw new Error(`Directory "${projectPath}" already exists`);
+  }
+
+  // Create project directory
+  await mkdir(projectPath, { recursive: true });
+
+  // Create package.json
+  const packageJson: any = {
+    name,
+    version: '1.0.0',
+    description: description || '',
+    main: 'index.js',
+    scripts: {
+      test: 'echo "Error: no test specified" && exit 1'
+    },
+    keywords: [],
+    author: '',
+    license: 'ISC'
+  };
+
+  // Add dependencies
+  if (packages.length > 0) {
+    packageJson.dependencies = {};
+    for (const pkg of packages) {
+      // Try to parse package@version format
+      const [pkgName, version] = pkg.includes('@') && !pkg.startsWith('@') ? pkg.split('@') : [pkg, 'latest'];
+      packageJson.dependencies[pkgName] = version === 'latest' ? '*' : version;
+    }
+  }
+
+  // Write package.json
+  const packageJsonPath = join(projectPath, 'package.json');
+  await writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2), 'utf8');
+
+  // Run npm install if requested
+  if (installDependencies && packages.length > 0) {
+    const installCommand = packageManager === 'yarn' 
+      ? ['yarn']
+      : packageManager === 'pnpm'
+      ? ['pnpm', 'install']
+      : packageManager === 'bun'
+      ? ['bun', 'install']
+      : ['npm', 'install'];
+
+    const child = spawn(installCommand[0], installCommand.slice(1), {
+      cwd: projectPath,
+      env: process.env,
+      shell: process.platform === 'win32'
+    });
+
+    // Wait for install to complete
+    await new Promise<void>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`Installation failed with code ${code}`));
+        }
+      });
+    });
+  }
+
+  // Trigger a rescan to pick up the new project
+  try {
+    await performProjectScan();
+    broadcast('projects:updated', cachedProjects);
+  } catch (error) {
+    console.error('Error scanning after project creation:', error);
+    // Don't fail the creation if scan fails
+  }
+
+  return { success: true, path: projectPath };
 });

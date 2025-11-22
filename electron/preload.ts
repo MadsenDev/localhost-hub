@@ -10,7 +10,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ping: () => ipcRenderer.invoke('ping'),
   projects: {
     list: () => ipcRenderer.invoke('projects:list'),
-    scan: (directories?: string[]) => ipcRenderer.invoke('projects:scan', directories)
+    scan: (directories?: string[]) => ipcRenderer.invoke('projects:scan', directories),
+    create: (payload: {
+      name: string;
+      directory: string;
+      description?: string;
+      packages: string[];
+      packageManager: 'npm' | 'yarn' | 'pnpm' | 'bun';
+      installDependencies: boolean;
+    }) => ipcRenderer.invoke('projects:create', payload)
   },
   git: {
     status: (projectPath: string) => ipcRenderer.invoke('git:status', projectPath)
@@ -23,7 +31,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     export: (payload: { contents: string; suggestedName?: string }) => ipcRenderer.invoke('logs:export', payload)
   },
   dialog: {
-    selectDirectory: () => ipcRenderer.invoke('dialog:selectDirectory')
+    selectDirectory: (options?: { title?: string }) => ipcRenderer.invoke('dialog:selectDirectory', options)
   },
   scripts: {
     run: (payload: { projectPath: string; script: string; projectId?: string }) => ipcRenderer.invoke('scripts:run', payload),

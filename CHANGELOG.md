@@ -1,0 +1,64 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.2.0] - 2024-12-19
+
+### Added
+- Loading screen with animated SVG logo on app startup
+  - Animated logo with rotating elements, pulsing circles, and gradient effects
+  - Smooth fade-in animations and background gradient effects
+- Pop-out terminal modal for script execution
+  - Draggable and movable terminal window
+  - Shows real-time script output
+  - Can be closed without stopping the script
+  - Logs remain accessible in the main Logs tab
+- Create Project feature
+  - Modal for creating new projects with package.json
+  - Template selection (Empty, React, Node.js, TypeScript)
+  - Package management (add/remove packages)
+  - Package manager selection (npm, yarn, pnpm, bun)
+  - Optional automatic dependency installation
+  - Create Project button in sidebar and empty state
+  - Automatically rescans after project creation
+
+### Changed
+- Loading screen now displays for minimum 1.5 seconds for better UX
+- Window background color matches loading screen to prevent flash
+
+## [0.1.1] - 2024-12-19
+
+### Fixed
+- Fixed Windows code signing build failures caused by symbolic link extraction errors
+  - Added cache clearing script to resolve winCodeSign extraction issues
+  - Updated build configuration with `signDlls: false` to simplify signing process
+  - Added troubleshooting documentation for Windows builds
+
+### Added
+- Added `clear:cache` npm script to clear electron-builder cache
+- Added `scripts/clear-electron-builder-cache.cjs` utility script
+- Added Windows build troubleshooting section to README
+
+### Changed
+- Updated build configuration to handle Windows symlink extraction issues more gracefully
+
+## [0.1.0] - 2024-12-19
+
+### Added
+- Initial release
+- Electron + React desktop application shell
+- Modern renderer UI with sidebar and panels
+- Secure preload layer for IPC
+- Build configuration for macOS, Windows, and Linux
+- Development environment with Vite and live reloading
+
+[Unreleased]: https://github.com/chris/localhost-hub/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/chris/localhost-hub/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/chris/localhost-hub/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/chris/localhost-hub/releases/tag/v0.1.0
+

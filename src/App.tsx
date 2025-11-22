@@ -13,6 +13,9 @@ import WorkspacesModal from './components/WorkspacesModal';
 import { ToastProvider, useToast } from './hooks/useToasts';
 import ToastViewport from './components/ToastViewport';
 import { useProjects } from './hooks/useProjects';
+import { LoadingScreen } from './components/LoadingScreen';
+import { TerminalModal } from './components/TerminalModal';
+import { CreateProjectModal } from './components/CreateProjectModal';
 
 const HISTORY_STORAGE_KEY = 'localhost-hub:run-history';
 const MAX_HISTORY = 20;
@@ -86,7 +89,11 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git'>('scripts');
   const [showSettings, setShowSettings] = useState(false);
   const [showWorkspaces, setShowWorkspaces] = useState(false);
+  const [showCreateProject, setShowCreateProject] = useState(false);
   const [pingResponse, setPingResponse] = useState<string>('…');
+  const [isLoading, setIsLoading] = useState(true);
+  const [showTerminalModal, setShowTerminalModal] = useState(false);
+  const terminalLogContainerRef = useRef<HTMLPreElement | null>(null);
   const [runHistory, setRunHistory] = useState<RunHistory[]>(() => {
     if (typeof window === 'undefined') return [];
     const stored = window.localStorage.getItem(HISTORY_STORAGE_KEY);
@@ -149,6 +156,64 @@ function AppContent() {
       element.scrollTop = element.scrollHeight;
     }
   }, [isAutoScrollEnabled, logOutput]);
+
+  // Handle initial loading - show loading screen until app is ready
+  useEffect(() => {
+    if (!electronAPI) {
+      setIsLoading(false);
+      return;
+    }
+    
+    // Show loading screen for at least 1.5 seconds for better UX
+    const minDisplayTime = 1500;
+    const startTime = Date.now();
+    
+    // Show loading screen until projects are loaded or timeout
+    let mounted = true;
+    const checkReady = async () => {
+      try {
+        // Wait for initial project list to load
+        await electronAPI.projects.list();
+        
+        // Ensure minimum display time
+        const elapsed = Date.now() - startTime;
+        const remainingTime = Math.max(0, minDisplayTime - elapsed);
+        
+        if (mounted) {
+          setTimeout(() => {
+            if (mounted) {
+              setIsLoading(false);
+            }
+          }, remainingTime);
+        }
+      } catch {
+        // If there's an error, still hide loading after minimum display time
+        const elapsed = Date.now() - startTime;
+        const remainingTime = Math.max(0, minDisplayTime - elapsed);
+        if (mounted) {
+          setTimeout(() => {
+            if (mounted) {
+              setIsLoading(false);
+            }
+          }, remainingTime);
+        }
+      }
+    };
+    
+    // Also set a maximum timeout to ensure loading screen doesn't stay forever
+    const maxTimeout = setTimeout(() => {
+      if (mounted) {
+        setIsLoading(false);
+      }
+    }, 5000);
+    
+    checkReady();
+    
+    return () => {
+      mounted = false;
+      clearTimeout(maxTimeout);
+    };
+  }, [electronAPI]);
 
   useEffect(() => {
     if (!electronAPI) {
@@ -259,6 +324,10 @@ function AppContent() {
           const existing = updated.get(projectId);
           if (existing?.id === payload.runId) {
             updated.delete(projectId);
+            // Close terminal modal when script completes
+            if (selectedProjectId === projectId) {
+              setShowTerminalModal(false);
+            }
           }
           return updated;
         });
@@ -528,6 +597,9 @@ function AppContent() {
           });
           return updated;
         });
+
+        // Show terminal modal when script starts
+        setShowTerminalModal(true);
 
         // Immediately fetch active processes to show the newly started script
         try {
@@ -886,6 +958,16 @@ function AppContent() {
     }
   }, [theme]);
 
+  // Show loading screen while app initializes
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  // Get terminal modal props
+  const terminalLogOutput = currentRun && selectedProject ? logOutput : '';
+  const terminalScriptName = currentRun?.script || '';
+  const terminalProjectName = selectedProject?.name || '';
+
   return (
     <div className={`flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden flex-col ${fontSizeClass}`}>
       {electronAPI && <TitleBar />}
@@ -908,6 +990,7 @@ function AppContent() {
           onRescan={rescan}
           onOpenSetup={openSetup}
           onOpenWorkspaces={() => setShowWorkspaces(true)}
+          onCreateProject={() => setShowCreateProject(true)}
         />
 
       <main className={`flex flex-1 flex-col ${compactClass} p-8 overflow-y-auto`}>
@@ -917,6 +1000,7 @@ function AppContent() {
             isScanning={isScanning}
             onOpenSetup={openSetup}
             onRescan={rescan}
+            onCreateProject={() => setShowCreateProject(true)}
           />
         )}
 
@@ -984,6 +1068,36 @@ function AppContent() {
           onRemoveItem={removeWorkspaceItem}
           onStartWorkspace={startWorkspace}
           onStopWorkspace={stopWorkspace}
+        />
+        {currentRun && selectedProject && (
+          <TerminalModal
+            isOpen={showTerminalModal}
+            onClose={() => setShowTerminalModal(false)}
+            logOutput={terminalLogOutput}
+            scriptName={terminalScriptName}
+            projectName={terminalProjectName}
+            logContainerRef={terminalLogContainerRef}
+            isAutoScrollEnabled={isAutoScrollEnabled}
+            onToggleAutoScroll={handleToggleAutoScroll}
+          />
+        )}
+        <CreateProjectModal
+          isOpen={showCreateProject}
+          onClose={() => setShowCreateProject(false)}
+          onCreateProject={async (projectData) => {
+            if (!electronAPI) {
+              throw new Error('Electron API not available');
+            }
+            await electronAPI.projects.create(projectData);
+            // Trigger rescan to pick up the new project
+            await rescan();
+            pushToast({
+              title: 'Project created',
+              description: `Successfully created ${projectData.name}`,
+              variant: 'success'
+            });
+          }}
+          electronAPI={electronAPI}
         />
       </div>
     </div>

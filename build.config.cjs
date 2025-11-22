@@ -23,7 +23,12 @@ module.exports = {
   },
   win: {
     icon: 'buildResources/icon.ico',
-    target: 'nsis'
+    target: 'nsis',
+    signDlls: false
+    // Note: If you encounter "Cannot create symbolic link" errors during signing,
+    // run: npm run clear:cache
+    // Then either enable Developer Mode (Settings > Update & Security > For Developers)
+    // or run the build as Administrator
   },
   linux: {
     icon: 'buildResources/linux-icons',

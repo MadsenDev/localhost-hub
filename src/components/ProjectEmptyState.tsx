@@ -5,6 +5,7 @@ interface ProjectEmptyStateProps {
   isScanning: boolean;
   onOpenSetup: () => void;
   onRescan: () => void;
+  onCreateProject: () => void;
 }
 
 const cards = [
@@ -28,7 +29,7 @@ const cards = [
   }
 ];
 
-export function ProjectEmptyState({ scanDirectories, isScanning, onOpenSetup, onRescan }: ProjectEmptyStateProps) {
+export function ProjectEmptyState({ scanDirectories, isScanning, onOpenSetup, onRescan, onCreateProject }: ProjectEmptyStateProps) {
   return (
     <section className="rounded-3xl border border-slate-200 bg-white/90 p-8 shadow-xl shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-950/50 dark:shadow-black/40">
       <div className="flex flex-col gap-10 lg:flex-row lg:items-center">
@@ -50,6 +51,14 @@ export function ProjectEmptyState({ scanDirectories, isScanning, onOpenSetup, on
               className="inline-flex items-center justify-center rounded-2xl border border-indigo-500 bg-indigo-500/90 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500"
             >
               {scanDirectories ? 'Edit scan directories' : 'Choose directories'}
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.02, y: -2 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={onCreateProject}
+              className="inline-flex items-center justify-center rounded-2xl border border-emerald-500 bg-emerald-500/90 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-500"
+            >
+              + Create Project
             </motion.button>
             <motion.button
               whileHover={{ scale: 1.02, y: -2 }}

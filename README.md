@@ -31,3 +31,25 @@ Generate platform installers (requires `npm run build` first):
 | `npm run build:all:unsigned` | mac + linux + unsigned Windows |
 
 All installers land in `release/`.
+
+### Troubleshooting Windows Builds
+
+If you encounter "Cannot create symbolic link" errors during Windows code signing:
+
+1. **Clear the electron-builder cache:**
+   ```bash
+   npm run clear:cache
+   ```
+
+2. **Enable Developer Mode** (recommended):
+   - Open Windows Settings
+   - Go to **Update & Security** > **For Developers**
+   - Enable **Developer mode**
+   - This allows creating symbolic links without administrator privileges
+
+3. **Alternative: Run as Administrator:**
+   - Right-click your terminal/PowerShell
+   - Select "Run as administrator"
+   - Run your build command again
+
+After enabling Developer Mode or running as admin, the build should complete successfully.

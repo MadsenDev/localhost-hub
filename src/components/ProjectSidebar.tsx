@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HiPlay, HiClock, HiCog6Tooth, HiArrowPath, HiFolderOpen, HiSquares2X2 } from 'react-icons/hi2';
+import { HiPlay, HiClock, HiCog6Tooth, HiArrowPath, HiFolderOpen, HiSquares2X2, HiPlus } from 'react-icons/hi2';
 import type { ProjectInfo, ActiveProcessInfo, RunHistory, GitStatusInfo } from '../types/global';
 import { LiveProcessesPopover } from './LiveProcessesPopover';
 import { HistoryModal } from './HistoryModal';
@@ -23,6 +23,7 @@ interface ProjectSidebarProps {
   onRescan?: () => void;
   onOpenSetup?: () => void;
   onOpenWorkspaces?: () => void;
+  onCreateProject?: () => void;
   style?: React.CSSProperties;
 }
 
@@ -43,6 +44,7 @@ export function ProjectSidebar({
   onRescan,
   onOpenSetup,
   onOpenWorkspaces,
+  onCreateProject,
   style
 }: ProjectSidebarProps) {
   const [showLiveProcesses, setShowLiveProcesses] = useState(false);
@@ -124,6 +126,19 @@ export function ProjectSidebar({
       <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-4 -mr-5 pr-5">
         <div>
           <p className="text-xs uppercase tracking-widest text-slate-500 dark:text-slate-500">Projects</p>
+          {onCreateProject && (
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={onCreateProject}
+              className="mt-3 w-full rounded-xl border-2 border-dashed border-indigo-300 dark:border-indigo-500/40 bg-indigo-50/50 dark:bg-indigo-500/5 px-4 py-3 text-sm font-semibold text-indigo-700 dark:text-indigo-300 transition hover:border-indigo-400 hover:bg-indigo-100/70 dark:hover:border-indigo-400 dark:hover:bg-indigo-500/10"
+            >
+              <div className="flex items-center justify-center gap-2">
+                <HiPlus className="h-4 w-4" />
+                <span>Create New Project</span>
+              </div>
+            </motion.button>
+          )}
           <div className="mt-3 space-y-2 text-sm">
             {isScanning && filteredProjects.length === 0 ? (
               <div className="space-y-2">
