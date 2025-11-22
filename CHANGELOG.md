@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-11-22
+
+### Added
+- Step-based "Create Project" wizard with guided starters, dependency planners, script planner, and review step
+  - Styling preset picker with Tailwind 4 (Oxide) or Tailwind 3.4 pipelines
+  - Icon pack toggles (react-icons, lucide-react, @heroicons/react)
+  - Extras step for sample code style, README generation, git init, and notes
+- Backend scaffolding for the new wizard inputs
+  - Automatically creates tsconfig, sample source files, README content, .gitignore, and optional git repo
+  - Generates Tailwind/PostCSS configs or Oxide entry files based on preset
+  - Installs icon packs and styling deps alongside user-selected packages
+
+### Changed
+- Windows build config cleaned up to remove unsupported `signDlls` option for electron-builder 26
+
 ## [0.2.0] - 2024-12-19
 
 ### Added
@@ -57,7 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Build configuration for macOS, Windows, and Linux
 - Development environment with Vite and live reloading
 
-[Unreleased]: https://github.com/chris/localhost-hub/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/chris/localhost-hub/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/chris/localhost-hub/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/chris/localhost-hub/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/chris/localhost-hub/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/chris/localhost-hub/releases/tag/v0.1.0

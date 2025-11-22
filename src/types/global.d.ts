@@ -1,3 +1,21 @@
+export type CreateProjectPayload = {
+  name: string;
+  directory: string;
+  description?: string;
+  packages: string[];
+  devPackages: string[];
+  scripts: Record<string, string>;
+  packageManager: 'npm' | 'yarn' | 'pnpm' | 'bun';
+  installDependencies: boolean;
+  language: 'javascript' | 'typescript';
+  includeSampleCode: boolean;
+  sampleCodeStyle: 'console' | 'http';
+  initializeGit: boolean;
+  includeReadme: boolean;
+  readmeNotes?: string;
+  stylingPreset: 'none' | 'tailwind-v4' | 'tailwind-v3';
+  iconPacks: string[];
+};
 export type ScriptInfo = {
   name: string;
   command: string;
@@ -143,6 +161,7 @@ export interface ElectronAPI {
   projects: {
     list: () => Promise<ProjectInfo[]>;
     scan: (directories?: string[]) => Promise<ProjectInfo[]>;
+    create: (payload: CreateProjectPayload) => Promise<{ success: boolean; path: string }>;
   };
   processes: {
     active: () => Promise<ActiveProcessInfo[]>;

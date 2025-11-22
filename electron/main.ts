@@ -1193,97 +1193,322 @@ ipcMain.handle('packages:installPackage', async (_event, payload: { projectPath:
   return { runId, startedAt, command: commandString, script: `install-${packageName}`, projectPath };
 });
 
+type StylingPresetId = 'none' | 'tailwind-v4' | 'tailwind-v3';
+type IconPackId = 'react-icons' | 'lucide-react' | '@heroicons/react';
+
+const ICON_PACK_DEPENDENCIES: Record<IconPackId, string[]> = {
+  'react-icons': ['react-icons'],
+  'lucide-react': ['lucide-react'],
+  '@heroicons/react': ['@heroicons/react']
+};
+
+const ICON_PACK_LABELS: Record<IconPackId, string> = {
+  'react-icons': 'react-icons',
+  'lucide-react': 'lucide-react',
+  '@heroicons/react': '@heroicons/react'
+};
+
+const STYLING_PRESET_DEV_DEPENDENCIES: Record<StylingPresetId, string[]> = {
+  none: [],
+  'tailwind-v4': ['tailwindcss'],
+  'tailwind-v3': ['tailwindcss@3.4.14', 'postcss', 'autoprefixer']
+};
+
 // Create new project IPC handler
-ipcMain.handle('projects:create', async (_event, payload: {
-  name: string;
-  directory: string;
-  description?: string;
-  packages: string[];
-  packageManager: 'npm' | 'yarn' | 'pnpm' | 'bun';
-  installDependencies: boolean;
-}) => {
-  const { name, directory, description, packages, packageManager, installDependencies } = payload;
-
-  if (!name || !directory) {
-    throw new Error('Project name and directory are required');
-  }
-
-  // Create project path
-  const projectPath = join(directory, name);
-
-  // Check if directory already exists
-  if (existsSync(projectPath)) {
-    throw new Error(`Directory "${projectPath}" already exists`);
-  }
-
-  // Create project directory
-  await mkdir(projectPath, { recursive: true });
-
-  // Create package.json
-  const packageJson: any = {
-    name,
-    version: '1.0.0',
-    description: description || '',
-    main: 'index.js',
-    scripts: {
-      test: 'echo "Error: no test specified" && exit 1'
-    },
-    keywords: [],
-    author: '',
-    license: 'ISC'
-  };
-
-  // Add dependencies
-  if (packages.length > 0) {
-    packageJson.dependencies = {};
-    for (const pkg of packages) {
-      // Try to parse package@version format
-      const [pkgName, version] = pkg.includes('@') && !pkg.startsWith('@') ? pkg.split('@') : [pkg, 'latest'];
-      packageJson.dependencies[pkgName] = version === 'latest' ? '*' : version;
+ipcMain.handle(
+  'projects:create',
+  async (
+    _event,
+    payload: {
+      name: string;
+      directory: string;
+      description?: string;
+      packages: string[];
+      devPackages: string[];
+      scripts: Record<string, string>;
+      packageManager: 'npm' | 'yarn' | 'pnpm' | 'bun';
+      installDependencies: boolean;
+      language: 'javascript' | 'typescript';
+      includeSampleCode: boolean;
+      sampleCodeStyle: 'console' | 'http';
+      initializeGit: boolean;
+      includeReadme: boolean;
+      readmeNotes?: string;
     }
-  }
+  ) => {
+    const {
+      name,
+      directory,
+      description,
+      packages,
+      devPackages,
+      scripts,
+      packageManager,
+      installDependencies,
+      language,
+      includeSampleCode,
+      sampleCodeStyle,
+      initializeGit,
+      includeReadme,
+      readmeNotes,
+      stylingPreset,
+      iconPacks
+    } = payload;
 
-  // Write package.json
-  const packageJsonPath = join(projectPath, 'package.json');
-  await writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2), 'utf8');
+    if (!name || !directory) {
+      throw new Error('Project name and directory are required');
+    }
 
-  // Run npm install if requested
-  if (installDependencies && packages.length > 0) {
-    const installCommand = packageManager === 'yarn' 
-      ? ['yarn']
-      : packageManager === 'pnpm'
-      ? ['pnpm', 'install']
-      : packageManager === 'bun'
-      ? ['bun', 'install']
-      : ['npm', 'install'];
+    const projectPath = join(directory, name);
 
-    const child = spawn(installCommand[0], installCommand.slice(1), {
-      cwd: projectPath,
-      env: process.env,
-      shell: process.platform === 'win32'
-    });
+    if (existsSync(projectPath)) {
+      throw new Error(`Directory "${projectPath}" already exists`);
+    }
 
-    // Wait for install to complete
-    await new Promise<void>((resolve, reject) => {
-      child.once('error', reject);
-      child.once('close', (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`Installation failed with code ${code}`));
+    const splitPackageSpec = (spec: string): [string, string | undefined] => {
+      const trimmed = spec.trim();
+      if (!trimmed) {
+        return ['', undefined];
+      }
+      if (trimmed.startsWith('@')) {
+        const versionIndex = trimmed.lastIndexOf('@');
+        if (versionIndex > trimmed.indexOf('/')) {
+          return [trimmed.slice(0, versionIndex), trimmed.slice(versionIndex + 1) || undefined];
         }
-      });
+        return [trimmed, undefined];
+      }
+      const versionIndex = trimmed.lastIndexOf('@');
+      if (versionIndex > 0) {
+        return [trimmed.slice(0, versionIndex), trimmed.slice(versionIndex + 1) || undefined];
+      }
+      return [trimmed, undefined];
+    };
+
+    const mapDependencies = (list: string[]) => {
+      const result: Record<string, string> = {};
+      for (const entry of list) {
+        const [pkgName, version] = splitPackageSpec(entry);
+        if (!pkgName) continue;
+        result[pkgName] = version ?? '*';
+      }
+      return result;
+    };
+
+    await mkdir(projectPath, { recursive: true });
+
+    const resolvedStylingPreset: StylingPresetId =
+      stylingPreset === 'tailwind-v4' || stylingPreset === 'tailwind-v3' ? stylingPreset : 'none';
+    const resolvedIconPacks: IconPackId[] = Array.isArray(iconPacks)
+      ? (iconPacks.filter((pack): pack is IconPackId =>
+          ['react-icons', 'lucide-react', '@heroicons/react'].includes(pack)
+        ) as IconPackId[])
+      : [];
+
+    const runtimePackages = [...packages];
+    resolvedIconPacks.forEach((pack) => {
+      ICON_PACK_DEPENDENCIES[pack]?.forEach((dep) => runtimePackages.push(dep));
     });
-  }
+    const normalizedDependencies = mapDependencies(runtimePackages);
 
-  // Trigger a rescan to pick up the new project
-  try {
-    await performProjectScan();
-    broadcast('projects:updated', cachedProjects);
-  } catch (error) {
-    console.error('Error scanning after project creation:', error);
-    // Don't fail the creation if scan fails
-  }
+    const devPackagesWithPreset = [...devPackages, ...STYLING_PRESET_DEV_DEPENDENCIES[resolvedStylingPreset]];
+    const normalizedDevDependencies = mapDependencies(devPackagesWithPreset);
+    if (language === 'typescript') {
+      if (!normalizedDevDependencies.typescript) {
+        normalizedDevDependencies.typescript = '*';
+      }
+      if (!normalizedDevDependencies['@types/node']) {
+        normalizedDevDependencies['@types/node'] = '*';
+      }
+    }
+    const normalizedScripts = { ...scripts };
+    if (!normalizedScripts.test) {
+      normalizedScripts.test = 'echo "Error: no test specified" && exit 1';
+    }
 
-  return { success: true, path: projectPath };
-});
+    const packageJson: Record<string, any> = {
+      name,
+      version: '1.0.0',
+      description: description || '',
+      main: 'index.js',
+      scripts: normalizedScripts,
+      keywords: [],
+      author: '',
+      license: 'MIT'
+    };
+
+    if (Object.keys(normalizedDependencies).length > 0) {
+      packageJson.dependencies = normalizedDependencies;
+    }
+    if (Object.keys(normalizedDevDependencies).length > 0) {
+      packageJson.devDependencies = normalizedDevDependencies;
+    }
+
+    const packageJsonPath = join(projectPath, 'package.json');
+    await writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2), 'utf8');
+
+    const srcDir = join(projectPath, 'src');
+    await mkdir(srcDir, { recursive: true });
+
+    if (language === 'typescript') {
+      const tsconfig = {
+        compilerOptions: {
+          target: 'ES2020',
+          module: 'CommonJS',
+          outDir: 'dist',
+          rootDir: 'src',
+          esModuleInterop: true,
+          strict: true,
+          skipLibCheck: true
+        },
+        include: ['src']
+      };
+      await writeFile(join(projectPath, 'tsconfig.json'), JSON.stringify(tsconfig, null, 2), 'utf8');
+    }
+
+    const extension = language === 'typescript' ? 'ts' : 'js';
+    const entryPath = join(srcDir, `index.${extension}`);
+    const sampleCode = (() => {
+      if (!includeSampleCode) {
+        return `export function main() {\n  console.log('🚀 ${name} is ready to build!');\n}\n\nmain();\n`;
+      }
+      if (sampleCodeStyle === 'http') {
+        return language === 'typescript'
+          ? `import http from 'node:http';\n\nconst server = http.createServer((_, res) => {\n  res.statusCode = 200;\n  res.setHeader('Content-Type', 'application/json');\n  res.end(JSON.stringify({ status: 'ok', message: 'Hello from ${name}' }));\n});\n\nconst PORT = process.env.PORT ? Number(process.env.PORT) : 3000;\nserver.listen(PORT, () => {\n  console.log(\`🌐 ${name} listening on http://localhost:\${PORT}\`);\n});\n`
+          : `const http = require('node:http');\n\nconst server = http.createServer((_, res) => {\n  res.statusCode = 200;\n  res.setHeader('Content-Type', 'application/json');\n  res.end(JSON.stringify({ status: 'ok', message: 'Hello from ${name}' }));\n});\n\nconst PORT = process.env.PORT ? Number(process.env.PORT) : 3000;\nserver.listen(PORT, () => {\n  console.log(\`🌐 ${name} listening on http://localhost:\${PORT}\`);\n});\n`;
+      }
+      return language === 'typescript'
+        ? `export function main() {\n  console.log('👋 ${name} says hello from TypeScript!');\n}\n\nmain();\n`
+        : `function main() {\n  console.log('👋 ${name} says hello!');\n}\n\nmain();\n`;
+    })();
+
+    await writeFile(entryPath, sampleCode, 'utf8');
+
+    if (resolvedStylingPreset === 'tailwind-v3') {
+      const tailwindConfig = `/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: ['./src/**/*.{js,ts,jsx,tsx}'],
+  theme: {
+    extend: {}
+  },
+  plugins: []
+};\n`;
+      const postcssConfig = `module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {}
+  }
+};\n`;
+      await writeFile(join(projectPath, 'tailwind.config.cjs'), tailwindConfig, 'utf8');
+      await writeFile(join(projectPath, 'postcss.config.cjs'), postcssConfig, 'utf8');
+      const stylesDir = join(srcDir, 'styles');
+      await mkdir(stylesDir, { recursive: true });
+      await writeFile(
+        join(stylesDir, 'tailwind.css'),
+        '@tailwind base;\n@tailwind components;\n@tailwind utilities;\n',
+        'utf8'
+      );
+    } else if (resolvedStylingPreset === 'tailwind-v4') {
+      const stylesDir = join(srcDir, 'styles');
+      await mkdir(stylesDir, { recursive: true });
+      await writeFile(join(stylesDir, 'tailwind.css'), '@import "tailwindcss";\n', 'utf8');
+    }
+
+    if (includeReadme) {
+      const readmeSections = [
+        `# ${name}`,
+        '',
+        description || 'Project scaffolded with Localhost Hub.',
+        '',
+        '## Scripts',
+        ''
+      ];
+      Object.entries(normalizedScripts).forEach(([key, command]) => {
+        readmeSections.push(`- \`${key}\` — \`${command}\``);
+      });
+      readmeSections.push('');
+      readmeSections.push('## Getting started');
+      readmeSections.push('');
+      readmeSections.push('```bash');
+      readmeSections.push(`${packageManager} install`);
+      readmeSections.push(`${packageManager} run dev`);
+      readmeSections.push('```');
+      const trimmedNotes = readmeNotes?.trim();
+      if (trimmedNotes) {
+        readmeSections.push('');
+        readmeSections.push('## Notes');
+        readmeSections.push('');
+        readmeSections.push(trimmedNotes);
+      }
+      if (resolvedStylingPreset === 'tailwind-v3') {
+        readmeSections.push('');
+        readmeSections.push('## Styling');
+        readmeSections.push('');
+        readmeSections.push('Tailwind CSS + PostCSS configs were generated. Import `src/styles/tailwind.css` in your entry point to enable the utility classes.');
+      } else if (resolvedStylingPreset === 'tailwind-v4') {
+        readmeSections.push('');
+        readmeSections.push('## Styling');
+        readmeSections.push('');
+        readmeSections.push('Tailwind CSS 4.x (Oxide) is installed. Import `src/styles/tailwind.css` to include the `@import "tailwindcss";` entry file.');
+      }
+      if (resolvedIconPacks.length > 0) {
+        readmeSections.push('');
+        readmeSections.push('## Icon packs');
+        readmeSections.push('');
+        const iconLabels = resolvedIconPacks.map((pack) => ICON_PACK_LABELS[pack] ?? pack).join(', ');
+        readmeSections.push(`This project includes: ${iconLabels}.`);
+      }
+      await writeFile(join(projectPath, 'README.md'), readmeSections.join('\n'), 'utf8');
+    }
+
+    if (initializeGit) {
+      const gitignoreContents = ['node_modules', 'dist', '.env', '.DS_Store', 'coverage', 'release', 'npm-debug.log*'].join('\n');
+      await writeFile(join(projectPath, '.gitignore'), gitignoreContents, 'utf8');
+      await new Promise<void>((resolve) => {
+        const git = spawn('git', ['init'], { cwd: projectPath, env: process.env });
+        git.once('close', () => resolve());
+        git.once('error', () => resolve());
+      });
+    }
+
+    const shouldInstall =
+      installDependencies &&
+      (Object.keys(normalizedDependencies).length > 0 || Object.keys(normalizedDevDependencies).length > 0);
+
+    if (shouldInstall) {
+      const installCommand =
+        packageManager === 'yarn'
+          ? ['yarn']
+          : packageManager === 'pnpm'
+          ? ['pnpm', 'install']
+          : packageManager === 'bun'
+          ? ['bun', 'install']
+          : ['npm', 'install'];
+
+      const child = spawn(installCommand[0], installCommand.slice(1), {
+        cwd: projectPath,
+        env: process.env,
+        shell: process.platform === 'win32'
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        child.once('error', reject);
+        child.once('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Installation failed with code ${code}`));
+          }
+        });
+      });
+    }
+
+    try {
+      await performProjectScan();
+      broadcast('projects:updated', cachedProjects);
+    } catch (error) {
+      console.error('Error scanning after project creation:', error);
+    }
+
+    return { success: true, path: projectPath };
+  }
+);

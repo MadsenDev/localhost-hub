@@ -16,8 +16,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       directory: string;
       description?: string;
       packages: string[];
+      devPackages: string[];
+      scripts: Record<string, string>;
       packageManager: 'npm' | 'yarn' | 'pnpm' | 'bun';
       installDependencies: boolean;
+      language: 'javascript' | 'typescript';
+      includeSampleCode: boolean;
+      sampleCodeStyle: 'console' | 'http';
+      initializeGit: boolean;
+      includeReadme: boolean;
+      readmeNotes?: string;
     }) => ipcRenderer.invoke('projects:create', payload)
   },
   git: {
