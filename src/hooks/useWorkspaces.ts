@@ -131,6 +131,26 @@ export function useWorkspaces(electronAPI?: Window['electronAPI']) {
     [electronAPI]
   );
 
+  const restartWorkspace = useCallback(
+    async (workspaceId: number) => {
+      if (!electronAPI?.workspaces) {
+        return;
+      }
+      await electronAPI.workspaces.restart(workspaceId);
+    },
+    [electronAPI]
+  );
+
+  const restartWorkspaceItem = useCallback(
+    async (payload: { workspaceId: number; itemId: number }) => {
+      if (!electronAPI?.workspaces) {
+        return;
+      }
+      await electronAPI.workspaces.restartItem(payload);
+    },
+    [electronAPI]
+  );
+
   return {
     workspaces,
     loading,
@@ -142,7 +162,9 @@ export function useWorkspaces(electronAPI?: Window['electronAPI']) {
     updateWorkspaceItem,
     removeWorkspaceItem,
     startWorkspace,
-    stopWorkspace
+    stopWorkspace,
+    restartWorkspace,
+    restartWorkspaceItem
   };
 }
 

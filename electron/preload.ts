@@ -6,7 +6,19 @@ function registerListener<T>(channel: string, callback: (event: Electron.IpcRend
   return () => ipcRenderer.removeListener(channel, handler);
 }
 
-contextBridge.exposeInMainWorld('electronAPI', {
+const terminalApi = {
+  createSession: (payload?: { cwd?: string; env?: Record<string, string>; shell?: string; columns?: number; rows?: number }) =>
+    ipcRenderer.invoke('terminal:create', payload),
+  sendInput: (payload: { id: string; data: string }) => ipcRenderer.invoke('terminal:input', payload),
+  resize: (payload: { id: string; columns: number; rows: number }) => ipcRenderer.invoke('terminal:resize', payload),
+  dispose: (sessionId: string) => ipcRenderer.invoke('terminal:dispose', sessionId),
+  onData: (callback: (payload: { id: string; data: string }) => void) =>
+    registerListener<{ id: string; data: string }>('terminal:data', (_event, payload) => callback(payload)),
+  onExit: (callback: (payload: { id: string; exitCode: number | null; signal?: number | string }) => void) =>
+    registerListener<{ id: string; exitCode: number | null; signal?: number | string }>('terminal:exit', (_event, payload) => callback(payload))
+};
+
+const api: Window['electronAPI'] = {
   ping: () => ipcRenderer.invoke('ping'),
   projects: {
     list: () => ipcRenderer.invoke('projects:list'),
@@ -130,7 +142,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeItem: (itemId: number) => ipcRenderer.invoke('workspaceItems:remove', itemId),
     start: (workspaceId: number) => ipcRenderer.invoke('workspaces:start', workspaceId),
     stop: (workspaceId: number) => ipcRenderer.invoke('workspaces:stop', workspaceId),
+    restart: (workspaceId: number) => ipcRenderer.invoke('workspaces:restart', workspaceId),
+    restartItem: (payload: { workspaceId: number; itemId: number }) => ipcRenderer.invoke('workspaceItems:restart', payload),
     onStatus: (callback: (payload: { workspaceId: number; activeRunCount: number }) => void) =>
       registerListener<{ workspaceId: number; activeRunCount: number }>('workspaces:status', (_event, payload) => callback(payload))
   }
-});
+};
+
+ipcRenderer
+  .invoke('terminal:available')
+  .then(() => {
+    api.terminal = terminalApi;
+  })
+  .catch(() => {
+    console.warn('[terminal] backend not available; feature disabled');
+  });
+
+contextBridge.exposeInMainWorld('electronAPI', api);

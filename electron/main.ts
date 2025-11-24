@@ -11,6 +11,8 @@ import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);
 import { scanProjects, type ProjectInfo } from './projectScanner';
+import { spawn as createPty } from 'node-pty';
+import type { IPty } from 'node-pty';
 import { getGitStatus } from './gitStatus';
 import {
   initializeDatabase,
@@ -94,6 +96,14 @@ const activeProcesses = new Map<string, ActiveProcess>();
 const stoppedProcesses = new Set<string>();
 const workspaceRunMap = new Map<number, Set<string>>();
 const runWorkspaceMap = new Map<string, { workspaceId: number; itemId?: number; runMode: 'parallel' | 'sequential' }>();
+const terminalSessions = new Map<string, IPty>();
+
+function getDefaultShell() {
+  if (process.platform === 'win32') {
+    return process.env.COMSPEC || 'powershell.exe';
+  }
+  return process.env.SHELL || '/bin/bash';
+}
 
 function createWindow() {
   const windowIcon = getIconAssetPath('icon.png');
@@ -560,6 +570,34 @@ async function launchSequentialItems(workspaceId: number, items: WorkspaceItemRe
   }
 }
 
+async function startWorkspaceRuns(workspaceId: number) {
+  const workspace = getWorkspaceById(workspaceId);
+  if (!workspace) {
+    throw new Error('Workspace not found');
+  }
+  if (workspace.items.length === 0) {
+    throw new Error('Workspace has no scripts to run');
+  }
+  if ((workspaceRunMap.get(workspaceId)?.size ?? 0) > 0) {
+    throw new Error('Workspace is already running');
+  }
+
+  const sequentialItems = workspace.items
+    .filter((item) => item.runMode === 'sequential')
+    .sort((a, b) => a.orderIndex - b.orderIndex || a.id - b.id);
+  const parallelItems = workspace.items.filter((item) => item.runMode !== 'sequential');
+
+  const parallelPromises = parallelItems.map((item, index) =>
+    delay(index * 50).then(() => launchWorkspaceItem(workspaceId, item, 'parallel'))
+  );
+  const sequentialPromise = sequentialItems.length > 0 ? launchSequentialItems(workspaceId, sequentialItems) : Promise.resolve();
+
+  await Promise.all([...parallelPromises, sequentialPromise]);
+
+  broadcastWorkspaceStatus(workspaceId);
+  return { success: true };
+}
+
 function stopActiveRun(runId: string): boolean {
   const active = activeProcesses.get(runId);
   if (!active) {
@@ -591,6 +629,41 @@ async function stopWorkspaceRuns(workspaceId: number) {
   }
   for (const runId of Array.from(runIds)) {
     stopActiveRun(runId);
+  }
+}
+
+async function waitForWorkspaceIdle(workspaceId: number, timeoutMs = 10000) {
+  const startedAt = Date.now();
+  while ((workspaceRunMap.get(workspaceId)?.size ?? 0) > 0) {
+    if (Date.now() - startedAt >= timeoutMs) {
+      break;
+    }
+    await delay(100);
+  }
+}
+
+function getWorkspaceItemRunIds(workspaceId: number, itemId: number): string[] {
+  const runIds = workspaceRunMap.get(workspaceId);
+  if (!runIds || runIds.size === 0) {
+    return [];
+  }
+  const matches: string[] = [];
+  for (const runId of runIds) {
+    const meta = runWorkspaceMap.get(runId);
+    if (meta?.itemId === itemId) {
+      matches.push(runId);
+    }
+  }
+  return matches;
+}
+
+async function waitForWorkspaceItemIdle(workspaceId: number, itemId: number, timeoutMs = 10000) {
+  const startedAt = Date.now();
+  while (getWorkspaceItemRunIds(workspaceId, itemId).length > 0) {
+    if (Date.now() - startedAt >= timeoutMs) {
+      break;
+    }
+    await delay(100);
   }
 }
 
@@ -860,36 +933,117 @@ ipcMain.handle('workspaceItems:remove', async (_event, itemId: number) => {
   return { success: true };
 });
 
-ipcMain.handle('workspaces:start', async (_event, workspaceId: number) => {
-  const workspace = getWorkspaceById(workspaceId);
+ipcMain.handle('workspaceItems:restart', async (_event, payload: { workspaceId: number; itemId: number }) => {
+  const workspace = getWorkspaceById(payload.workspaceId);
   if (!workspace) {
     throw new Error('Workspace not found');
   }
-  if (workspace.items.length === 0) {
-    throw new Error('Workspace has no scripts to run');
+  const item = workspace.items.find((entry) => entry.id === payload.itemId);
+  if (!item) {
+    throw new Error('Workspace item not found');
   }
-  if ((workspaceRunMap.get(workspaceId)?.size ?? 0) > 0) {
-    throw new Error('Workspace is already running');
+  const activeRunIds = getWorkspaceItemRunIds(payload.workspaceId, payload.itemId);
+  if (activeRunIds.length > 0) {
+    activeRunIds.forEach((runId) => stopActiveRun(runId));
+    await waitForWorkspaceItemIdle(payload.workspaceId, payload.itemId);
   }
-
-  const sequentialItems = workspace.items
-    .filter((item) => item.runMode === 'sequential')
-    .sort((a, b) => a.orderIndex - b.orderIndex || a.id - b.id);
-  const parallelItems = workspace.items.filter((item) => item.runMode !== 'sequential');
-
-  const parallelPromises = parallelItems.map((item, index) =>
-    delay(index * 50).then(() => launchWorkspaceItem(workspaceId, item, 'parallel'))
-  );
-  const sequentialPromise = sequentialItems.length > 0 ? launchSequentialItems(workspaceId, sequentialItems) : Promise.resolve();
-
-  await Promise.all([...parallelPromises, sequentialPromise]);
-
-  broadcastWorkspaceStatus(workspaceId);
+  await launchWorkspaceItem(payload.workspaceId, item, item.runMode ?? 'parallel');
   return { success: true };
+});
+
+ipcMain.handle('workspaces:start', async (_event, workspaceId: number) => {
+  return startWorkspaceRuns(workspaceId);
 });
 
 ipcMain.handle('workspaces:stop', async (_event, workspaceId: number) => {
   await stopWorkspaceRuns(workspaceId);
+  return { success: true };
+});
+
+ipcMain.handle('workspaces:restart', async (_event, workspaceId: number) => {
+  const workspace = getWorkspaceById(workspaceId);
+  if (!workspace) {
+    throw new Error('Workspace not found');
+  }
+  if ((workspaceRunMap.get(workspaceId)?.size ?? 0) > 0) {
+    await stopWorkspaceRuns(workspaceId);
+    await waitForWorkspaceIdle(workspaceId);
+  }
+  return startWorkspaceRuns(workspaceId);
+});
+
+ipcMain.handle('terminal:available', async () => true);
+
+ipcMain.handle(
+  'terminal:create',
+  async (
+    _event,
+    payload?: {
+      cwd?: string;
+      env?: Record<string, string>;
+      shell?: string;
+      columns?: number;
+      rows?: number;
+    }
+  ) => {
+    const shell = payload?.shell || getDefaultShell();
+    const cols = Math.max(1, payload?.columns ?? 80);
+    const rows = Math.max(1, payload?.rows ?? 24);
+    const cwd = payload?.cwd ? resolve(payload.cwd) : process.cwd();
+    const env = { ...process.env, ...(payload?.env ?? {}) };
+    const sessionId = randomUUID();
+
+    const pty = createPty(shell, [], {
+      name: 'xterm-color',
+      cols,
+      rows,
+      cwd,
+      env
+    });
+
+    terminalSessions.set(sessionId, pty);
+
+    pty.onData((data) => {
+      broadcast('terminal:data', { id: sessionId, data });
+    });
+
+    pty.onExit(({ exitCode, signal }) => {
+      broadcast('terminal:exit', { id: sessionId, exitCode, signal });
+      terminalSessions.delete(sessionId);
+    });
+
+    return { id: sessionId };
+  }
+);
+
+ipcMain.handle('terminal:input', async (_event, payload: { id: string; data: string }) => {
+  const session = terminalSessions.get(payload.id);
+  if (!session) {
+    throw new Error('Terminal session not found');
+  }
+  session.write(payload.data);
+  return { success: true };
+});
+
+ipcMain.handle('terminal:resize', async (_event, payload: { id: string; columns: number; rows: number }) => {
+  const session = terminalSessions.get(payload.id);
+  if (!session) {
+    throw new Error('Terminal session not found');
+  }
+  session.resize(Math.max(1, payload.columns), Math.max(1, payload.rows));
+  return { success: true };
+});
+
+ipcMain.handle('terminal:dispose', async (_event, sessionId: string) => {
+  const session = terminalSessions.get(sessionId);
+  if (session) {
+    try {
+      session.kill();
+    } catch {
+      // ignore
+    }
+    terminalSessions.delete(sessionId);
+  }
   return { success: true };
 });
 

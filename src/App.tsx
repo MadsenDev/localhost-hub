@@ -20,6 +20,7 @@ import { CreateProjectModal } from './components/CreateProjectModal';
 const HISTORY_STORAGE_KEY = 'localhost-hub:run-history';
 const MAX_HISTORY = 20;
 const FORCE_STOP_DELAY_MS = 6000;
+const HIDDEN_PROJECTS_STORAGE_KEY = 'localhost-hub:hidden-projects';
 
 function AppContent() {
   const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
@@ -34,7 +35,9 @@ function AppContent() {
     updateWorkspaceItem,
     removeWorkspaceItem,
     startWorkspace,
-    stopWorkspace
+    stopWorkspace,
+    restartWorkspace,
+    restartWorkspaceItem
   } = useWorkspaces(electronAPI);
   const {
     projects,
@@ -87,7 +90,32 @@ function AppContent() {
     };
   }, [electronAPI, settings]);
 
-  const [activeTab, setActiveTab] = useState<'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git'>('scripts');
+  useEffect(() => {
+    if (!electronAPI?.settings) {
+      return;
+    }
+    let cancelled = false;
+    const loadHiddenProjects = async () => {
+      try {
+        const stored = await electronAPI.settings.get('hiddenProjects');
+        if (!stored || cancelled) {
+          return;
+        }
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setHiddenProjectIds(parsed);
+        }
+      } catch (error) {
+        console.error('Failed to load hidden projects', error);
+      }
+    };
+    loadHiddenProjects();
+    return () => {
+      cancelled = true;
+    };
+  }, [electronAPI]);
+
+  const [activeTab, setActiveTab] = useState<'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git' | 'terminal'>('scripts');
   const [showSettings, setShowSettings] = useState(false);
   const [showWorkspaces, setShowWorkspaces] = useState(false);
   const [showCreateProject, setShowCreateProject] = useState(false);
@@ -117,6 +145,22 @@ function AppContent() {
   const [gitStatusMap, setGitStatusMap] = useState<Map<string, GitStatusInfo>>(new Map());
   const [gitLoadingProjectId, setGitLoadingProjectId] = useState<string | null>(null);
   const [forceStopCandidates, setForceStopCandidates] = useState<Set<string>>(new Set());
+  const [hiddenProjectIds, setHiddenProjectIds] = useState<string[]>(() => {
+    if (typeof window === 'undefined') {
+      return [];
+    }
+    const stored = window.localStorage.getItem(HIDDEN_PROJECTS_STORAGE_KEY);
+    if (!stored) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showHiddenProjects, setShowHiddenProjects] = useState(false);
   
   // Get auto-scroll setting (default true)
   const isAutoScrollEnabled = settings.getSettingAsBoolean('autoScrollLogs', true);
@@ -125,6 +169,59 @@ function AppContent() {
   // Track runId to projectId mapping
   const runIdToProjectId = useRef<Map<string, string>>(new Map());
   const forceStopTimersRef = useRef<Map<string, { timerId: number }>>(new Map());
+
+  const persistHiddenProjects = useCallback(
+    (ids: string[]) => {
+      if (typeof window !== 'undefined') {
+        if (ids.length === 0) {
+          window.localStorage.removeItem(HIDDEN_PROJECTS_STORAGE_KEY);
+        } else {
+          window.localStorage.setItem(HIDDEN_PROJECTS_STORAGE_KEY, JSON.stringify(ids));
+        }
+      }
+      if (electronAPI?.settings) {
+        electronAPI.settings
+          .set({ key: 'hiddenProjects', value: JSON.stringify(ids) })
+          .catch((error) => console.error('Failed to persist hidden projects', error));
+      }
+    },
+    [electronAPI]
+  );
+
+  const handleHideProject = useCallback(
+    (projectId: string) => {
+      setHiddenProjectIds((current) => {
+        if (current.includes(projectId)) {
+          return current;
+        }
+        const updated = [...current, projectId];
+        persistHiddenProjects(updated);
+        return updated;
+      });
+      if (selectedProjectId === projectId) {
+        selectProject(null);
+      }
+    },
+    [persistHiddenProjects, selectProject, selectedProjectId]
+  );
+
+  const handleUnhideProject = useCallback(
+    (projectId: string) => {
+      setHiddenProjectIds((current) => {
+        if (!current.includes(projectId)) {
+          return current;
+        }
+        const updated = current.filter((id) => id !== projectId);
+        persistHiddenProjects(updated);
+        return updated;
+      });
+    },
+    [persistHiddenProjects]
+  );
+
+  const handleToggleHiddenProjects = useCallback(() => {
+    setShowHiddenProjects((prev) => !prev);
+  }, []);
 
   const clearForceStopEligibility = useCallback((runId?: string | null) => {
     if (!runId) return;
@@ -194,6 +291,15 @@ function AppContent() {
     return gitStatusMap.get(selectedProject.id) || null;
   }, [gitStatusMap, selectedProject]);
   const isGitStatusLoading = selectedProject ? gitLoadingProjectId === selectedProject.id : false;
+  const hiddenProjectIdSet = useMemo(() => new Set(hiddenProjectIds), [hiddenProjectIds]);
+  const visibleProjects = useMemo(
+    () => filteredProjects.filter((project) => !hiddenProjectIdSet.has(project.id)),
+    [filteredProjects, hiddenProjectIdSet]
+  );
+  const hiddenProjectsForSidebar = useMemo(
+    () => filteredProjects.filter((project) => hiddenProjectIdSet.has(project.id)),
+    [filteredProjects, hiddenProjectIdSet]
+  );
 
   useEffect(() => {
     if (!isAutoScrollEnabled) {
@@ -1076,7 +1182,7 @@ function AppContent() {
           style={{ width: `${sidebarWidth}px` }}
           query={query}
           onQueryChange={setQuery}
-          filteredProjects={filteredProjects}
+          filteredProjects={visibleProjects}
           allProjects={projects}
           isScanning={isScanning}
           selectedProjectId={selectedProjectId}
@@ -1091,6 +1197,11 @@ function AppContent() {
           onOpenSetup={openSetup}
           onOpenWorkspaces={() => setShowWorkspaces(true)}
           onCreateProject={() => setShowCreateProject(true)}
+          hiddenProjects={hiddenProjectsForSidebar}
+          showHiddenProjects={showHiddenProjects}
+          onToggleHiddenProjects={handleToggleHiddenProjects}
+          onHideProject={handleHideProject}
+          onUnhideProject={handleUnhideProject}
         />
 
       <main className={`flex flex-1 flex-col ${compactClass} p-8 overflow-y-auto`}>
@@ -1170,6 +1281,8 @@ function AppContent() {
           onRemoveItem={removeWorkspaceItem}
           onStartWorkspace={startWorkspace}
           onStopWorkspace={stopWorkspace}
+          onRestartWorkspace={restartWorkspace}
+          onRestartItem={restartWorkspaceItem}
         />
         {currentRun && selectedProject && (
           <TerminalModal

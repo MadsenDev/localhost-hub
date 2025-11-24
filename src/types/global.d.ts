@@ -225,7 +225,17 @@ export interface ElectronAPI {
     removeItem: (itemId: number) => Promise<{ success: boolean }>;
     start: (workspaceId: number) => Promise<{ success: boolean }>;
     stop: (workspaceId: number) => Promise<{ success: boolean }>;
+    restart: (workspaceId: number) => Promise<{ success: boolean }>;
+    restartItem: (payload: { workspaceId: number; itemId: number }) => Promise<{ success: boolean }>;
     onStatus: (callback: (payload: { workspaceId: number; activeRunCount: number }) => void) => () => void;
+  };
+  terminal: {
+    createSession: (payload?: { cwd?: string; env?: Record<string, string>; shell?: string; columns?: number; rows?: number }) => Promise<{ id: string }>;
+    sendInput: (payload: { id: string; data: string }) => Promise<{ success: boolean }>;
+    resize: (payload: { id: string; columns: number; rows: number }) => Promise<{ success: boolean }>;
+    dispose: (sessionId: string) => Promise<{ success: boolean }>;
+    onData: (callback: (payload: { id: string; data: string }) => void) => () => void;
+    onExit: (callback: (payload: { id: string; exitCode: number | null; signal?: number | string }) => void) => () => void;
   };
 }
 

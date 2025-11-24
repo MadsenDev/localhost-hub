@@ -14,6 +14,8 @@ interface WorkspacesModalProps {
   onRemoveItem: (itemId: number) => Promise<void>;
   onStartWorkspace: (workspaceId: number) => Promise<void>;
   onStopWorkspace: (workspaceId: number) => Promise<void>;
+  onRestartWorkspace: (workspaceId: number) => Promise<void>;
+  onRestartItem: (payload: { workspaceId: number; itemId: number }) => Promise<void>;
 }
 
 export function WorkspacesModal({
@@ -28,7 +30,9 @@ export function WorkspacesModal({
   onUpdateItem,
   onRemoveItem,
   onStartWorkspace,
-  onStopWorkspace
+  onStopWorkspace,
+  onRestartWorkspace,
+  onRestartItem
 }: WorkspacesModalProps) {
   if (!isOpen) return null;
 
@@ -63,6 +67,8 @@ export function WorkspacesModal({
             onRemoveItem={onRemoveItem}
             onStartWorkspace={onStartWorkspace}
             onStopWorkspace={onStopWorkspace}
+            onRestartWorkspace={onRestartWorkspace}
+            onRestartItem={onRestartItem}
           />
         </div>
       </div>

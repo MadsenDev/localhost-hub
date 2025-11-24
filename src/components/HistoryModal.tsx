@@ -11,6 +11,21 @@ function formatTimestamp(timestamp: number) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+const EXIT_CODE_DESCRIPTIONS: Record<number, string> = {
+  0: 'Exited successfully without errors.',
+  1: 'Generic error – check logs for details.',
+  130: 'Terminated via Ctrl+C (SIGINT).',
+  137: 'Force killed (SIGKILL), often due to memory limits.',
+  143: 'Stopped cleanly with SIGTERM.'
+};
+
+function describeExitCode(exitCode: number | null) {
+  if (exitCode === null || exitCode === undefined) {
+    return 'No exit code was reported for this run.';
+  }
+  return EXIT_CODE_DESCRIPTIONS[exitCode] ?? `Process exited with code ${exitCode}. Refer to the log output for context.`;
+}
+
 export function HistoryModal({ isOpen, onClose, runHistory }: HistoryModalProps) {
   if (!isOpen) return null;
 
@@ -65,9 +80,14 @@ export function HistoryModal({ isOpen, onClose, runHistory }: HistoryModalProps)
                       <p className="text-slate-500">Ended</p>
                       <p>{formatTimestamp(process.finishedAt)}</p>
                     </div>
-                    <div>
+                    <div className="relative">
                       <p className="text-slate-500">Exit code</p>
-                      <p>{process.exitCode ?? '—'}</p>
+                      <div className="inline-flex group">
+                        <span className="font-mono text-sm text-white">{process.exitCode ?? '—'}</span>
+                        <span className="pointer-events-none absolute right-0 top-full z-50 hidden w-60 translate-y-2 rounded-lg bg-slate-900/95 px-3 py-2 text-[11px] text-slate-100 shadow-2xl group-hover:block">
+                          {describeExitCode(process.exitCode)}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>

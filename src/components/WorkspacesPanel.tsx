@@ -14,6 +14,8 @@ interface WorkspacesPanelProps {
   onRemoveItem: (itemId: number) => Promise<void>;
   onStartWorkspace: (workspaceId: number) => Promise<void>;
   onStopWorkspace: (workspaceId: number) => Promise<void>;
+  onRestartWorkspace: (workspaceId: number) => Promise<void>;
+  onRestartItem: (payload: { workspaceId: number; itemId: number }) => Promise<void>;
 }
 
 type DraftState = {
@@ -32,11 +34,14 @@ export function WorkspacesPanel({
   onUpdateItem,
   onRemoveItem,
   onStartWorkspace,
-  onStopWorkspace
+  onStopWorkspace,
+  onRestartWorkspace,
+  onRestartItem
 }: WorkspacesPanelProps) {
   const [showCreate, setShowCreate] = useState(false);
   const [createDraft, setCreateDraft] = useState({ name: '', description: '' });
   const [pendingWorkspaceId, setPendingWorkspaceId] = useState<number | null>(null);
+  const [pendingItemId, setPendingItemId] = useState<number | null>(null);
   const [workspaceToDelete, setWorkspaceToDelete] = useState<{ id: number; name: string } | null>(null);
   const [expandedWorkspaceId, setExpandedWorkspaceId] = useState<number | null>(null);
   const [drafts, setDrafts] = useState<Record<number, DraftState>>({});
@@ -85,6 +90,17 @@ export function WorkspacesPanel({
       }
     } catch (error) {
       console.error('Workspace action failed', error);
+    } finally {
+      setPendingWorkspaceId(null);
+    }
+  };
+
+  const handleRestartWorkspace = async (workspace: Workspace) => {
+    setPendingWorkspaceId(workspace.id);
+    try {
+      await onRestartWorkspace(workspace.id);
+    } catch (error) {
+      console.error('Failed to restart workspace', error);
     } finally {
       setPendingWorkspaceId(null);
     }
@@ -139,7 +155,18 @@ export function WorkspacesPanel({
     }
   };
 
-  const renderItems = (workspace: Workspace) => {
+  const handleRestartItem = async (workspaceId: number, itemId: number) => {
+    setPendingItemId(itemId);
+    try {
+      await onRestartItem({ workspaceId, itemId });
+    } catch (error) {
+      console.error('Failed to restart workspace item', error);
+    } finally {
+      setPendingItemId((current) => (current === itemId ? null : current));
+    }
+  };
+
+  const renderItems = (workspace: Workspace, canRestartItems: boolean) => {
     if (workspace.items.length === 0) {
       return <p className="text-sm text-slate-600 dark:text-slate-400">No scripts added yet.</p>;
     }
@@ -163,6 +190,15 @@ export function WorkspacesPanel({
               )}
             </div>
             <div className="flex items-center gap-2">
+              {canRestartItems && (
+                <button
+                  onClick={() => handleRestartItem(workspace.id, item.id)}
+                  disabled={pendingItemId === item.id}
+                  className="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 dark:border-indigo-500/40 dark:bg-indigo-500/10 dark:text-indigo-100"
+                >
+                  Restart
+                </button>
+              )}
               <button
                 onClick={() => handleToggleRunMode(item)}
                 className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-indigo-400/50"
@@ -282,6 +318,15 @@ export function WorkspacesPanel({
                     >
                       {isRunning ? 'Stop Workspace' : 'Start Workspace'}
                     </button>
+                  {isRunning && (
+                    <button
+                      onClick={() => handleRestartWorkspace(workspace)}
+                      disabled={pendingWorkspaceId === workspace.id}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300"
+                    >
+                      Restart Workspace
+                    </button>
+                  )}
                     <button
                       onClick={() => setExpandedWorkspaceId((prev) => (prev === workspace.id ? null : workspace.id))}
                       className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300"
@@ -297,7 +342,7 @@ export function WorkspacesPanel({
                   </div>
                 </div>
 
-                <div className="mt-4 space-y-3">{renderItems(workspace)}</div>
+                <div className="mt-4 space-y-3">{renderItems(workspace, isRunning)}</div>
 
                 {expandedWorkspaceId === workspace.id && (
                   <div className="mt-5 border-t border-slate-200 pt-4 dark:border-slate-700">

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2025-11-24
+
+### Added
+- Workspace restart controls and per-script restart actions within the Workspaces modal
+- Project sidebar context menu for hiding projects plus hidden-project toggle + unhide list
+- Exit-code hover tooltips in History modal describing common exit statuses
+- Embedded terminal tab per project powered by a node-pty shell with multi-session UI
+
 ## [0.3.0] - 2025-11-22
 
 ### Added
@@ -72,9 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Build configuration for macOS, Windows, and Linux
 - Development environment with Vite and live reloading
 
-[Unreleased]: https://github.com/chris/localhost-hub/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/chris/localhost-hub/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/chris/localhost-hub/compare/v0.1.1...v0.2.0
-[0.1.1]: https://github.com/chris/localhost-hub/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/chris/localhost-hub/releases/tag/v0.1.0
+[Unreleased]: https://github.com/MadsenDev/localhost-hub/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/MadsenDev/localhost-hub/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/MadsenDev/localhost-hub/releases/tag/v0.1.0
 

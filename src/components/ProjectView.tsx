@@ -8,6 +8,7 @@ import PortsProcessesPanel from './PortsProcessesPanel';
 import { ProjectHeader } from './ProjectHeader';
 import { PackagesPanel } from './PackagesPanel';
 import { GitPanel } from './GitPanel';
+import TerminalPanel from './TerminalPanel';
 
 interface ProjectViewProps {
   project: ProjectInfo;
@@ -25,8 +26,8 @@ interface ProjectViewProps {
   onForceStopScript: () => Promise<void>;
   onRestartScript: (script: ScriptInfo) => Promise<void>;
   electronAPI?: Window['electronAPI'];
-  activeTab: 'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git';
-  onChangeTab: (tab: 'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git') => void;
+  activeTab: 'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git' | 'terminal';
+  onChangeTab: (tab: 'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git' | 'terminal') => void;
   projectScripts: ScriptInfo[];
   onRunScript: (script: ScriptInfo) => Promise<void>;
   logStatusLabel: string;
@@ -110,7 +111,7 @@ export function ProjectView({
       />
 
       <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800 mt-6">
-        {(['scripts', 'logs', 'env-profiles', 'ports', 'packages', 'git'] as const).map((tab) => (
+        {(['scripts', 'logs', 'env-profiles', 'ports', 'packages', 'git', 'terminal'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => onChangeTab(tab)}
@@ -184,6 +185,12 @@ export function ProjectView({
               gitStatusLoading={gitStatusLoading}
               onRefreshGit={onRefreshGit}
             />
+          </Section>
+        )}
+
+        {activeTab === 'terminal' && (
+          <Section title="Terminal">
+            <TerminalPanel project={project} electronAPI={electronAPI} />
           </Section>
         )}
       </div>
