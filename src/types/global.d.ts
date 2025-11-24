@@ -171,7 +171,7 @@ export interface ElectronAPI {
     export: (payload: { contents: string; suggestedName?: string }) => Promise<{ saved: boolean; filePath?: string }>;
   };
   dialog: {
-    selectDirectory: () => Promise<{ canceled: boolean; path: string | null }>;
+    selectDirectory: (options?: { title?: string }) => Promise<{ canceled: boolean; path: string | null }>;
   };
   scripts: {
     run: (payload: { projectPath: string; script: string; projectId?: string }) => Promise<RunScriptResult>;

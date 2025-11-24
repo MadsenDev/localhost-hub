@@ -15,8 +15,10 @@ interface ProjectHeaderProps {
   onOpenInBrowser: (url: string) => void;
   onInstall: (packageManager: string) => void;
   onStopScript: () => void;
+  onForceStopScript: () => void;
   onRestartScript: () => void;
   electronAPI?: Window['electronAPI'];
+  forceStopReady: boolean;
 }
 
 function formatDuration(startedAt: number): string {
@@ -41,8 +43,10 @@ export function ProjectHeader({
   onOpenInBrowser,
   onInstall,
   onStopScript,
+  onForceStopScript,
   onRestartScript,
-  electronAPI
+  electronAPI,
+  forceStopReady
 }: ProjectHeaderProps) {
   const [packageManager, setPackageManager] = useState<'npm' | 'pnpm' | 'yarn' | 'bun' | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
@@ -263,7 +267,8 @@ export function ProjectHeader({
 
         <div className="flex flex-col gap-2">
           {hasRunningScript && primaryProcess && (
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -273,6 +278,16 @@ export function ProjectHeader({
               >
                 ⏹ Stop
               </motion.button>
+              {forceStopReady && (
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={onForceStopScript}
+                  className="rounded-lg border border-rose-500/60 dark:border-rose-400/60 bg-rose-600 text-white dark:bg-rose-500 px-4 py-2 text-sm font-semibold transition hover:bg-rose-700 dark:hover:bg-rose-400 whitespace-nowrap"
+                >
+                  ⚠ Force Stop
+                </motion.button>
+              )}
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -282,6 +297,10 @@ export function ProjectHeader({
               >
                 🔄 Restart
               </motion.button>
+              </div>
+              {forceStopReady && (
+                <p className="text-xs font-semibold text-rose-600 dark:text-rose-300">Process is taking longer than expected. Force stop is available.</p>
+              )}
             </div>
           )}
           {browserUrl && (

@@ -7,9 +7,19 @@ interface ScriptsPanelProps {
   onRunScript: (script: ScriptInfo) => void;
   onStopScript: () => void;
   onRestartScript: (script: ScriptInfo) => void;
+  forceStopReady: boolean;
+  onForceStopScript: () => void;
 }
 
-export function ScriptsPanel({ scripts, scriptInFlight, onRunScript, onStopScript, onRestartScript }: ScriptsPanelProps) {
+export function ScriptsPanel({
+  scripts,
+  scriptInFlight,
+  onRunScript,
+  onStopScript,
+  onRestartScript,
+  forceStopReady,
+  onForceStopScript
+}: ScriptsPanelProps) {
   if (scripts.length === 0) {
     return <p className="text-sm text-slate-500 dark:text-slate-400">No scripts detected for this project.</p>;
   }
@@ -53,6 +63,14 @@ export function ScriptsPanel({ scripts, scriptInFlight, onRunScript, onStopScrip
                   >
                     Restart
                   </button>
+                  {isRunning && forceStopReady && (
+                    <button
+                      className="rounded-full border border-rose-500/70 px-4 py-1 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-400 transition"
+                      onClick={onForceStopScript}
+                    >
+                      Force stop
+                    </button>
+                  )}
                 </div>
               </div>
               {script.description && <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">{script.description}</p>}

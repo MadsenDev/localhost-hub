@@ -22,6 +22,7 @@ interface ProjectViewProps {
   onOpenInBrowser: (url: string) => Promise<void>;
   onInstall: (packageManager: string) => Promise<void>;
   onStopScript: () => Promise<void>;
+  onForceStopScript: () => Promise<void>;
   onRestartScript: (script: ScriptInfo) => Promise<void>;
   electronAPI?: Window['electronAPI'];
   activeTab: 'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git';
@@ -41,6 +42,7 @@ interface ProjectViewProps {
   canCopyLog: boolean;
   canClearLog: boolean;
   onInstallPackage: (packageName: string, version?: string, isDev?: boolean) => Promise<void>;
+  forceStopReady: boolean;
 }
 
 export function ProjectView({
@@ -56,6 +58,7 @@ export function ProjectView({
   onOpenInBrowser,
   onInstall,
   onStopScript,
+  onForceStopScript,
   onRestartScript,
   electronAPI,
   activeTab,
@@ -74,7 +77,8 @@ export function ProjectView({
   onCopyLog,
   canCopyLog,
   canClearLog,
-  onInstallPackage
+  onInstallPackage,
+  forceStopReady
 }: ProjectViewProps) {
   const handleHeaderRestart = () => {
     if (!scriptInFlight) return;
@@ -99,8 +103,10 @@ export function ProjectView({
         onOpenInBrowser={onOpenInBrowser}
         onInstall={onInstall}
         onStopScript={onStopScript}
+        onForceStopScript={onForceStopScript}
         onRestartScript={handleHeaderRestart}
         electronAPI={electronAPI}
+        forceStopReady={forceStopReady}
       />
 
       <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800 mt-6">
@@ -128,6 +134,8 @@ export function ProjectView({
               onRunScript={onRunScript}
               onStopScript={onStopScript}
               onRestartScript={onRestartScript}
+              forceStopReady={forceStopReady}
+              onForceStopScript={onForceStopScript}
             />
           </Section>
         )}

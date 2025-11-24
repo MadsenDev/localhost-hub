@@ -43,7 +43,9 @@ describe('ProjectHeader', () => {
         onOpenInBrowser={openSpy}
         onInstall={noop}
         onStopScript={noop}
+        onForceStopScript={noop}
         onRestartScript={noop}
+        forceStopReady={false}
       />
     );
 
@@ -78,7 +80,9 @@ describe('ProjectHeader', () => {
         onOpenInBrowser={openSpy}
         onInstall={noop}
         onStopScript={noop}
+        onForceStopScript={noop}
         onRestartScript={noop}
+        forceStopReady={false}
       />
     );
 
@@ -102,7 +106,9 @@ describe('ProjectHeader', () => {
         onOpenInBrowser={noop}
         onInstall={noop}
         onStopScript={noop}
+        onForceStopScript={noop}
         onRestartScript={noop}
+        forceStopReady={false}
       />
     );
 

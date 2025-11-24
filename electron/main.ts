@@ -6,7 +6,6 @@ import { spawn } from 'node:child_process';
 import { writeFile, mkdir } from 'node:fs/promises';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -1234,6 +1233,8 @@ ipcMain.handle(
       initializeGit: boolean;
       includeReadme: boolean;
       readmeNotes?: string;
+      stylingPreset: StylingPresetId;
+      iconPacks: string[];
     }
   ) => {
     const {

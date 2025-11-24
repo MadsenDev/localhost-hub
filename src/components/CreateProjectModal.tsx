@@ -239,7 +239,7 @@ export function CreateProjectModal({ isOpen, onClose, onCreateProject, electronA
             ? { ...entry, command: starter.scripts[entry.key] }
             : entry
         );
-        Object.entries(starter.scripts).forEach(([key, command]) => {
+        Object.entries(starter.scripts ?? {}).forEach(([key, command]) => {
           if (!existingKeys.has(key)) {
             updated.push({
               id: `script-${key}-${Date.now()}`,

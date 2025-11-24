@@ -19,6 +19,7 @@ import { CreateProjectModal } from './components/CreateProjectModal';
 
 const HISTORY_STORAGE_KEY = 'localhost-hub:run-history';
 const MAX_HISTORY = 20;
+const FORCE_STOP_DELAY_MS = 6000;
 
 function AppContent() {
   const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
@@ -115,6 +116,7 @@ function AppContent() {
   const [detectedUrls, setDetectedUrls] = useState<Map<string, string>>(new Map());
   const [gitStatusMap, setGitStatusMap] = useState<Map<string, GitStatusInfo>>(new Map());
   const [gitLoadingProjectId, setGitLoadingProjectId] = useState<string | null>(null);
+  const [forceStopCandidates, setForceStopCandidates] = useState<Set<string>>(new Set());
   
   // Get auto-scroll setting (default true)
   const isAutoScrollEnabled = settings.getSettingAsBoolean('autoScrollLogs', true);
@@ -122,6 +124,51 @@ function AppContent() {
   const logContainerRef = useRef<HTMLPreElement | null>(null);
   // Track runId to projectId mapping
   const runIdToProjectId = useRef<Map<string, string>>(new Map());
+  const forceStopTimersRef = useRef<Map<string, { timerId: number }>>(new Map());
+
+  const clearForceStopEligibility = useCallback((runId?: string | null) => {
+    if (!runId) return;
+    const timer = forceStopTimersRef.current.get(runId);
+    if (timer) {
+      window.clearTimeout(timer.timerId);
+      forceStopTimersRef.current.delete(runId);
+    }
+    setForceStopCandidates((current) => {
+      if (!current.has(runId)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(runId);
+      return next;
+    });
+  }, []);
+
+  const startForceStopCountdown = useCallback(
+    (runId: string, projectId: string, scriptName?: string | null) => {
+      if (!runId || !projectId) return;
+      if (forceStopTimersRef.current.has(runId)) return;
+      const timerId = window.setTimeout(() => {
+        setForceStopCandidates((current) => {
+          if (current.has(runId)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.add(runId);
+          return next;
+        });
+        setProjectLogs((current) => {
+          const updated = new Map(current);
+          const existing = updated.get(projectId) || '';
+          const note = `Process${scriptName ? ` "${scriptName}"` : ''} is taking longer than expected to exit. Force stop is now available.\n`;
+          updated.set(projectId, existing ? `${existing}\n${note}` : note);
+          return updated;
+        });
+        forceStopTimersRef.current.delete(runId);
+      }, FORCE_STOP_DELAY_MS);
+      forceStopTimersRef.current.set(runId, { timerId });
+    },
+    [setProjectLogs]
+  );
 
   // Get logs for the currently selected project
   const logOutput = useMemo(() => {
@@ -141,6 +188,7 @@ function AppContent() {
   const scriptInFlight = useMemo(() => {
     return currentRun?.script || null;
   }, [currentRun]);
+  const isForceStopReady = useMemo(() => (currentRun ? forceStopCandidates.has(currentRun.id) : false), [currentRun, forceStopCandidates]);
   const currentGitStatus = useMemo(() => {
     if (!selectedProject) return null;
     return gitStatusMap.get(selectedProject.id) || null;
@@ -216,6 +264,15 @@ function AppContent() {
   }, [electronAPI]);
 
   useEffect(() => {
+    return () => {
+      forceStopTimersRef.current.forEach(({ timerId }) => {
+        window.clearTimeout(timerId);
+      });
+      forceStopTimersRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!electronAPI) {
       setPingResponse('mock');
       return;
@@ -265,6 +322,7 @@ function AppContent() {
       }
     });
     const offExit = electronAPI.scripts.onExit((payload) => {
+      clearForceStopEligibility(payload.runId);
       let projectId = runIdToProjectId.current.get(payload.runId);
       if (!projectId && payload.projectId) {
         projectId = payload.projectId;
@@ -334,6 +392,7 @@ function AppContent() {
       }
     });
     const offError = electronAPI.scripts.onError((payload) => {
+      clearForceStopEligibility(payload.runId);
       let projectId = runIdToProjectId.current.get(payload.runId);
       if (!projectId && payload.projectId) {
         projectId = payload.projectId;
@@ -382,7 +441,7 @@ function AppContent() {
       offExit?.();
       offError?.();
     };
-  }, [electronAPI, projectsById, pushToast]);
+  }, [electronAPI, projectsById, pushToast, clearForceStopEligibility]);
 
   useEffect(() => {
     if (!electronAPI) {
@@ -656,6 +715,7 @@ function AppContent() {
         });
         try {
           await electronAPI.scripts.stop(projectRun.id);
+          startForceStopCountdown(projectRun.id, selectedProject.id, script.name);
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unable to stop running script before restart.';
           setProjectLogs((current) => {
@@ -672,7 +732,7 @@ function AppContent() {
 
       await handleRunScript(script);
     },
-    [electronAPI, handleRunScript, selectedProject, projectRuns]
+    [electronAPI, handleRunScript, selectedProject, projectRuns, startForceStopCountdown]
   );
 
   const handleStopScript = useCallback(async () => {
@@ -685,6 +745,10 @@ function AppContent() {
         updated.set(selectedProject.id, existing + '\nStopping process…\n');
         return updated;
       });
+
+      if (selectedProject.id) {
+        startForceStopCountdown(currentRun.id, selectedProject.id, currentRun.script);
+      }
 
       // Immediately fetch active processes to remove the stopped script from the list
       try {
@@ -702,7 +766,43 @@ function AppContent() {
         return updated;
       });
     }
-  }, [currentRun, electronAPI, selectedProject]);
+  }, [currentRun, electronAPI, selectedProject, startForceStopCountdown]);
+
+  const handleForceStopScript = useCallback(async () => {
+    if (!electronAPI || !selectedProject || !currentRun) return;
+    const processInfo = activeProcesses.find((proc) => proc.id === currentRun.id);
+    if (!processInfo?.pid) {
+      setProjectLogs((current) => {
+        const updated = new Map(current);
+        const existing = updated.get(selectedProject.id) || '';
+        updated.set(
+          selectedProject.id,
+          `${existing}${existing ? '\n' : ''}Force stop unavailable: unable to determine PID for the running process.\n`
+        );
+        return updated;
+      });
+      return;
+    }
+    try {
+      await electronAPI.processes.kill(processInfo.pid);
+      setProjectLogs((current) => {
+        const updated = new Map(current);
+        const existing = updated.get(selectedProject.id) || '';
+        updated.set(selectedProject.id, `${existing}${existing ? '\n' : ''}Force stop signal sent (SIGKILL).\n`);
+        return updated;
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to force kill process.';
+      setProjectLogs((current) => {
+        const updated = new Map(current);
+        const existing = updated.get(selectedProject.id) || '';
+        updated.set(selectedProject.id, `${existing}${existing ? '\n' : ''}${message}\n`);
+        return updated;
+      });
+    } finally {
+      clearForceStopEligibility(currentRun.id);
+    }
+  }, [activeProcesses, clearForceStopEligibility, currentRun, electronAPI, selectedProject]);
 
   const handleExportLog = useCallback(async () => {
     if (!canExportLog || !selectedProject) return;
@@ -1020,6 +1120,7 @@ function AppContent() {
             onOpenInBrowser={handleOpenInBrowser}
             onInstall={handleInstall}
             onStopScript={handleStopScript}
+            onForceStopScript={handleForceStopScript}
             onRestartScript={handleRestartScript}
             electronAPI={electronAPI}
             activeTab={activeTab}
@@ -1039,6 +1140,7 @@ function AppContent() {
             canCopyLog={canCopyLog}
             canClearLog={canClearLog}
             onInstallPackage={handleInstallPackage}
+            forceStopReady={isForceStopReady}
           />
         )}
       </main>
