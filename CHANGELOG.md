@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git tab upgrades: stage/unstage, commits, branch checkout/creation, push, and stash controls
 - Optional encrypted storage for Git HTTPS credentials per project
 - Utility workflows panel with one-click DB/d compose helpers powered by saved scripts or commands
+- Packages tab now exposes npm audit/outdated and one-click lockfile regeneration
+- Ports & Processes tab upgrades: per-service launch buttons, inline restarts for tracked dev servers, and clearer status badges
 
 ### Removed
 - Embedded terminal tab and node-pty integration (feature reverted due to packaging instability)

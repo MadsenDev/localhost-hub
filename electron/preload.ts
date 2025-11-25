@@ -44,7 +44,8 @@ const api: Window['electronAPI'] = {
   },
   processes: {
     active: () => ipcRenderer.invoke('processes:active'),
-    kill: (pid: number) => ipcRenderer.invoke('processes:kill', pid)
+    kill: (pid: number) => ipcRenderer.invoke('processes:kill', pid),
+    restart: (pid: number) => ipcRenderer.invoke('processes:restart', pid)
   },
   logs: {
     export: (payload: { contents: string; suggestedName?: string }) => ipcRenderer.invoke('logs:export', payload)
@@ -135,7 +136,12 @@ const api: Window['electronAPI'] = {
   packages: {
     getDependencies: (projectPath: string) => ipcRenderer.invoke('packages:getDependencies', projectPath),
     scanNodeModules: (projectPath: string) => ipcRenderer.invoke('packages:scanNodeModules', projectPath),
-    installPackage: (payload: { projectPath: string; packageName: string; version?: string; isDev?: boolean; packageManager?: string }) => ipcRenderer.invoke('packages:installPackage', payload)
+    installPackage: (payload: { projectPath: string; packageName: string; version?: string; isDev?: boolean; packageManager?: string }) =>
+      ipcRenderer.invoke('packages:installPackage', payload),
+    audit: (projectPath: string) => ipcRenderer.invoke('packages:audit', projectPath),
+    outdated: (projectPath: string) => ipcRenderer.invoke('packages:outdated', projectPath),
+    regenerateLockfile: (payload: { projectPath: string; packageManager?: string }) =>
+      ipcRenderer.invoke('packages:regenerateLockfile', payload)
   },
   workspaces: {
     list: () => ipcRenderer.invoke('workspaces:list'),

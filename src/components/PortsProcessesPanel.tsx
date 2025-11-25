@@ -32,6 +32,8 @@ export function PortsProcessesPanel({ electronAPI, selectedProject }: PortsProce
   const [editingPorts, setEditingPorts] = useState<Record<string, string>>({});
   const [killConfirm, setKillConfirm] = useState<{ pid: number } | null>(null);
   const [alert, setAlert] = useState<{ title: string; message: string } | null>(null);
+  const [restartingPids, setRestartingPids] = useState<Set<number>>(new Set());
+  const [launchingScripts, setLaunchingScripts] = useState<Record<string, boolean>>({});
   const inputClass =
     'rounded-lg border border-slate-300 bg-white/95 px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:ring-0';
   const cardClass =
@@ -75,6 +77,66 @@ export function PortsProcessesPanel({ electronAPI, selectedProject }: PortsProce
   const handleKillClick = useCallback((pid: number) => {
     setKillConfirm({ pid });
   }, []);
+
+  const handleLaunchScript = useCallback(
+    async (script: ScriptInfo) => {
+      if (!electronAPI?.scripts?.run || !selectedProject) return;
+      const key = `${selectedProject.id}:${script.name}`;
+      setLaunchingScripts((prev) => ({ ...prev, [key]: true }));
+      try {
+        await electronAPI.scripts.run({
+          projectPath: selectedProject.path,
+          projectId: selectedProject.id,
+          script: script.name
+        });
+        setTimeout(loadProcesses, 750);
+      } catch (error) {
+        console.error('Error launching script:', error);
+        setAlert({
+          title: 'Failed to Launch Script',
+          message: error instanceof Error ? error.message : 'An error occurred while launching the script.'
+        });
+      } finally {
+        setLaunchingScripts((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }
+    },
+    [electronAPI, selectedProject, loadProcesses]
+  );
+
+  const handleRestartClick = useCallback(
+    async (pid: number) => {
+      if (!electronAPI?.processes?.restart) return;
+      setRestartingPids((prev) => new Set(prev).add(pid));
+      try {
+        const result = await electronAPI.processes.restart(pid);
+        if (!result?.success) {
+          setAlert({
+            title: 'Failed to Restart Process',
+            message: result?.error || 'Unknown error occurred while trying to restart the process.'
+          });
+        } else {
+          setTimeout(loadProcesses, 750);
+        }
+      } catch (error) {
+        console.error('Error restarting process:', error);
+        setAlert({
+          title: 'Failed to Restart Process',
+          message: 'An error occurred while trying to restart the process.'
+        });
+      } finally {
+        setRestartingPids((prev) => {
+          const next = new Set(prev);
+          next.delete(pid);
+          return next;
+        });
+      }
+    },
+    [electronAPI, loadProcesses]
+  );
 
   const handleKillConfirm = useCallback(
     async () => {
@@ -183,8 +245,15 @@ export function PortsProcessesPanel({ electronAPI, selectedProject }: PortsProce
               {projectScripts.map((script) => {
                 const expectedPort = expectedPorts[script.name] || null;
                 const editingValue = editingPorts[script.name] ?? (expectedPort?.toString() || '');
-                const isEditing = editingPorts.hasOwnProperty(script.name);
+                const isEditing = Object.prototype.hasOwnProperty.call(editingPorts, script.name);
                 const matchingProcess = findProcessForScript(script.name, expectedPort);
+                const scriptKey = selectedProject ? `${selectedProject.id}:${script.name}` : script.name;
+                const isScriptLaunching = Boolean(launchingScripts[scriptKey]);
+                const runningInstance = selectedProject
+                  ? processes.find(
+                      (p) => !p.isExternal && p.script === script.name && p.projectPath === selectedProject.path
+                    )
+                  : null;
 
                 return (
                   <motion.div
@@ -270,6 +339,29 @@ export function PortsProcessesPanel({ electronAPI, selectedProject }: PortsProce
                           </>
                         )}
                       </div>
+                      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleLaunchScript(script)}
+                          disabled={
+                            !selectedProject ||
+                            !electronAPI?.scripts?.run ||
+                            isScriptLaunching ||
+                            Boolean(runningInstance)
+                          }
+                          className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                            runningInstance
+                              ? 'cursor-not-allowed border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200'
+                              : 'border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-500/40 dark:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-indigo-500/30'
+                          }`}
+                        >
+                          {isScriptLaunching ? 'Launching…' : runningInstance ? 'Service running' : 'Launch service'}
+                        </button>
+                        {runningInstance && (
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                            PID {runningInstance.pid ?? '—'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </motion.div>
                 );
@@ -326,13 +418,26 @@ export function PortsProcessesPanel({ electronAPI, selectedProject }: PortsProce
                       </div>
                     </div>
                     {process.pid && (
-                      <button
-                        onClick={() => handleKillClick(process.pid!)}
-                        disabled={killingPids.has(process.pid!)}
-                        className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/30"
-                      >
-                        {killingPids.has(process.pid!) ? 'Killing...' : 'Kill'}
-                      </button>
+                      <div className="flex flex-col gap-2">
+                        <button
+                          onClick={() => handleKillClick(process.pid!)}
+                          disabled={killingPids.has(process.pid!)}
+                          className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/30"
+                        >
+                          {killingPids.has(process.pid!) ? 'Killing...' : 'Kill'}
+                        </button>
+                        <button
+                          onClick={() => handleRestartClick(process.pid!)}
+                          disabled={restartingPids.has(process.pid!) || !electronAPI?.processes?.restart}
+                          className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap dark:border-indigo-500/40 dark:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-indigo-500/30"
+                        >
+                          {restartingPids.has(process.pid!)
+                            ? 'Restarting…'
+                            : electronAPI?.processes?.restart
+                            ? 'Restart'
+                            : 'Restart (desktop only)'}
+                        </button>
+                      </div>
                     )}
                   </div>
                 </motion.div>

@@ -35,6 +35,8 @@ export function PackagesPanel({ project, electronAPI, onInstallPackage }: Packag
   const [newPackageName, setNewPackageName] = useState('');
   const [newPackageVersion, setNewPackageVersion] = useState('');
   const [newPackageIsDev, setNewPackageIsDev] = useState(false);
+  const [actionOutput, setActionOutput] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
 
   const inputClass =
     'rounded-lg border border-slate-300 bg-white/95 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:ring-0';
@@ -112,6 +114,48 @@ export function PackagesPanel({ project, electronAPI, onInstallPackage }: Packag
     setShowInstallForm(false);
   }, [newPackageName, newPackageVersion, newPackageIsDev, onInstallPackage]);
 
+  const handleAudit = useCallback(async () => {
+    if (!electronAPI?.packages) return;
+    setPendingAction('audit');
+    setActionOutput(null);
+    try {
+      const result = await electronAPI.packages.audit(project.path);
+      setActionOutput(result.output || 'Audit completed.');
+    } catch (error) {
+      setActionOutput(error instanceof Error ? error.message : 'Failed to run audit.');
+    } finally {
+      setPendingAction(null);
+    }
+  }, [electronAPI, project.path]);
+
+  const handleOutdated = useCallback(async () => {
+    if (!electronAPI?.packages) return;
+    setPendingAction('outdated');
+    setActionOutput(null);
+    try {
+      const result = await electronAPI.packages.outdated(project.path);
+      setActionOutput(result.output || 'No outdated packages.');
+    } catch (error) {
+      setActionOutput(error instanceof Error ? error.message : 'Failed to check outdated packages.');
+    } finally {
+      setPendingAction(null);
+    }
+  }, [electronAPI, project.path]);
+
+  const handleRegenerateLockfile = useCallback(async () => {
+    if (!electronAPI?.packages) return;
+    setPendingAction('lockfile');
+    setActionOutput(null);
+    try {
+      await electronAPI.packages.regenerateLockfile({ projectPath: project.path });
+      setActionOutput('Lockfile regenerated.');
+    } catch (error) {
+      setActionOutput(error instanceof Error ? error.message : 'Failed to regenerate lockfile.');
+    } finally {
+      setPendingAction(null);
+    }
+  }, [electronAPI, project.path]);
+
   const typeLabels: Record<DependencyType | 'all', string> = {
     all: 'All',
     dependencies: 'Dependencies',
@@ -141,7 +185,7 @@ export function PackagesPanel({ project, electronAPI, onInstallPackage }: Packag
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Packages</h3>
           <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
@@ -149,12 +193,39 @@ export function PackagesPanel({ project, electronAPI, onInstallPackage }: Packag
             {missingPackages.length > 0 && ` • ${missingPackages.length} missing`}
           </p>
         </div>
-        <button
-          onClick={() => setShowInstallForm(!showInstallForm)}
-          className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/40 dark:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-indigo-500/30"
-        >
-          {showInstallForm ? 'Cancel' : '+ Install Package'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowInstallForm(!showInstallForm)}
+            className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-500/40 dark:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-indigo-500/30"
+          >
+            {showInstallForm ? 'Cancel' : '+ Install Package'}
+          </button>
+          {electronAPI?.packages && (
+            <>
+              <button
+                onClick={handleAudit}
+                disabled={pendingAction === 'audit'}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200"
+              >
+                {pendingAction === 'audit' ? 'Auditing…' : 'npm audit'}
+              </button>
+              <button
+                onClick={handleOutdated}
+                disabled={pendingAction === 'outdated'}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200"
+              >
+                {pendingAction === 'outdated' ? 'Checking…' : 'Check outdated'}
+              </button>
+              <button
+                onClick={handleRegenerateLockfile}
+                disabled={pendingAction === 'lockfile'}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200"
+              >
+                {pendingAction === 'lockfile' ? 'Regenerating…' : 'Regenerate lockfile'}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <AnimatePresence>
@@ -228,6 +299,12 @@ export function PackagesPanel({ project, electronAPI, onInstallPackage }: Packag
           className={`${inputClass} w-full`}
         />
       </div>
+
+      {actionOutput && (
+        <div className="rounded-xl border border-slate-200 bg-white/95 p-4 text-xs text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-300 whitespace-pre-wrap">
+          {actionOutput}
+        </div>
+      )}
 
       {filteredPackages.length === 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white/95 p-8 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900/40">

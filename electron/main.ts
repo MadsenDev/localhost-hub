@@ -3,9 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { writeFile, mkdir, unlink } from 'node:fs/promises';
+import { writeFile, mkdir, unlink, readFile } from 'node:fs/promises';
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -88,6 +87,9 @@ type ActiveProcess = {
   runMode?: 'parallel' | 'sequential';
   customCommand?: string | null;
   commandArray?: string[];
+  projectId?: string;
+  envOverrides?: Record<string, string>;
+  inheritSystemEnv?: boolean;
 };
 
 const activeProcesses = new Map<string, ActiveProcess>();
@@ -528,10 +530,11 @@ async function launchScriptProcess(options: LaunchScriptOptions) {
     workspaceItemId: options.workspaceItemId,
     runMode: options.runMode,
     customCommand: options.customCommand ?? null,
-    commandArray: command ?? undefined
+    commandArray: command ?? undefined,
+    projectId: projectId ?? undefined,
+    envOverrides: options.envOverrides ? { ...options.envOverrides } : undefined,
+    inheritSystemEnv
   };
-  (record as any).inheritSystemEnv = inheritSystemEnv;
-  (record as any).projectId = projectId ?? undefined;
   activeProcesses.set(runId, record);
 
   if (options.workspaceId) {
@@ -984,6 +987,16 @@ async function waitForWorkspaceItemIdle(workspaceId: number, itemId: number, tim
   }
 }
 
+async function waitForRunExit(runId: string, timeoutMs = 10000) {
+  const startedAt = Date.now();
+  while (activeProcesses.has(runId)) {
+    if (Date.now() - startedAt >= timeoutMs) {
+      break;
+    }
+    await delay(100);
+  }
+}
+
 ipcMain.handle('scripts:stop', async (_event, runId: string) => {
   return { success: stopActiveRun(runId) };
 });
@@ -1088,6 +1101,43 @@ ipcMain.handle('processes:kill', async (_event, pid: number) => {
     return { success: true };
   } catch (error) {
     console.error('Error killing process:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+function getActiveProcessByPid(pid: number): { runId: string; record: ActiveProcess } | null {
+  for (const [runId, record] of activeProcesses.entries()) {
+    if (record.child.pid === pid) {
+      return { runId, record };
+    }
+  }
+  return null;
+}
+
+ipcMain.handle('processes:restart', async (_event, pid: number) => {
+  if (!pid) {
+    return { success: false, error: 'PID is required to restart a process.' };
+  }
+  const activeEntry = getActiveProcessByPid(pid);
+  if (!activeEntry) {
+    return { success: false, error: 'Only processes launched from Localhost Hub can be restarted.' };
+  }
+
+  const { runId, record } = activeEntry;
+  stopActiveRun(runId);
+  await waitForRunExit(runId);
+
+  try {
+    const restartResult = await launchScriptProcess({
+      projectPath: record.projectPath,
+      script: record.script,
+      projectId: record.projectId,
+      customCommand: record.customCommand ?? undefined,
+      envOverrides: record.envOverrides
+    });
+    return { success: true, runId: restartResult.runId, startedAt: restartResult.startedAt, script: restartResult.script };
+  } catch (error) {
+    console.error('Failed to restart process:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });
@@ -1522,14 +1572,15 @@ ipcMain.handle('packages:installPackage', async (_event, payload: { projectPath:
 
   const pm = packageManager || detectPackageManager(projectPath);
   const packageSpec = version ? `${packageName}@${version}` : packageName;
-  const command = pm === 'yarn' 
-    ? ['yarn', 'add', ...(isDev ? ['--dev'] : []), packageSpec]
-    : pm === 'pnpm'
-    ? ['pnpm', 'add', ...(isDev ? ['--save-dev'] : []), packageSpec]
-    : pm === 'bun'
-    ? ['bun', 'add', ...(isDev ? ['--dev'] : []), packageSpec]
-    : ['npm', 'install', ...(isDev ? ['--save-dev'] : []), packageSpec];
-  
+  const command =
+    pm === 'yarn'
+      ? ['yarn', 'add', ...(isDev ? ['--dev'] : []), packageSpec]
+      : pm === 'pnpm'
+      ? ['pnpm', 'add', ...(isDev ? ['--save-dev'] : []), packageSpec]
+      : pm === 'bun'
+      ? ['bun', 'add', ...(isDev ? ['--dev'] : []), packageSpec]
+      : ['npm', 'install', ...(isDev ? ['--save-dev'] : []), packageSpec];
+
   const startedAt = Date.now();
   const child = spawn(command[0], command.slice(1), {
     cwd: projectPath,
@@ -1586,6 +1637,52 @@ ipcMain.handle('packages:installPackage', async (_event, payload: { projectPath:
   });
 
   return { runId, startedAt, command: commandString, script: `install-${packageName}`, projectPath };
+});
+
+ipcMain.handle('packages:audit', async (_event, projectPath: string) => {
+  const pm = detectPackageManager(projectPath);
+  const command =
+    pm === 'yarn'
+      ? ['yarn', 'audit']
+      : pm === 'pnpm'
+      ? ['pnpm', 'audit']
+      : pm === 'bun'
+      ? ['bun', 'audit']
+      : ['npm', 'audit'];
+  const { stdout, stderr } = await runGitCommand(projectPath, command);
+  return { output: stdout || stderr };
+});
+
+ipcMain.handle('packages:outdated', async (_event, projectPath: string) => {
+  const pm = detectPackageManager(projectPath);
+  const command =
+    pm === 'yarn'
+      ? ['yarn', 'outdated']
+      : pm === 'pnpm'
+      ? ['pnpm', 'outdated']
+      : pm === 'bun'
+      ? ['bun', 'outdated']
+      : ['npm', 'outdated'];
+  const { stdout, stderr } = await runGitCommand(projectPath, command);
+  return { output: stdout || stderr };
+});
+
+ipcMain.handle('packages:regenerateLockfile', async (_event, payload: { projectPath: string; packageManager?: string }) => {
+  const { projectPath, packageManager } = payload ?? {};
+  if (!projectPath) {
+    throw new Error('Project path is required');
+  }
+  const pm = packageManager || detectPackageManager(projectPath);
+  if (pm === 'pnpm') {
+    await runGitCommand(projectPath, ['pnpm', 'install', '--lockfile-only']);
+  } else if (pm === 'yarn') {
+    await runGitCommand(projectPath, ['yarn', 'install', '--mode=update-lockfile']);
+  } else if (pm === 'bun') {
+    await runGitCommand(projectPath, ['bun', 'install']);
+  } else {
+    await runGitCommand(projectPath, ['npm', 'install', '--package-lock-only']);
+  }
+  return { success: true };
 });
 
 type StylingPresetId = 'none' | 'tailwind-v4' | 'tailwind-v3';

@@ -166,6 +166,7 @@ export interface ElectronAPI {
   processes: {
     active: () => Promise<ActiveProcessInfo[]>;
     kill: (pid: number) => Promise<{ success: boolean; error?: string }>;
+    restart: (pid: number) => Promise<{ success: boolean; runId?: string; error?: string }>;
   };
   logs: {
     export: (payload: { contents: string; suggestedName?: string }) => Promise<{ saved: boolean; filePath?: string }>;
@@ -217,6 +218,9 @@ export interface ElectronAPI {
     getDependencies: (projectPath: string) => Promise<{ dependencies: Record<string, string>; devDependencies: Record<string, string>; peerDependencies: Record<string, string>; optionalDependencies: Record<string, string> }>;
     scanNodeModules: (projectPath: string) => Promise<Record<string, { version?: string; path: string }>>;
     installPackage: (payload: { projectPath: string; packageName: string; version?: string; isDev?: boolean; packageManager?: string }) => Promise<RunScriptResult>;
+    audit: (projectPath: string) => Promise<{ output: string }>;
+    outdated: (projectPath: string) => Promise<{ output: string }>;
+    regenerateLockfile: (payload: { projectPath: string; packageManager?: string }) => Promise<{ success: boolean }>;
   };
   git: {
     status: (projectPath: string) => Promise<GitStatusInfo>;
