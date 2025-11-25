@@ -8,6 +8,7 @@ import PortsProcessesPanel from './PortsProcessesPanel';
 import { ProjectHeader } from './ProjectHeader';
 import { PackagesPanel } from './PackagesPanel';
 import { GitPanel } from './GitPanel';
+import UtilityCommandsPanel, { UtilityWorkflowDefinition } from './UtilityCommandsPanel';
 import EnvFileEditor from './EnvFileEditor';
 
 interface ProjectViewProps {
@@ -47,6 +48,7 @@ interface ProjectViewProps {
   onOpenRunCommandModal?: () => void;
   onEditScriptOverrides?: (script: ScriptInfo) => void;
   hasOverrides?: (script: ScriptInfo) => boolean;
+  onRunUtilityWorkflow?: (workflow: UtilityWorkflowDefinition) => void;
 }
 
 export function ProjectView({
@@ -85,7 +87,8 @@ export function ProjectView({
   forceStopReady,
   onOpenRunCommandModal,
   onEditScriptOverrides,
-  hasOverrides
+  hasOverrides,
+  onRunUtilityWorkflow
 }: ProjectViewProps) {
   const handleHeaderRestart = () => {
     if (!scriptInFlight) return;
@@ -134,31 +137,40 @@ export function ProjectView({
 
       <div className="mt-6 space-y-6">
         {activeTab === 'scripts' && (
-          <Section
-            title="Scripts"
-            action={
-              onOpenRunCommandModal ? (
-                <button
-                  onClick={onOpenRunCommandModal}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200 dark:hover:border-indigo-500/40"
-                >
-                  Run custom command
-                </button>
-              ) : null
-            }
-          >
-            <ScriptsPanel
-              scripts={projectScripts}
-              scriptInFlight={scriptInFlight}
-              onRunScript={onRunScript}
-              onStopScript={onStopScript}
-              onRestartScript={onRestartScript}
-              forceStopReady={forceStopReady}
-              onForceStopScript={onForceStopScript}
-              onEditOverrides={onEditScriptOverrides}
-              hasOverrides={hasOverrides}
-            />
-          </Section>
+          <div className="space-y-6">
+            <Section
+              title="Scripts"
+              action={
+                onOpenRunCommandModal ? (
+                  <button
+                    onClick={onOpenRunCommandModal}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200 dark:hover:border-indigo-500/40"
+                  >
+                    Run custom command
+                  </button>
+                ) : null
+              }
+            >
+              <ScriptsPanel
+                scripts={projectScripts}
+                scriptInFlight={scriptInFlight}
+                onRunScript={onRunScript}
+                onStopScript={onStopScript}
+                onRestartScript={onRestartScript}
+                forceStopReady={forceStopReady}
+                onForceStopScript={onForceStopScript}
+                onEditOverrides={onEditScriptOverrides}
+                hasOverrides={hasOverrides}
+              />
+            </Section>
+            <Section title="Utility workflows">
+              <UtilityCommandsPanel
+                project={project}
+                electronAPI={electronAPI}
+                onRun={(workflow) => onRunUtilityWorkflow?.(workflow)}
+              />
+            </Section>
+          </div>
         )}
 
         {activeTab === 'logs' && (

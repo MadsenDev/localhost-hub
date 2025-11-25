@@ -18,6 +18,7 @@ import { TerminalModal } from './components/TerminalModal';
 import { CreateProjectModal } from './components/CreateProjectModal';
 import RunCommandModal from './components/RunCommandModal';
 import ScriptOverridesModal from './components/ScriptOverridesModal';
+import type { UtilityWorkflowDefinition } from './components/UtilityCommandsPanel';
 
 const HISTORY_STORAGE_KEY = 'localhost-hub:run-history';
 const MAX_HISTORY = 20;
@@ -872,6 +873,17 @@ function AppContent() {
     [electronAPI, selectedProject]
   );
 
+  const handleRunUtilityWorkflow = useCallback(
+    async (workflow: UtilityWorkflowDefinition) => {
+      if (workflow.kind === 'script') {
+        await handleRunScript(workflow.script);
+      } else {
+        await handleRunCustomCommand(workflow.command, workflow.label);
+      }
+    },
+    [handleRunCustomCommand, handleRunScript]
+  );
+
   const handleRestartScript = useCallback(
     async (script: ScriptInfo) => {
       if (!electronAPI) {
@@ -1369,6 +1381,7 @@ function AppContent() {
             onOpenRunCommandModal={electronAPI ? () => setShowRunCommandModal(true) : undefined}
             onEditScriptOverrides={electronAPI ? handleOpenScriptOverrides : undefined}
             hasOverrides={electronAPI ? hasOverridesForScript : undefined}
+            onRunUtilityWorkflow={electronAPI ? handleRunUtilityWorkflow : undefined}
           />
         )}
       </main>

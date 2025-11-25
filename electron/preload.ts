@@ -33,12 +33,14 @@ const api: Window['electronAPI'] = {
     stageFiles: (payload: { projectPath: string; files: string[] }) => ipcRenderer.invoke('git:stageFiles', payload),
     unstageFiles: (payload: { projectPath: string; files: string[] }) => ipcRenderer.invoke('git:unstageFiles', payload),
     commit: (payload: { projectPath: string; message: string }) => ipcRenderer.invoke('git:commit', payload),
-    push: (payload: { projectPath: string; remote?: string; branch?: string; credentials?: { username: string; password: string } }) =>
+    push: (payload: { projectPath: string; remote?: string; branch?: string; credentials?: { username: string; password: string }; rememberCredentials?: boolean }) =>
       ipcRenderer.invoke('git:push', payload),
     checkout: (payload: { projectPath: string; branch: string }) => ipcRenderer.invoke('git:checkout', payload),
     createBranch: (payload: { projectPath: string; branch: string }) => ipcRenderer.invoke('git:createBranch', payload),
     stashSave: (payload: { projectPath: string; message?: string }) => ipcRenderer.invoke('git:stashSave', payload),
-    stashPop: (payload: { projectPath: string }) => ipcRenderer.invoke('git:stashPop', payload)
+    stashPop: (payload: { projectPath: string }) => ipcRenderer.invoke('git:stashPop', payload),
+    getStoredCredentials: (projectPath: string) => ipcRenderer.invoke('git:getStoredCredentials', projectPath),
+    clearStoredCredentials: (projectPath: string) => ipcRenderer.invoke('git:clearStoredCredentials', projectPath)
   },
   processes: {
     active: () => ipcRenderer.invoke('processes:active'),

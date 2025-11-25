@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import type { GitStatusInfo, ProjectInfo } from '../types/global';
 import GitAuthModal from './GitAuthModal';
 
@@ -17,6 +17,9 @@ export function GitPanel({ project, gitStatus, gitStatusLoading, onRefreshGit, e
   const [stashMessage, setStashMessage] = useState('');
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [storedCredentials, setStoredCredentials] = useState<{ hasCredentials: boolean; username?: string | null }>({
+    hasCredentials: false
+  });
   const gitApi = electronAPI?.git;
   const [showAuthModal, setShowAuthModal] = useState(false);
   const stagedChanges = useMemo(() => {
@@ -29,7 +32,22 @@ export function GitPanel({ project, gitStatus, gitStatusLoading, onRefreshGit, e
     return gitStatus.changes.filter((change) => !(change.indexStatus ?? '').trim() || (change.indexStatus ?? '').trim() === '?');
   }, [gitStatus]);
 
-  const handleGitAction = async (label: string, action: () => Promise<void>) => {
+  const refreshStoredCredentials = useCallback(() => {
+    if (!gitApi) {
+      setStoredCredentials({ hasCredentials: false });
+      return;
+    }
+    gitApi
+      .getStoredCredentials(project.path)
+      .then((info) => setStoredCredentials(info))
+      .catch(() => setStoredCredentials({ hasCredentials: false }));
+  }, [gitApi, project.path]);
+
+  useEffect(() => {
+    refreshStoredCredentials();
+  }, [refreshStoredCredentials]);
+
+  const handleGitAction = async (label: string, action: () => Promise<unknown>) => {
     if (!gitApi) return;
     setPendingAction(label);
     setActionStatus(null);
@@ -37,6 +55,7 @@ export function GitPanel({ project, gitStatus, gitStatusLoading, onRefreshGit, e
       await action();
       setActionStatus(`${label} succeeded`);
       await onRefreshGit();
+      refreshStoredCredentials();
     } catch (error) {
       setActionStatus(error instanceof Error ? error.message : `${label} failed`);
     } finally {
@@ -74,9 +93,15 @@ export function GitPanel({ project, gitStatus, gitStatusLoading, onRefreshGit, e
     });
   };
 
-  const handlePush = async (credentials?: { username: string; password: string }) => {
+  const handlePush = async (credentials?: { username: string; password: string }, remember?: boolean) => {
     if (!gitApi) return;
-    await handleGitAction('Push', () => gitApi.push({ projectPath: project.path, credentials }));
+    await handleGitAction('Push', () => gitApi.push({ projectPath: project.path, credentials, rememberCredentials: remember }));
+  };
+
+  const handleClearStoredCredentials = async () => {
+    if (!gitApi) return;
+    await gitApi.clearStoredCredentials(project.path);
+    refreshStoredCredentials();
   };
 
   const handleCheckout = async () => {
@@ -353,14 +378,32 @@ export function GitPanel({ project, gitStatus, gitStatusLoading, onRefreshGit, e
               </div>
             </div>
 
-            <div className="flex justify-between items-center">
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={() => setShowAuthModal(true)}
                 disabled={pendingAction !== null}
                 className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-200"
               >
-                {pendingAction === 'Push' ? 'Pushing…' : 'Push'}
+                {pendingAction === 'Push' ? 'Pushing…' : storedCredentials.hasCredentials ? 'Push with new credentials' : 'Push'}
               </button>
+              {storedCredentials.hasCredentials && (
+                <>
+                  <button
+                    onClick={() => handlePush(undefined)}
+                    disabled={pendingAction !== null}
+                    className="rounded-lg border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-600 dark:text-indigo-200"
+                  >
+                    Use saved credentials{storedCredentials.username ? ` (${storedCredentials.username})` : ''}
+                  </button>
+                  <button
+                    onClick={handleClearStoredCredentials}
+                    disabled={pendingAction !== null}
+                    className="text-xs text-rose-500 hover:text-rose-600 dark:text-rose-300 dark:hover:text-rose-200"
+                  >
+                    Forget saved credentials
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -369,9 +412,10 @@ export function GitPanel({ project, gitStatus, gitStatusLoading, onRefreshGit, e
         <GitAuthModal
           isOpen
           onClose={() => setShowAuthModal(false)}
-          onSubmit={(credentials) => {
+          hasStoredCredentials={storedCredentials.hasCredentials}
+          onSubmit={(credentials, remember) => {
             setShowAuthModal(false);
-            handlePush(credentials);
+            handlePush(credentials, remember);
           }}
         />
       )}

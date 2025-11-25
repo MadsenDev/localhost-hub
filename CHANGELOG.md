@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom command runner so any arbitrary shell command can be launched from the Scripts tab
 - Environment helpers: .env file editor plus per-script temporary env overrides
 - Git tab upgrades: stage/unstage, commits, branch checkout/creation, push, and stash controls
+- Optional encrypted storage for Git HTTPS credentials per project
+- Utility workflows panel with one-click DB/d compose helpers powered by saved scripts or commands
 
 ### Removed
 - Embedded terminal tab and node-pty integration (feature reverted due to packaging instability)

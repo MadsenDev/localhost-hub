@@ -223,11 +223,13 @@ export interface ElectronAPI {
     stageFiles: (payload: { projectPath: string; files: string[] }) => Promise<{ success: boolean }>;
     unstageFiles: (payload: { projectPath: string; files: string[] }) => Promise<{ success: boolean }>;
     commit: (payload: { projectPath: string; message: string }) => Promise<{ success: boolean }>;
-    push: (payload: { projectPath: string; remote?: string; branch?: string; credentials?: { username: string; password: string } }) => Promise<{ success: boolean }>;
+    push: (payload: { projectPath: string; remote?: string; branch?: string; credentials?: { username: string; password: string }; rememberCredentials?: boolean }) => Promise<{ success: boolean; usedStoredCredentials?: boolean }>;
     checkout: (payload: { projectPath: string; branch: string }) => Promise<{ success: boolean }>;
     createBranch: (payload: { projectPath: string; branch: string }) => Promise<{ success: boolean }>;
     stashSave: (payload: { projectPath: string; message?: string }) => Promise<{ success: boolean }>;
     stashPop: (payload: { projectPath: string }) => Promise<{ success: boolean }>;
+    getStoredCredentials: (projectPath: string) => Promise<{ hasCredentials: boolean; username?: string | null }>;
+    clearStoredCredentials: (projectPath: string) => Promise<{ success: boolean }>;
   };
   workspaces: {
     list: () => Promise<Workspace[]>;

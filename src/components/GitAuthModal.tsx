@@ -3,23 +3,28 @@ import { useState } from 'react';
 interface GitAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (credentials?: { username: string; password: string }) => void;
+  onSubmit: (credentials: { username: string; password: string }, remember: boolean) => void;
+  hasStoredCredentials?: boolean;
 }
 
-export function GitAuthModal({ isOpen, onClose, onSubmit }: GitAuthModalProps) {
+export function GitAuthModal({ isOpen, onClose, onSubmit, hasStoredCredentials }: GitAuthModalProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleSubmit = () => {
-    if (username.trim() || password) {
-      onSubmit({ username: username.trim(), password });
-    } else {
-      onSubmit(undefined);
+    if (!username.trim() || !password) {
+      setError('Enter both username and token.');
+      return;
     }
+    onSubmit({ username: username.trim(), password }, remember);
     setUsername('');
     setPassword('');
+    setRemember(true);
+    setError(null);
   };
 
   return (
@@ -35,9 +40,10 @@ export function GitAuthModal({ isOpen, onClose, onSubmit }: GitAuthModalProps) {
           </button>
         </div>
         <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
-          Provide HTTPS credentials for your remote. Leave empty to attempt push without credentials.
+          Provide HTTPS credentials (GitHub username + PAT with `repo` access). {hasStoredCredentials ? 'You already have saved credentials for this project; submitting new ones will replace them.' : ''}
         </p>
         <div className="space-y-3">
+          {error && <p className="text-xs text-rose-500">{error}</p>}
           <div>
             <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">Username</label>
             <input
@@ -57,6 +63,10 @@ export function GitAuthModal({ isOpen, onClose, onSubmit }: GitAuthModalProps) {
               placeholder="password or PAT"
             />
           </div>
+          <label className="inline-flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+            <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
+            Remember for this project
+          </label>
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <button
@@ -69,7 +79,7 @@ export function GitAuthModal({ isOpen, onClose, onSubmit }: GitAuthModalProps) {
             onClick={handleSubmit}
             className="rounded-lg border border-indigo-200 bg-indigo-600/90 px-4 py-2 text-sm font-semibold text-white dark:border-indigo-500/40"
           >
-            Push
+            Save & Push
           </button>
         </div>
       </div>

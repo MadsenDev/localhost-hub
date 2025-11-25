@@ -1,9 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, Tray, nativeImage, Notification } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, Tray, nativeImage, Notification, safeStorage } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, unlink } from 'node:fs/promises';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { exec } from 'node:child_process';
@@ -96,7 +96,6 @@ const workspaceRunMap = new Map<number, Set<string>>();
 const runWorkspaceMap = new Map<string, { workspaceId: number; itemId?: number; runMode: 'parallel' | 'sequential' }>();
 
 const DEFAULT_ENV_FILES = ['.env', '.env.local', '.env.development', '.env.production', '.env.test'];
-import { unlink } from 'node:fs/promises';
 
 async function createAskPassScript(username: string, password: string) {
   const scriptPath = join(app.getPath('userData'), `git-askpass-${randomUUID()}.js`);
@@ -156,6 +155,51 @@ async function runGitCommand(
       }
     });
   });
+}
+
+const credentialStorePath = join(app.getPath('userData'), 'git-credentials.json');
+let cachedCredentials: Record<string, string> | null = null;
+
+async function loadStoredCredentials() {
+  if (cachedCredentials) {
+    return cachedCredentials;
+  }
+  try {
+    const raw = await readFile(credentialStorePath);
+    const parsed = JSON.parse(raw.toString()) as Record<string, string>;
+    const decrypted: Record<string, string> = {};
+    for (const [repo, value] of Object.entries(parsed)) {
+      try {
+        const buffer = Buffer.from(value, 'base64');
+        const secret = safeStorage.isEncryptionAvailable()
+          ? safeStorage.decryptString(buffer)
+          : buffer.toString('utf-8');
+        decrypted[repo] = secret;
+      } catch {
+        // ignore corrupted entries
+      }
+    }
+    cachedCredentials = decrypted;
+  } catch {
+    cachedCredentials = {};
+  }
+  return cachedCredentials;
+}
+
+async function saveStoredCredentials(store: Record<string, string>) {
+  cachedCredentials = store;
+  const encrypted: Record<string, string> = {};
+  for (const [repo, value] of Object.entries(store)) {
+    try {
+      const buffer = safeStorage.isEncryptionAvailable()
+        ? safeStorage.encryptString(value)
+        : Buffer.from(value, 'utf-8');
+      encrypted[repo] = buffer.toString('base64');
+    } catch {
+      // skip entry if encryption fails
+    }
+  }
+  await writeFile(credentialStorePath, JSON.stringify(encrypted, null, 2), 'utf-8');
 }
 
 function resolveEnvFilePath(projectPath: string, fileName: string) {
@@ -642,16 +686,64 @@ ipcMain.handle('git:commit', async (_event, payload: { projectPath: string; mess
   return { success: true };
 });
 
-ipcMain.handle('git:push', async (_event, payload: { projectPath: string; remote?: string; branch?: string }) => {
-  if (!payload?.projectPath) {
+ipcMain.handle(
+  'git:push',
+  async (
+    _event,
+    payload: {
+      projectPath: string;
+      remote?: string;
+      branch?: string;
+      credentials?: { username: string; password: string };
+      rememberCredentials?: boolean;
+    }
+  ) => {
+    if (!payload?.projectPath) {
+      throw new Error('Project path is required');
+    }
+    const args = ['push'];
+    if (payload.remote) args.push(payload.remote);
+    if (payload.branch) args.push(payload.branch);
+    if (payload.rememberCredentials && payload.credentials && payload.credentials.username && payload.credentials.password) {
+      const store = await loadStoredCredentials();
+      store[payload.projectPath] = JSON.stringify(payload.credentials);
+      await saveStoredCredentials(store);
+    }
+    const stored = await loadStoredCredentials();
+    const savedCreds = stored[payload.projectPath] ? JSON.parse(stored[payload.projectPath]) : undefined;
+    await runGitCommand(payload.projectPath, args, {
+      credentials: payload.credentials || savedCreds
+    });
+    return { success: true, usedStoredCredentials: Boolean(savedCreds && !payload.credentials) };
+  }
+);
+
+ipcMain.handle('git:getStoredCredentials', async (_event, projectPath: string) => {
+  if (!projectPath) {
     throw new Error('Project path is required');
   }
-  const args = ['push'];
-  if (payload.remote) args.push(payload.remote);
-  if (payload.branch) args.push(payload.branch);
-  await runGitCommand(payload.projectPath, args, {
-    credentials: payload.credentials
-  });
+  const store = await loadStoredCredentials();
+  const entry = store[projectPath];
+  if (!entry) {
+    return { hasCredentials: false };
+  }
+  try {
+    const parsed = JSON.parse(entry);
+    return { hasCredentials: true, username: parsed.username ?? null };
+  } catch {
+    return { hasCredentials: false };
+  }
+});
+
+ipcMain.handle('git:clearStoredCredentials', async (_event, projectPath: string) => {
+  if (!projectPath) {
+    throw new Error('Project path is required');
+  }
+  const store = await loadStoredCredentials();
+  if (store[projectPath]) {
+    delete store[projectPath];
+    await saveStoredCredentials(store);
+  }
   return { success: true };
 });
 
