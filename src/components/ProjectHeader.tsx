@@ -313,6 +313,19 @@ export function ProjectHeader({
               🌐 Open in Browser
             </motion.button>
           )}
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={async () => {
+              if (electronAPI?.shell?.openPath) {
+                await electronAPI.shell.openPath(project.path);
+              }
+            }}
+            className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 transition hover:border-indigo-300 dark:hover:bg-slate-800 whitespace-nowrap"
+            title="Open project folder in file explorer"
+          >
+            📁 Open Folder
+          </motion.button>
           {packageManager && (
             <motion.button
               whileHover={{ scale: 1.02 }}

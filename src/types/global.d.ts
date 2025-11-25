@@ -195,6 +195,7 @@ export interface ElectronAPI {
   };
   shell: {
     openExternal: (url: string) => Promise<{ success: boolean }>;
+    openPath: (path: string) => Promise<{ success: boolean }>;
   };
   envProfiles: {
     list: (projectId: string) => Promise<EnvProfile[]>;

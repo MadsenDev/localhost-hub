@@ -7,6 +7,7 @@ import {
   HiDocumentText, 
   HiServer, 
   HiPaintBrush,
+  HiInformationCircle,
   HiCheck,
   HiChevronRight
 } from 'react-icons/hi2';
@@ -257,7 +258,8 @@ const CATEGORIES = [
   { id: 'scripts', label: 'Scripts', icon: HiPlay, color: 'blue' },
   { id: 'logging', label: 'Logging', icon: HiDocumentText, color: 'purple' },
   { id: 'ports', label: 'Ports & Processes', icon: HiServer, color: 'orange' },
-  { id: 'ui', label: 'Appearance', icon: HiPaintBrush, color: 'pink' }
+  { id: 'ui', label: 'Appearance', icon: HiPaintBrush, color: 'pink' },
+  { id: 'about', label: 'About', icon: HiInformationCircle, color: 'slate' }
 ] as const;
 
 const PACKAGE_MANAGERS = ['npm', 'pnpm', 'yarn', 'bun', 'deno'];
@@ -434,14 +436,14 @@ export function SettingsPanel({ electronAPI }: SettingsPanelProps) {
   const categorySettings = getCategorySettings(activeCategory);
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full">
       {/* Sidebar Navigation */}
-      <div className="w-64 border-r border-slate-200/50 dark:border-slate-800/50 light:border-slate-200/50 bg-slate-50/30 dark:bg-slate-900/30 light:bg-slate-50/30 p-4 overflow-y-auto">
+      <div className="w-64 border-r border-slate-200/50 dark:border-slate-800/50 light:border-slate-200/50 bg-slate-50/30 dark:bg-slate-900/30 light:bg-slate-50/30 p-4 flex-shrink-0">
         <nav className="space-y-1">
           {CATEGORIES.map((category) => {
             const Icon = category.icon;
             const isActive = activeCategory === category.id;
-            const count = getCategorySettings(category.id).length;
+            const count = category.id === 'about' ? 0 : getCategorySettings(category.id).length;
             
             return (
               <button
@@ -469,51 +471,180 @@ export function SettingsPanel({ electronAPI }: SettingsPanelProps) {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-6 max-w-3xl">
-          {activeCategoryData && (
-            <div className="mb-6">
-              <div className="flex items-center gap-3 mb-2">
-                {(() => {
-                  const Icon = activeCategoryData.icon;
-                  return <Icon className="h-6 w-6 text-indigo-600 dark:text-indigo-400 light:text-indigo-600" />;
-                })()}
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white light:text-slate-900">
-                  {activeCategoryData.label}
-                </h3>
-              </div>
-              <p className="text-sm text-slate-600 dark:text-slate-400 light:text-slate-600 ml-9">
-                {categorySettings.length} {categorySettings.length === 1 ? 'setting' : 'settings'}
-              </p>
-            </div>
-          )}
-
-          <div className="space-y-3">
-            {categorySettings.length === 0 ? (
-              <div className="text-center py-12 text-slate-500 dark:text-slate-400 light:text-slate-500">
-                <p className="text-sm">No settings in this category</p>
-              </div>
-            ) : (
-              categorySettings.map(([key, config]) => renderSetting(key, config))
-            )}
-          </div>
-
-          {/* About Section */}
-          {activeCategory === 'general' && (
+      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col">
+        <div className="p-6 max-w-3xl flex-1">
+          {activeCategory === 'about' ? (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mt-8 pt-6 border-t border-slate-200/50 dark:border-slate-800/50 light:border-slate-200/50"
+              className="space-y-6"
             >
-              <div className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 light:border-slate-200/50 bg-slate-50/50 dark:bg-slate-900/30 light:bg-slate-50/50 p-4">
-                <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 light:text-slate-900 mb-1">
-                  Localhost Hub
-                </h4>
-                <p className="text-xs text-slate-600 dark:text-slate-400 light:text-slate-600">
-                  A desktop control center for your development projects
+              {/* Header */}
+              <div className="mb-6">
+                <div className="flex items-center gap-3 mb-2">
+                  <HiInformationCircle className="h-6 w-6 text-indigo-600 dark:text-indigo-400 light:text-indigo-600" />
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white light:text-slate-900">
+                    About Localhost Hub
+                  </h3>
+                </div>
+              </div>
+
+              {/* App Info Card */}
+              <div className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 light:border-slate-200/50 bg-gradient-to-br from-indigo-50/50 to-purple-50/50 dark:from-indigo-950/20 dark:to-purple-950/20 light:from-indigo-50/50 light:to-purple-50/50 p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h4 className="text-2xl font-bold text-slate-900 dark:text-white light:text-slate-900 mb-1">
+                      Localhost Hub
+                    </h4>
+                    <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 light:text-indigo-600">
+                      Version 0.5.0
+                    </p>
+                  </div>
+                </div>
+                <p className="text-sm text-slate-700 dark:text-slate-300 light:text-slate-700 leading-relaxed">
+                  A desktop control center for managing local development projects, scripts, and processes. 
+                  Streamline your workflow with unified project management, script execution, environment profiles, 
+                  and workspace orchestration.
                 </p>
               </div>
+
+              {/* Features */}
+              <div className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 light:border-slate-200/50 bg-slate-50/50 dark:bg-slate-900/30 light:bg-slate-50/50 p-6">
+                <h5 className="text-sm font-semibold text-slate-900 dark:text-slate-100 light:text-slate-900 mb-4">
+                  Key Features
+                </h5>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="flex items-start gap-2">
+                    <span className="text-indigo-600 dark:text-indigo-400 light:text-indigo-600 mt-0.5">•</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-400 light:text-slate-600">Project scanning & management</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-indigo-600 dark:text-indigo-400 light:text-indigo-600 mt-0.5">•</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-400 light:text-slate-600">Script execution & monitoring</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-indigo-600 dark:text-indigo-400 light:text-indigo-600 mt-0.5">•</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-400 light:text-slate-600">Workspace orchestration</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-indigo-600 dark:text-indigo-400 light:text-indigo-600 mt-0.5">•</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-400 light:text-slate-600">Environment profiles</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-indigo-600 dark:text-indigo-400 light:text-indigo-600 mt-0.5">•</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-400 light:text-slate-600">Git integration</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-indigo-600 dark:text-indigo-400 light:text-indigo-600 mt-0.5">•</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-400 light:text-slate-600">Port & process tracking</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-indigo-600 dark:text-indigo-400 light:text-indigo-600 mt-0.5">•</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-400 light:text-slate-600">Package management</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-indigo-600 dark:text-indigo-400 light:text-indigo-600 mt-0.5">•</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-400 light:text-slate-600">Project creation wizard</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tech Stack */}
+              <div className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 light:border-slate-200/50 bg-slate-50/50 dark:bg-slate-900/30 light:bg-slate-50/50 p-6">
+                <h5 className="text-sm font-semibold text-slate-900 dark:text-slate-100 light:text-slate-900 mb-4">
+                  Built With
+                </h5>
+                <div className="flex flex-wrap gap-2">
+                  {['Electron', 'React 19', 'TypeScript', 'Vite', 'Tailwind CSS', 'Framer Motion', 'SQLite'].map((tech) => (
+                    <span
+                      key={tech}
+                      className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 light:bg-white border border-slate-200 dark:border-slate-700 light:border-slate-200 text-xs font-medium text-slate-700 dark:text-slate-300 light:text-slate-700"
+                    >
+                      {tech}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Author & Links */}
+              <div className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 light:border-slate-200/50 bg-slate-50/50 dark:bg-slate-900/30 light:bg-slate-50/50 p-6 space-y-4">
+                <div>
+                  <h5 className="text-sm font-semibold text-slate-900 dark:text-slate-100 light:text-slate-900 mb-2">
+                    Author
+                  </h5>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 light:text-slate-600 mb-1">
+                    Christoffer Madsen
+                  </p>
+                  <a
+                    href="mailto:chris@madsens.dev"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (electronAPI?.shell?.openExternal) {
+                        electronAPI.shell.openExternal('mailto:chris@madsens.dev');
+                      }
+                    }}
+                    className="text-sm text-indigo-600 dark:text-indigo-400 light:text-indigo-600 hover:underline"
+                  >
+                    chris@madsens.dev
+                  </a>
+                </div>
+
+                <div className="pt-4 border-t border-slate-200/50 dark:border-slate-800/50 light:border-slate-200/50">
+                  <h5 className="text-sm font-semibold text-slate-900 dark:text-slate-100 light:text-slate-900 mb-3">
+                    License
+                  </h5>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 light:text-slate-600">
+                    MIT License - Open source and free to use
+                  </p>
+                </div>
+
+                <div className="pt-4 border-t border-slate-200/50 dark:border-slate-800/50 light:border-slate-200/50">
+                  <h5 className="text-sm font-semibold text-slate-900 dark:text-slate-100 light:text-slate-900 mb-3">
+                    Support the Project
+                  </h5>
+                  <button
+                    onClick={async () => {
+                      if (electronAPI?.shell?.openExternal) {
+                        await electronAPI.shell.openExternal('https://buymeacoffee.com/madsendev');
+                      }
+                    }}
+                    className="flex items-center gap-2 rounded-lg border border-amber-200 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-700 dark:text-amber-300 transition hover:bg-amber-100 dark:hover:bg-amber-500/20 w-full justify-center"
+                  >
+                    <span>☕</span>
+                    <span>Buy Me a Coffee</span>
+                  </button>
+                </div>
+              </div>
             </motion.div>
+          ) : (
+            <>
+              {activeCategoryData && (
+                <div className="mb-6">
+                  <div className="flex items-center gap-3 mb-2">
+                    {(() => {
+                      const Icon = activeCategoryData.icon;
+                      return <Icon className="h-6 w-6 text-indigo-600 dark:text-indigo-400 light:text-indigo-600" />;
+                    })()}
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white light:text-slate-900">
+                      {activeCategoryData.label}
+                    </h3>
+                  </div>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 light:text-slate-600 ml-9">
+                    {categorySettings.length} {categorySettings.length === 1 ? 'setting' : 'settings'}
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {categorySettings.length === 0 ? (
+                  <div className="text-center py-12 text-slate-500 dark:text-slate-400 light:text-slate-500">
+                    <p className="text-sm">No settings in this category</p>
+                  </div>
+                ) : (
+                  categorySettings.map(([key, config]) => renderSetting(key, config))
+                )}
+              </div>
+            </>
           )}
         </div>
       </div>

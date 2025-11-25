@@ -284,7 +284,10 @@ async function writeEnvFile(projectPath: string, fileName: string, contents: str
 }
 
 function createWindow() {
-  const windowIcon = getIconAssetPath('icon.png');
+  // On Windows, use .ico file for proper icon display in file explorer
+  // On other platforms, use .png
+  const iconFileName = process.platform === 'win32' ? 'icon.ico' : 'icon.png';
+  const windowIcon = getIconAssetPath(iconFileName);
   const window = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -1420,6 +1423,11 @@ ipcMain.handle('scripts:getAllExpectedPorts', async (_event, projectId: string) 
 
 ipcMain.handle('shell:openExternal', async (_event, url: string) => {
   await shell.openExternal(url);
+  return { success: true };
+});
+
+ipcMain.handle('shell:openPath', async (_event, path: string) => {
+  await shell.openPath(path);
   return { success: true };
 });
 

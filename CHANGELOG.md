@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2025-11-25
+
 ### Added
+- "Open Folder" button in project header to open project directory in file explorer (Windows, macOS, Linux)
+- "Buy Me a Coffee" support link in Settings panel About section
+- Git installation detection modal for Windows with installation options (winget, Chocolatey, Scoop, manual download)
+- "Check Again" button in Git installation modal to re-check after installation
+- Enhanced About section in Settings with comprehensive app information, features, and tech stack
 - Custom command runner so any arbitrary shell command can be launched from the Scripts tab
 - Environment helpers: .env file editor plus per-script temporary env overrides
 - Git tab upgrades: stage/unstage, commits, branch checkout/creation, push, and stash controls
@@ -15,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Utility workflows panel with one-click DB/d compose helpers powered by saved scripts or commands
 - Packages tab now exposes npm audit/outdated and one-click lockfile regeneration
 - Ports & Processes tab upgrades: per-service launch buttons, inline restarts for tracked dev servers, and clearer status badges
+
+### Fixed
+- Git detection on Windows now checks common installation paths when git is not in PATH
+- Git status and git commands (stage, unstage, commit, push, etc.) now work on Windows even when git isn't in the system PATH
+- Improved detached HEAD state detection on Windows for better branch display
+- App icon now uses .ico format on Windows for proper display in file explorer (requires rebuild)
+- Settings modal content area scrolling improvements
 
 ### Removed
 - Embedded terminal tab and node-pty integration (feature reverted due to packaging instability)
@@ -91,7 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Build configuration for macOS, Windows, and Linux
 - Development environment with Vite and live reloading
 
-[Unreleased]: https://github.com/MadsenDev/localhost-hub/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/MadsenDev/localhost-hub/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.1.1...v0.2.0

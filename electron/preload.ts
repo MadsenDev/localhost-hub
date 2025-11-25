@@ -111,7 +111,8 @@ const api: Window['electronAPI'] = {
     isMaximized: () => ipcRenderer.invoke('window:isMaximized')
   },
   shell: {
-    openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url)
+    openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+    openPath: (path: string) => ipcRenderer.invoke('shell:openPath', path)
   },
   envProfiles: {
     list: (projectId: string) => ipcRenderer.invoke('envProfiles:list', projectId),

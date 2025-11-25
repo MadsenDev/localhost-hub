@@ -1,6 +1,6 @@
 {
   "name": "localhost-hub",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Desktop control center for managing local development projects, scripts, and processes.",
   "main": "dist-electron/main.js",
   "license": "MIT",
