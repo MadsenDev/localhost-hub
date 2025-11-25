@@ -30,6 +30,7 @@ const api: Window['electronAPI'] = {
   },
   git: {
     status: (projectPath: string) => ipcRenderer.invoke('git:status', projectPath),
+    checkInstalled: () => ipcRenderer.invoke('git:checkInstalled'),
     stageFiles: (payload: { projectPath: string; files: string[] }) => ipcRenderer.invoke('git:stageFiles', payload),
     unstageFiles: (payload: { projectPath: string; files: string[] }) => ipcRenderer.invoke('git:unstageFiles', payload),
     commit: (payload: { projectPath: string; message: string }) => ipcRenderer.invoke('git:commit', payload),

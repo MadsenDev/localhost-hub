@@ -2,6 +2,10 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ProjectInfo } from '../types/global';
 import { LoadingSkeleton } from './LoadingSkeleton';
+import { parseAuditOutput, parseOutdatedOutput, type ParsedAuditResult, type ParsedOutdatedPackage } from '../utils/packageParsers';
+import { AuditResults } from './packages/AuditResults';
+import { OutdatedPackagesTable } from './packages/OutdatedPackagesTable';
+import { PackageCard } from './packages/PackageCard';
 
 interface PackagesPanelProps {
   project: ProjectInfo;
@@ -37,15 +41,14 @@ export function PackagesPanel({ project, electronAPI, onInstallPackage }: Packag
   const [newPackageIsDev, setNewPackageIsDev] = useState(false);
   const [actionOutput, setActionOutput] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [outdatedPackages, setOutdatedPackages] = useState<ParsedOutdatedPackage[] | null>(null);
+  const [auditResultsExpanded, setAuditResultsExpanded] = useState(true);
+  const [auditResults, setAuditResults] = useState<ParsedAuditResult | null>(null);
 
   const inputClass =
     'rounded-lg border border-slate-300 bg-white/95 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:ring-0';
   const chipButtonBase =
     'rounded-lg border px-3 py-1 text-xs font-semibold transition';
-  const surfaceCardClass =
-    'rounded-xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/40';
-  const warningCardClass =
-    'rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/5';
 
   const loadPackages = useCallback(async () => {
     if (!electronAPI?.packages) return;
@@ -114,29 +117,55 @@ export function PackagesPanel({ project, electronAPI, onInstallPackage }: Packag
     setShowInstallForm(false);
   }, [newPackageName, newPackageVersion, newPackageIsDev, onInstallPackage]);
 
+
   const handleAudit = useCallback(async () => {
     if (!electronAPI?.packages) return;
     setPendingAction('audit');
     setActionOutput(null);
+    setOutdatedPackages(null); // Clear outdated packages when running audit
+    setAuditResults(null);
+    setAuditResultsExpanded(true);
     try {
       const result = await electronAPI.packages.audit(project.path);
-      setActionOutput(result.output || 'Audit completed.');
+      const parsed = parseAuditOutput(result.output || '');
+      if (parsed) {
+        setAuditResults(parsed);
+      } else {
+        setActionOutput(result.output || 'No vulnerabilities found.');
+      }
     } catch (error) {
-      setActionOutput(error instanceof Error ? error.message : 'Failed to run audit.');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to run audit.';
+      // Try to parse even if it's an error (npm audit returns non-zero on vulnerabilities)
+      const parsed = parseAuditOutput(errorMessage);
+      if (parsed) {
+        setAuditResults(parsed);
+      } else {
+        setActionOutput(errorMessage);
+      }
     } finally {
       setPendingAction(null);
     }
   }, [electronAPI, project.path]);
 
+
   const handleOutdated = useCallback(async () => {
     if (!electronAPI?.packages) return;
     setPendingAction('outdated');
     setActionOutput(null);
+    setOutdatedPackages(null);
+    setAuditResults(null); // Clear audit results when checking outdated
+    setAuditResultsExpanded(true);
     try {
       const result = await electronAPI.packages.outdated(project.path);
-      setActionOutput(result.output || 'No outdated packages.');
+      const parsed = parseOutdatedOutput(result.output || '');
+      if (parsed) {
+        setOutdatedPackages(parsed);
+      } else {
+        setActionOutput(result.output || 'No outdated packages.');
+      }
     } catch (error) {
       setActionOutput(error instanceof Error ? error.message : 'Failed to check outdated packages.');
+      setOutdatedPackages(null);
     } finally {
       setPendingAction(null);
     }
@@ -146,6 +175,8 @@ export function PackagesPanel({ project, electronAPI, onInstallPackage }: Packag
     if (!electronAPI?.packages) return;
     setPendingAction('lockfile');
     setActionOutput(null);
+    setOutdatedPackages(null);
+    setAuditResults(null);
     try {
       await electronAPI.packages.regenerateLockfile({ projectPath: project.path });
       setActionOutput('Lockfile regenerated.');
@@ -300,7 +331,24 @@ export function PackagesPanel({ project, electronAPI, onInstallPackage }: Packag
         />
       </div>
 
-      {actionOutput && (
+      {auditResults ? (
+        <AuditResults
+          auditResults={auditResults}
+          projectPath={project.path}
+          electronAPI={electronAPI}
+          isExpanded={auditResultsExpanded}
+          onToggleExpand={() => setAuditResultsExpanded(!auditResultsExpanded)}
+          onClose={() => {
+            setAuditResults(null);
+            setAuditResultsExpanded(true);
+          }}
+        />
+      ) : outdatedPackages && outdatedPackages.length > 0 ? (
+        <OutdatedPackagesTable
+          packages={outdatedPackages}
+          onClose={() => setOutdatedPackages(null)}
+        />
+      ) : actionOutput && (
         <div className="rounded-xl border border-slate-200 bg-white/95 p-4 text-xs text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-300 whitespace-pre-wrap">
           {actionOutput}
         </div>
@@ -315,74 +363,14 @@ export function PackagesPanel({ project, electronAPI, onInstallPackage }: Packag
       ) : (
         <div className="space-y-2">
           <AnimatePresence mode="popLayout">
-            {filteredPackages.map((pkg, index) => {
-              const color = typeColors[pkg.type];
-              const versionMatch = pkg.isInstalled && pkg.installedVersion && pkg.expectedVersion
-                ? pkg.installedVersion === pkg.expectedVersion.replace(/^[\^~]/, '') || 
-                  pkg.installedVersion.startsWith(pkg.expectedVersion.replace(/^[\^~]/, '').split('.')[0])
-                : false;
-
-              return (
-                <motion.div
-                  key={pkg.name}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.2, delay: index * 0.02 }}
-                  className={pkg.isInstalled ? surfaceCardClass : warningCardClass}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="text-sm font-semibold text-slate-900 font-mono dark:text-white">{pkg.name}</p>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-xs font-semibold border ${
-                            pkg.type === 'dependencies'
-                              ? 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/20 dark:text-indigo-300 dark:border-indigo-500/40'
-                              : pkg.type === 'devDependencies'
-                              ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/20 dark:text-purple-300 dark:border-purple-500/40'
-                              : pkg.type === 'peerDependencies'
-                              ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/40'
-                              : 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-700/50 dark:text-slate-300 dark:border-slate-600'
-                          }`}
-                        >
-                          {typeLabels[pkg.type]}
-                        </span>
-                        {!pkg.isInstalled && (
-                          <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/20 dark:text-amber-300">
-                            Missing
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 text-xs">
-                        <span className="text-slate-600 dark:text-slate-400">
-                          Expected: <span className="font-mono text-slate-900 dark:text-slate-300">{pkg.expectedVersion}</span>
-                        </span>
-                        {pkg.isInstalled ? (
-                          <>
-                            <span className="text-slate-400 dark:text-slate-600">•</span>
-                            <span className={versionMatch ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}>
-                              Installed: <span className="font-mono">{pkg.installedVersion}</span>
-                              {!versionMatch && ' ⚠'}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="text-amber-600 dark:text-amber-400">Not installed</span>
-                        )}
-                      </div>
-                    </div>
-                    {!pkg.isInstalled && (
-                      <button
-                        onClick={() => onInstallPackage(pkg.name, pkg.expectedVersion, pkg.type === 'devDependencies')}
-                        className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 whitespace-nowrap dark:border-indigo-500/40 dark:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-indigo-500/30"
-                      >
-                        Install
-                      </button>
-                    )}
-                  </div>
-                </motion.div>
-              );
-            })}
+            {filteredPackages.map((pkg, index) => (
+              <PackageCard
+                key={pkg.name}
+                pkg={pkg}
+                index={index}
+                onInstall={onInstallPackage}
+              />
+            ))}
           </AnimatePresence>
         </div>
       )}

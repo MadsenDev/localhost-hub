@@ -224,6 +224,7 @@ export interface ElectronAPI {
   };
   git: {
     status: (projectPath: string) => Promise<GitStatusInfo>;
+    checkInstalled: () => Promise<{ installed: boolean }>;
     stageFiles: (payload: { projectPath: string; files: string[] }) => Promise<{ success: boolean }>;
     unstageFiles: (payload: { projectPath: string; files: string[] }) => Promise<{ success: boolean }>;
     commit: (payload: { projectPath: string; message: string }) => Promise<{ success: boolean }>;

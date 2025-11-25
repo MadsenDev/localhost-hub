@@ -5,12 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { writeFile, mkdir, unlink, readFile } from 'node:fs/promises';
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { exec } from 'node:child_process';
+import { exec, execSync } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);
 import { scanProjects, type ProjectInfo } from './projectScanner';
-import { getGitStatus } from './gitStatus';
+import { getGitStatus, findGitExecutable } from './gitStatus';
 import {
   initializeDatabase,
   loadProjects,
@@ -131,7 +131,11 @@ async function runGitCommand(
   }
 
   return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn('git', args, { cwd: projectPath, env });
+    // Find git executable (handles Windows PATH issues)
+    const gitPath = findGitExecutable();
+    const gitCommand = gitPath || 'git';
+    
+    const child = spawn(gitCommand, args, { cwd: projectPath, env });
     let stdout = '';
     let stderr = '';
     child.stdout?.on('data', (chunk) => {
@@ -154,6 +158,42 @@ async function runGitCommand(
         resolve({ stdout, stderr });
       } else {
         reject(new Error(stderr || stdout || `git ${args.join(' ')} failed with code ${code}`));
+      }
+    });
+  });
+}
+
+async function runCommand(
+  projectPath: string,
+  command: string[],
+  options?: { allowNonZeroExit?: boolean }
+): Promise<{ stdout: string; stderr: string }> {
+  if (!command || command.length === 0) {
+    throw new Error('Command is required');
+  }
+
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(command[0], command.slice(1), {
+      cwd: projectPath,
+      env: process.env,
+      shell: process.platform === 'win32'
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', (error) => {
+      reject(error);
+    });
+    child.on('close', (code) => {
+      if (code === 0 || options?.allowNonZeroExit) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(stderr || stdout || `${command.join(' ')} failed with code ${code}`));
       }
     });
   });
@@ -1387,6 +1427,57 @@ ipcMain.handle('git:status', async (_event, projectPath: string) => {
   return getGitStatus(projectPath);
 });
 
+ipcMain.handle('git:checkInstalled', async () => {
+  try {
+    const isWindows = process.platform === 'win32';
+    
+    if (isWindows) {
+      // Try common Git installation paths on Windows
+      const commonPaths = [
+        'C:\\Program Files\\Git\\cmd\\git.exe',
+        'C:\\Program Files (x86)\\Git\\cmd\\git.exe',
+        process.env.LOCALAPPDATA ? `${process.env.LOCALAPPDATA}\\Programs\\Git\\cmd\\git.exe` : null,
+      ].filter(Boolean) as string[];
+      
+      // First, check if git exists in common installation locations
+      for (const gitPath of commonPaths) {
+        if (existsSync(gitPath)) {
+          try {
+            execSync(`"${gitPath}" --version`, { stdio: 'ignore' });
+            return { installed: true };
+          } catch {
+            // Continue to next path
+          }
+        }
+      }
+      
+      // Fallback: try to find git in PATH (might work if PATH is updated)
+      try {
+        execSync('git --version', { stdio: 'ignore', shell: true });
+        return { installed: true };
+      } catch {
+        // Try PowerShell as last resort
+        try {
+          execSync('powershell -Command "git --version"', { stdio: 'ignore' });
+          return { installed: true };
+        } catch {
+          return { installed: false };
+        }
+      }
+    } else {
+      // On Unix-like systems, try git directly
+      try {
+        execSync('git --version', { stdio: 'ignore' });
+        return { installed: true };
+      } catch (error: any) {
+        return { installed: false };
+      }
+    }
+  } catch (error: any) {
+    return { installed: false };
+  }
+});
+
 // Detect package manager from lock files
 function detectPackageManager(projectPath: string): 'npm' | 'pnpm' | 'yarn' | 'bun' {
   if (existsSync(join(projectPath, 'pnpm-lock.yaml'))) {
@@ -1649,7 +1740,9 @@ ipcMain.handle('packages:audit', async (_event, projectPath: string) => {
       : pm === 'bun'
       ? ['bun', 'audit']
       : ['npm', 'audit'];
-  const { stdout, stderr } = await runGitCommand(projectPath, command);
+  // npm/yarn/pnpm audit commands return non-zero exit codes when vulnerabilities are found
+  // This is expected behavior, not an error, so we allow non-zero exit codes
+  const { stdout, stderr } = await runCommand(projectPath, command, { allowNonZeroExit: true });
   return { output: stdout || stderr };
 });
 
@@ -1663,7 +1756,9 @@ ipcMain.handle('packages:outdated', async (_event, projectPath: string) => {
       : pm === 'bun'
       ? ['bun', 'outdated']
       : ['npm', 'outdated'];
-  const { stdout, stderr } = await runGitCommand(projectPath, command);
+  // npm/yarn/pnpm outdated commands return non-zero exit codes when outdated packages are found
+  // This is expected behavior, not an error, so we allow non-zero exit codes
+  const { stdout, stderr } = await runCommand(projectPath, command, { allowNonZeroExit: true });
   return { output: stdout || stderr };
 });
 
@@ -1674,13 +1769,13 @@ ipcMain.handle('packages:regenerateLockfile', async (_event, payload: { projectP
   }
   const pm = packageManager || detectPackageManager(projectPath);
   if (pm === 'pnpm') {
-    await runGitCommand(projectPath, ['pnpm', 'install', '--lockfile-only']);
+    await runCommand(projectPath, ['pnpm', 'install', '--lockfile-only']);
   } else if (pm === 'yarn') {
-    await runGitCommand(projectPath, ['yarn', 'install', '--mode=update-lockfile']);
+    await runCommand(projectPath, ['yarn', 'install', '--mode=update-lockfile']);
   } else if (pm === 'bun') {
-    await runGitCommand(projectPath, ['bun', 'install']);
+    await runCommand(projectPath, ['bun', 'install']);
   } else {
-    await runGitCommand(projectPath, ['npm', 'install', '--package-lock-only']);
+    await runCommand(projectPath, ['npm', 'install', '--package-lock-only']);
   }
   return { success: true };
 });

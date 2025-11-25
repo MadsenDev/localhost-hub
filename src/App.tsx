@@ -18,6 +18,7 @@ import { TerminalModal } from './components/TerminalModal';
 import { CreateProjectModal } from './components/CreateProjectModal';
 import RunCommandModal from './components/RunCommandModal';
 import ScriptOverridesModal from './components/ScriptOverridesModal';
+import GitInstallModal from './components/GitInstallModal';
 import type { UtilityWorkflowDefinition } from './components/UtilityCommandsPanel';
 
 const HISTORY_STORAGE_KEY = 'localhost-hub:run-history';
@@ -136,6 +137,8 @@ function AppContent() {
   const [showSettings, setShowSettings] = useState(false);
   const [showWorkspaces, setShowWorkspaces] = useState(false);
   const [showCreateProject, setShowCreateProject] = useState(false);
+  const [showGitInstallModal, setShowGitInstallModal] = useState(false);
+  const [gitInstalled, setGitInstalled] = useState<boolean | null>(null);
   const [pingResponse, setPingResponse] = useState<string>('…');
   const [isLoading, setIsLoading] = useState(true);
   const [showTerminalModal, setShowTerminalModal] = useState(false);
@@ -816,6 +819,37 @@ function AppContent() {
     [electronAPI, selectedProject, scriptEnvOverrides]
   );
 
+  const checkGitInstalled = useCallback(async () => {
+    if (!electronAPI?.git) return false;
+    try {
+      const result = await electronAPI.git.checkInstalled();
+      setGitInstalled(result.installed);
+      return result.installed;
+    } catch {
+      setGitInstalled(false);
+      return false;
+    }
+  }, [electronAPI]);
+
+  // Check git installation when git tab is opened
+  useEffect(() => {
+    if (activeTab === 'git' && gitInstalled === null) {
+      checkGitInstalled().then((installed) => {
+        if (!installed) {
+          setShowGitInstallModal(true);
+        }
+      });
+    }
+  }, [activeTab, gitInstalled, checkGitInstalled]);
+
+  const handleChangeTab = useCallback((tab: 'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git') => {
+    setActiveTab(tab);
+    // Reset git installed check when switching away from git tab
+    if (tab !== 'git') {
+      setGitInstalled(null);
+    }
+  }, []);
+
   const handleRunCustomCommand = useCallback(
     async (command: string, label?: string) => {
       if (!selectedProject) {
@@ -1361,7 +1395,7 @@ function AppContent() {
             onRestartScript={handleRestartScript}
             electronAPI={electronAPI}
             activeTab={activeTab}
-            onChangeTab={setActiveTab}
+            onChangeTab={handleChangeTab}
             projectScripts={projectScripts}
             onRunScript={handleRunScript}
             logStatusLabel={logStatusLabel}
@@ -1462,6 +1496,27 @@ function AppContent() {
             });
           }}
           electronAPI={electronAPI}
+        />
+        <GitInstallModal
+          isOpen={showGitInstallModal}
+          onClose={() => {
+            setShowGitInstallModal(false);
+          }}
+          onRunCommand={async (command, label) => {
+            if (selectedProject) {
+              await handleRunCustomCommand(command, label);
+            }
+          }}
+          onCheckAgain={async () => {
+            const installed = await checkGitInstalled();
+            if (installed) {
+              setShowGitInstallModal(false);
+              // Refresh git status if we have a project
+              if (selectedProject) {
+                handleRefreshGit();
+              }
+            }
+          }}
         />
       </div>
     </div>
