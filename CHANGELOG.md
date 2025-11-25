@@ -7,13 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Custom command runner so any arbitrary shell command can be launched from the Scripts tab
+- Environment helpers: .env file editor plus per-script temporary env overrides
+- Git tab upgrades: stage/unstage, commits, branch checkout/creation, push, and stash controls
+
+### Removed
+- Embedded terminal tab and node-pty integration (feature reverted due to packaging instability)
+
 ## [0.4.0] - 2025-11-24
 
 ### Added
 - Workspace restart controls and per-script restart actions within the Workspaces modal
 - Project sidebar context menu for hiding projects plus hidden-project toggle + unhide list
 - Exit-code hover tooltips in History modal describing common exit statuses
-- Embedded terminal tab per project powered by a node-pty shell with multi-session UI
 
 ## [0.3.0] - 2025-11-22
 

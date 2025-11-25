@@ -174,7 +174,8 @@ export interface ElectronAPI {
     selectDirectory: (options?: { title?: string }) => Promise<{ canceled: boolean; path: string | null }>;
   };
   scripts: {
-    run: (payload: { projectPath: string; script: string; projectId?: string }) => Promise<RunScriptResult>;
+    run: (payload: { projectPath: string; script: string; projectId?: string; envOverrides?: Record<string, string> }) => Promise<RunScriptResult>;
+    runCustom: (payload: { projectPath: string; command: string; label?: string; projectId?: string; envOverrides?: Record<string, string> }) => Promise<RunScriptResult>;
     stop: (runId: string) => Promise<{ success: boolean }>;
     install: (payload: { projectPath: string; packageManager?: string }) => Promise<RunScriptResult>;
     detectPackageManager: (projectPath: string) => Promise<'npm' | 'pnpm' | 'yarn' | 'bun'>;
@@ -201,6 +202,11 @@ export interface ElectronAPI {
     delete: (profileId: number) => Promise<{ success: boolean }>;
     setVars: (payload: { profileId: number; vars: Array<{ key: string; value: string; isSecret?: boolean }> }) => Promise<{ success: boolean }>;
   };
+  envFiles: {
+    list: (projectPath: string) => Promise<Array<{ name: string; exists: boolean }>>;
+    read: (payload: { projectPath: string; file: string }) => Promise<string>;
+    write: (payload: { projectPath: string; file: string; contents: string }) => Promise<{ success: boolean }>;
+  };
   settings: {
     get: (key: string) => Promise<string | null>;
     set: (payload: { key: string; value: string }) => Promise<{ success: boolean }>;
@@ -214,6 +220,14 @@ export interface ElectronAPI {
   };
   git: {
     status: (projectPath: string) => Promise<GitStatusInfo>;
+    stageFiles: (payload: { projectPath: string; files: string[] }) => Promise<{ success: boolean }>;
+    unstageFiles: (payload: { projectPath: string; files: string[] }) => Promise<{ success: boolean }>;
+    commit: (payload: { projectPath: string; message: string }) => Promise<{ success: boolean }>;
+    push: (payload: { projectPath: string; remote?: string; branch?: string; credentials?: { username: string; password: string } }) => Promise<{ success: boolean }>;
+    checkout: (payload: { projectPath: string; branch: string }) => Promise<{ success: boolean }>;
+    createBranch: (payload: { projectPath: string; branch: string }) => Promise<{ success: boolean }>;
+    stashSave: (payload: { projectPath: string; message?: string }) => Promise<{ success: boolean }>;
+    stashPop: (payload: { projectPath: string }) => Promise<{ success: boolean }>;
   };
   workspaces: {
     list: () => Promise<Workspace[]>;
@@ -228,14 +242,6 @@ export interface ElectronAPI {
     restart: (workspaceId: number) => Promise<{ success: boolean }>;
     restartItem: (payload: { workspaceId: number; itemId: number }) => Promise<{ success: boolean }>;
     onStatus: (callback: (payload: { workspaceId: number; activeRunCount: number }) => void) => () => void;
-  };
-  terminal: {
-    createSession: (payload?: { cwd?: string; env?: Record<string, string>; shell?: string; columns?: number; rows?: number }) => Promise<{ id: string }>;
-    sendInput: (payload: { id: string; data: string }) => Promise<{ success: boolean }>;
-    resize: (payload: { id: string; columns: number; rows: number }) => Promise<{ success: boolean }>;
-    dispose: (sessionId: string) => Promise<{ success: boolean }>;
-    onData: (callback: (payload: { id: string; data: string }) => void) => () => void;
-    onExit: (callback: (payload: { id: string; exitCode: number | null; signal?: number | string }) => void) => () => void;
   };
 }
 

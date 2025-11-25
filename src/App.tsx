@@ -16,11 +16,14 @@ import { useProjects } from './hooks/useProjects';
 import { LoadingScreen } from './components/LoadingScreen';
 import { TerminalModal } from './components/TerminalModal';
 import { CreateProjectModal } from './components/CreateProjectModal';
+import RunCommandModal from './components/RunCommandModal';
+import ScriptOverridesModal from './components/ScriptOverridesModal';
 
 const HISTORY_STORAGE_KEY = 'localhost-hub:run-history';
 const MAX_HISTORY = 20;
 const FORCE_STOP_DELAY_MS = 6000;
 const HIDDEN_PROJECTS_STORAGE_KEY = 'localhost-hub:hidden-projects';
+const getOverrideKey = (projectId: string, scriptName: string) => `${projectId}::${scriptName}`;
 
 function AppContent() {
   const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
@@ -67,6 +70,19 @@ function AppContent() {
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId]
   );
+
+  useEffect(() => {
+    if (!selectedProject) {
+      setShowRunCommandModal(false);
+      setEditingOverridesScript(null);
+    }
+  }, [selectedProject]);
+
+  useEffect(() => {
+    if (!selectedProject) {
+      setShowRunCommandModal(false);
+    }
+  }, [selectedProject]);
 
   // Reload settings when they might have changed (e.g., from settings modal)
   useEffect(() => {
@@ -115,13 +131,16 @@ function AppContent() {
     };
   }, [electronAPI]);
 
-  const [activeTab, setActiveTab] = useState<'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git' | 'terminal'>('scripts');
+  const [activeTab, setActiveTab] = useState<'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git'>('scripts');
   const [showSettings, setShowSettings] = useState(false);
   const [showWorkspaces, setShowWorkspaces] = useState(false);
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [pingResponse, setPingResponse] = useState<string>('…');
   const [isLoading, setIsLoading] = useState(true);
   const [showTerminalModal, setShowTerminalModal] = useState(false);
+  const [showRunCommandModal, setShowRunCommandModal] = useState(false);
+  const [scriptEnvOverrides, setScriptEnvOverrides] = useState<Map<string, Record<string, string>>>(new Map());
+  const [editingOverridesScript, setEditingOverridesScript] = useState<ScriptInfo | null>(null);
   const terminalLogContainerRef = useRef<HTMLPreElement | null>(null);
   const [runHistory, setRunHistory] = useState<RunHistory[]>(() => {
     if (typeof window === 'undefined') return [];
@@ -742,10 +761,12 @@ function AppContent() {
           return updated;
         });
 
+        const overrides = scriptEnvOverrides.get(getOverrideKey(selectedProject.id, script.name));
         const run = await electronAPI.scripts.run({
           projectPath: selectedProject.path,
           projectId: selectedProject.id,
-          script: script.name
+          script: script.name,
+          envOverrides: overrides
         });
         if (!run) return;
 
@@ -789,6 +810,63 @@ function AppContent() {
           exitCode: null
         };
         setRunHistory((current) => [failureEntry, ...current].slice(0, MAX_HISTORY));
+      }
+    },
+    [electronAPI, selectedProject, scriptEnvOverrides]
+  );
+
+  const handleRunCustomCommand = useCallback(
+    async (command: string, label?: string) => {
+      if (!selectedProject) {
+        throw new Error('Select a project first.');
+      }
+      if (!electronAPI) {
+        throw new Error('Custom commands require the desktop app.');
+      }
+      const displayName = label || command;
+      try {
+        setProjectLogs((current) => {
+          const updated = new Map(current);
+          updated.set(selectedProject.id, `Running ${displayName}...\n`);
+          return updated;
+        });
+
+        const run = await electronAPI.scripts.runCustom({
+          projectPath: selectedProject.path,
+          projectId: selectedProject.id,
+          command,
+          label: displayName
+        });
+        if (!run) return;
+
+        runIdToProjectId.current.set(run.runId, selectedProject.id);
+
+        setProjectRuns((current) => {
+          const updated = new Map(current);
+          updated.set(selectedProject.id, {
+            id: run.runId,
+            script: displayName,
+            projectPath: selectedProject.path
+          });
+          return updated;
+        });
+
+        setShowTerminalModal(true);
+
+        try {
+          const processes = await electronAPI.processes.active();
+          setActiveProcesses(processes);
+        } catch {
+          // ignore, polling will refresh
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to run command.';
+        setProjectLogs((current) => {
+          const updated = new Map(current);
+          updated.set(selectedProject.id, message);
+          return updated;
+        });
+        throw error instanceof Error ? error : new Error(message);
       }
     },
     [electronAPI, selectedProject]
@@ -839,6 +917,42 @@ function AppContent() {
       await handleRunScript(script);
     },
     [electronAPI, handleRunScript, selectedProject, projectRuns, startForceStopCountdown]
+  );
+
+  const handleOpenScriptOverrides = useCallback(
+    (script: ScriptInfo) => {
+      setEditingOverridesScript(script);
+    },
+    []
+  );
+
+  const handleSaveScriptOverrides = useCallback(
+    (scriptName: string, overrides: Record<string, string>) => {
+      if (!selectedProject) {
+        return;
+      }
+      const key = getOverrideKey(selectedProject.id, scriptName);
+      setScriptEnvOverrides((current) => {
+        const next = new Map(current);
+        if (Object.keys(overrides).length === 0) {
+          next.delete(key);
+        } else {
+          next.set(key, overrides);
+        }
+        return next;
+      });
+    },
+    [selectedProject]
+  );
+
+  const hasOverridesForScript = useCallback(
+    (script: ScriptInfo) => {
+      if (!selectedProject) {
+        return false;
+      }
+      return scriptEnvOverrides.has(getOverrideKey(selectedProject.id, script.name));
+    },
+    [scriptEnvOverrides, selectedProject]
   );
 
   const handleStopScript = useCallback(async () => {
@@ -1252,6 +1366,9 @@ function AppContent() {
             canClearLog={canClearLog}
             onInstallPackage={handleInstallPackage}
             forceStopReady={isForceStopReady}
+            onOpenRunCommandModal={electronAPI ? () => setShowRunCommandModal(true) : undefined}
+            onEditScriptOverrides={electronAPI ? handleOpenScriptOverrides : undefined}
+            hasOverrides={electronAPI ? hasOverridesForScript : undefined}
           />
         )}
       </main>
@@ -1294,6 +1411,25 @@ function AppContent() {
             logContainerRef={terminalLogContainerRef}
             isAutoScrollEnabled={isAutoScrollEnabled}
             onToggleAutoScroll={handleToggleAutoScroll}
+          />
+        )}
+        {selectedProject && (
+          <RunCommandModal
+            isOpen={showRunCommandModal}
+            onClose={() => setShowRunCommandModal(false)}
+            onRun={handleRunCustomCommand}
+            projectName={selectedProject.name}
+          />
+        )}
+        {selectedProject && editingOverridesScript && (
+          <ScriptOverridesModal
+            isOpen
+            scriptName={editingOverridesScript.name}
+            initialOverrides={scriptEnvOverrides.get(
+              getOverrideKey(selectedProject.id, editingOverridesScript.name)
+            )}
+            onSave={(overrides) => handleSaveScriptOverrides(editingOverridesScript.name, overrides)}
+            onClose={() => setEditingOverridesScript(null)}
           />
         )}
         <CreateProjectModal

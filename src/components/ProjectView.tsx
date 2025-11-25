@@ -8,7 +8,7 @@ import PortsProcessesPanel from './PortsProcessesPanel';
 import { ProjectHeader } from './ProjectHeader';
 import { PackagesPanel } from './PackagesPanel';
 import { GitPanel } from './GitPanel';
-import TerminalPanel from './TerminalPanel';
+import EnvFileEditor from './EnvFileEditor';
 
 interface ProjectViewProps {
   project: ProjectInfo;
@@ -26,8 +26,8 @@ interface ProjectViewProps {
   onForceStopScript: () => Promise<void>;
   onRestartScript: (script: ScriptInfo) => Promise<void>;
   electronAPI?: Window['electronAPI'];
-  activeTab: 'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git' | 'terminal';
-  onChangeTab: (tab: 'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git' | 'terminal') => void;
+  activeTab: 'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git';
+  onChangeTab: (tab: 'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git') => void;
   projectScripts: ScriptInfo[];
   onRunScript: (script: ScriptInfo) => Promise<void>;
   logStatusLabel: string;
@@ -44,6 +44,9 @@ interface ProjectViewProps {
   canClearLog: boolean;
   onInstallPackage: (packageName: string, version?: string, isDev?: boolean) => Promise<void>;
   forceStopReady: boolean;
+  onOpenRunCommandModal?: () => void;
+  onEditScriptOverrides?: (script: ScriptInfo) => void;
+  hasOverrides?: (script: ScriptInfo) => boolean;
 }
 
 export function ProjectView({
@@ -79,7 +82,10 @@ export function ProjectView({
   canCopyLog,
   canClearLog,
   onInstallPackage,
-  forceStopReady
+  forceStopReady,
+  onOpenRunCommandModal,
+  onEditScriptOverrides,
+  hasOverrides
 }: ProjectViewProps) {
   const handleHeaderRestart = () => {
     if (!scriptInFlight) return;
@@ -111,7 +117,7 @@ export function ProjectView({
       />
 
       <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800 mt-6">
-        {(['scripts', 'logs', 'env-profiles', 'ports', 'packages', 'git', 'terminal'] as const).map((tab) => (
+        {(['scripts', 'logs', 'env-profiles', 'ports', 'packages', 'git'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => onChangeTab(tab)}
@@ -128,7 +134,19 @@ export function ProjectView({
 
       <div className="mt-6 space-y-6">
         {activeTab === 'scripts' && (
-          <Section title="Scripts">
+          <Section
+            title="Scripts"
+            action={
+              onOpenRunCommandModal ? (
+                <button
+                  onClick={onOpenRunCommandModal}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200 dark:hover:border-indigo-500/40"
+                >
+                  Run custom command
+                </button>
+              ) : null
+            }
+          >
             <ScriptsPanel
               scripts={projectScripts}
               scriptInFlight={scriptInFlight}
@@ -137,6 +155,8 @@ export function ProjectView({
               onRestartScript={onRestartScript}
               forceStopReady={forceStopReady}
               onForceStopScript={onForceStopScript}
+              onEditOverrides={onEditScriptOverrides}
+              hasOverrides={hasOverrides}
             />
           </Section>
         )}
@@ -160,9 +180,14 @@ export function ProjectView({
         )}
 
         {activeTab === 'env-profiles' && (
-          <Section title="Environment Profiles">
-            <EnvProfilesPanel projectId={project.id} electronAPI={electronAPI} />
-          </Section>
+          <div className="space-y-6">
+            <Section title="Environment Profiles">
+              <EnvProfilesPanel projectId={project.id} electronAPI={electronAPI} />
+            </Section>
+            <Section title=".env helpers">
+              <EnvFileEditor project={project} electronAPI={electronAPI} />
+            </Section>
+          </div>
         )}
 
         {activeTab === 'ports' && (
@@ -184,13 +209,8 @@ export function ProjectView({
               gitStatus={gitStatus}
               gitStatusLoading={gitStatusLoading}
               onRefreshGit={onRefreshGit}
+              electronAPI={electronAPI}
             />
-          </Section>
-        )}
-
-        {activeTab === 'terminal' && (
-          <Section title="Terminal">
-            <TerminalPanel project={project} electronAPI={electronAPI} />
           </Section>
         )}
       </div>

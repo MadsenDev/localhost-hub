@@ -11,8 +11,6 @@ import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);
 import { scanProjects, type ProjectInfo } from './projectScanner';
-import { spawn as createPty } from 'node-pty';
-import type { IPty } from 'node-pty';
 import { getGitStatus } from './gitStatus';
 import {
   initializeDatabase,
@@ -96,13 +94,107 @@ const activeProcesses = new Map<string, ActiveProcess>();
 const stoppedProcesses = new Set<string>();
 const workspaceRunMap = new Map<number, Set<string>>();
 const runWorkspaceMap = new Map<string, { workspaceId: number; itemId?: number; runMode: 'parallel' | 'sequential' }>();
-const terminalSessions = new Map<string, IPty>();
 
-function getDefaultShell() {
-  if (process.platform === 'win32') {
-    return process.env.COMSPEC || 'powershell.exe';
+const DEFAULT_ENV_FILES = ['.env', '.env.local', '.env.development', '.env.production', '.env.test'];
+import { unlink } from 'node:fs/promises';
+
+async function createAskPassScript(username: string, password: string) {
+  const scriptPath = join(app.getPath('userData'), `git-askpass-${randomUUID()}.js`);
+  const content = `#!/usr/bin/env node
+const prompt = (process.argv[2] || '').toLowerCase();
+if (prompt.includes('username')) {
+  process.stdout.write(process.env.LOCALHOST_HUB_GIT_USERNAME || '');
+} else {
+  process.stdout.write(process.env.LOCALHOST_HUB_GIT_PASSWORD || '');
+}
+`;
+  await writeFile(scriptPath, content, { mode: 0o755 });
+  return scriptPath;
+}
+
+async function runGitCommand(
+  projectPath: string,
+  args: string[],
+  options?: { credentials?: { username: string; password: string } }
+) {
+  const env = { ...process.env };
+  let askPassPath: string | null = null;
+  if (options?.credentials) {
+    env.LOCALHOST_HUB_GIT_USERNAME = options.credentials.username;
+    env.LOCALHOST_HUB_GIT_PASSWORD = options.credentials.password;
+    env.GIT_TERMINAL_PROMPT = '0';
+    env.DISPLAY = env.DISPLAY || 'localhost-hub';
+    askPassPath = await createAskPassScript(options.credentials.username, options.credentials.password);
+    env.GIT_ASKPASS = askPassPath;
+    env.SSH_ASKPASS = askPassPath;
   }
-  return process.env.SHELL || '/bin/bash';
+
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn('git', args, { cwd: projectPath, env });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', (error) => {
+      if (askPassPath) {
+        unlink(askPassPath).catch(() => {});
+      }
+      reject(error);
+    });
+    child.on('close', (code) => {
+      if (askPassPath) {
+        unlink(askPassPath).catch(() => {});
+      }
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(stderr || stdout || `git ${args.join(' ')} failed with code ${code}`));
+      }
+    });
+  });
+}
+
+function resolveEnvFilePath(projectPath: string, fileName: string) {
+  const root = resolve(projectPath);
+  const target = resolve(root, fileName);
+  if (!target.startsWith(root)) {
+    throw new Error('Invalid env file path');
+  }
+  return target;
+}
+
+function listEnvFiles(projectPath: string) {
+  const root = resolve(projectPath);
+  const existing = new Set<string>();
+  try {
+    const entries = readdirSync(root, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.startsWith('.env')) {
+        existing.add(entry.name);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  const all = new Set([...existing, ...DEFAULT_ENV_FILES]);
+  return Array.from(all).map((name) => ({ name, exists: existing.has(name) }));
+}
+
+async function readEnvFile(projectPath: string, fileName: string) {
+  const filePath = resolveEnvFilePath(projectPath, fileName);
+  if (!existsSync(filePath)) {
+    return '';
+  }
+  return readFile(filePath, 'utf-8');
+}
+
+async function writeEnvFile(projectPath: string, fileName: string, contents: string) {
+  const filePath = resolveEnvFilePath(projectPath, fileName);
+  await writeFile(filePath, contents ?? '', 'utf-8');
 }
 
 function createWindow() {
@@ -326,6 +418,7 @@ type LaunchScriptOptions = {
   workspaceItemId?: number;
   runMode?: 'parallel' | 'sequential';
   customCommand?: string;
+  envOverrides?: Record<string, string>;
 };
 
 async function launchScriptProcess(options: LaunchScriptOptions) {
@@ -356,6 +449,13 @@ async function launchScriptProcess(options: LaunchScriptOptions) {
 
   const inheritSystemEnv = getSetting('inheritSystemEnv') !== 'false';
   const env = inheritSystemEnv ? { ...process.env } : {};
+  if (options.envOverrides) {
+    for (const [key, value] of Object.entries(options.envOverrides)) {
+      if (key) {
+        env[key] = value;
+      }
+    }
+  }
   const runId = randomUUID();
   const startedAt = Date.now();
   const commandString = options.customCommand ?? command?.join(' ') ?? '';
@@ -493,13 +593,138 @@ async function launchScriptProcess(options: LaunchScriptOptions) {
   return { runId, startedAt, command: commandString, script, projectPath, projectId: projectId ?? undefined };
 }
 
-ipcMain.handle('scripts:run', async (_event, payload: { projectPath: string; script: string; projectId?: string }) => {
+ipcMain.handle('envFiles:list', async (_event, projectPath: string) => {
+  return listEnvFiles(projectPath);
+});
+
+ipcMain.handle('envFiles:read', async (_event, payload: { projectPath: string; file: string }) => {
+  if (!payload?.projectPath || !payload.file) {
+    throw new Error('Project path and file name are required');
+  }
+  return readEnvFile(payload.projectPath, payload.file);
+});
+
+ipcMain.handle('envFiles:write', async (_event, payload: { projectPath: string; file: string; contents: string }) => {
+  if (!payload?.projectPath || !payload.file) {
+    throw new Error('Project path and file name are required');
+  }
+  await writeEnvFile(payload.projectPath, payload.file, payload.contents ?? '');
+  return { success: true };
+});
+
+ipcMain.handle('git:stageFiles', async (_event, payload: { projectPath: string; files: string[] }) => {
+  if (!payload?.projectPath || !payload.files) {
+    throw new Error('Project path and files are required');
+  }
+  if (payload.files.length === 0) {
+    return { success: true };
+  }
+  await runGitCommand(payload.projectPath, ['add', ...payload.files]);
+  return { success: true };
+});
+
+ipcMain.handle('git:unstageFiles', async (_event, payload: { projectPath: string; files: string[] }) => {
+  if (!payload?.projectPath || !payload.files) {
+    throw new Error('Project path and files are required');
+  }
+  if (payload.files.length === 0) {
+    return { success: true };
+  }
+  await runGitCommand(payload.projectPath, ['reset', 'HEAD', ...payload.files]);
+  return { success: true };
+});
+
+ipcMain.handle('git:commit', async (_event, payload: { projectPath: string; message: string }) => {
+  if (!payload?.projectPath || !payload.message?.trim()) {
+    throw new Error('Commit message is required');
+  }
+  await runGitCommand(payload.projectPath, ['commit', '-m', payload.message]);
+  return { success: true };
+});
+
+ipcMain.handle('git:push', async (_event, payload: { projectPath: string; remote?: string; branch?: string }) => {
+  if (!payload?.projectPath) {
+    throw new Error('Project path is required');
+  }
+  const args = ['push'];
+  if (payload.remote) args.push(payload.remote);
+  if (payload.branch) args.push(payload.branch);
+  await runGitCommand(payload.projectPath, args, {
+    credentials: payload.credentials
+  });
+  return { success: true };
+});
+
+ipcMain.handle('git:checkout', async (_event, payload: { projectPath: string; branch: string }) => {
+  if (!payload?.projectPath || !payload.branch?.trim()) {
+    throw new Error('Branch name is required');
+  }
+  await runGitCommand(payload.projectPath, ['checkout', payload.branch]);
+  return { success: true };
+});
+
+ipcMain.handle('git:createBranch', async (_event, payload: { projectPath: string; branch: string }) => {
+  if (!payload?.projectPath || !payload.branch?.trim()) {
+    throw new Error('Branch name is required');
+  }
+  await runGitCommand(payload.projectPath, ['checkout', '-b', payload.branch]);
+  return { success: true };
+});
+
+ipcMain.handle('git:stashSave', async (_event, payload: { projectPath: string; message?: string }) => {
+  if (!payload?.projectPath) {
+    throw new Error('Project path is required');
+  }
+  const args = ['stash', 'push'];
+  if (payload.message?.trim()) {
+    args.push('-m', payload.message.trim());
+  }
+  await runGitCommand(payload.projectPath, args);
+  return { success: true };
+});
+
+ipcMain.handle('git:stashPop', async (_event, payload: { projectPath: string }) => {
+  if (!payload?.projectPath) {
+    throw new Error('Project path is required');
+  }
+  await runGitCommand(payload.projectPath, ['stash', 'pop']);
+  return { success: true };
+});
+
+ipcMain.handle(
+  'scripts:run',
+  async (_event, payload: { projectPath: string; script: string; projectId?: string; envOverrides?: Record<string, string> }) => {
   return launchScriptProcess({
     projectPath: payload?.projectPath,
     script: payload?.script,
-    projectId: payload?.projectId
+      projectId: payload?.projectId,
+      envOverrides: payload?.envOverrides
   });
-});
+  }
+);
+
+ipcMain.handle(
+  'scripts:runCustom',
+  async (
+    _event,
+    payload: { projectPath: string; command: string; label?: string; projectId?: string; envOverrides?: Record<string, string> }
+  ) => {
+  if (!payload?.projectPath) {
+    throw new Error('Project path is required');
+  }
+  const trimmed = payload.command?.trim();
+  if (!trimmed) {
+    throw new Error('Command cannot be empty');
+  }
+    return launchScriptProcess({
+      projectPath: payload.projectPath,
+      script: payload.label?.trim() || trimmed,
+      projectId: payload.projectId,
+      customCommand: trimmed,
+      envOverrides: payload.envOverrides
+    });
+  }
+);
 
 function broadcastWorkspaceStatus(workspaceId: number) {
   const activeRunCount = workspaceRunMap.get(workspaceId)?.size ?? 0;
@@ -970,81 +1195,6 @@ ipcMain.handle('workspaces:restart', async (_event, workspaceId: number) => {
     await waitForWorkspaceIdle(workspaceId);
   }
   return startWorkspaceRuns(workspaceId);
-});
-
-ipcMain.handle('terminal:available', async () => true);
-
-ipcMain.handle(
-  'terminal:create',
-  async (
-    _event,
-    payload?: {
-      cwd?: string;
-      env?: Record<string, string>;
-      shell?: string;
-      columns?: number;
-      rows?: number;
-    }
-  ) => {
-    const shell = payload?.shell || getDefaultShell();
-    const cols = Math.max(1, payload?.columns ?? 80);
-    const rows = Math.max(1, payload?.rows ?? 24);
-    const cwd = payload?.cwd ? resolve(payload.cwd) : process.cwd();
-    const env = { ...process.env, ...(payload?.env ?? {}) };
-    const sessionId = randomUUID();
-
-    const pty = createPty(shell, [], {
-      name: 'xterm-color',
-      cols,
-      rows,
-      cwd,
-      env
-    });
-
-    terminalSessions.set(sessionId, pty);
-
-    pty.onData((data) => {
-      broadcast('terminal:data', { id: sessionId, data });
-    });
-
-    pty.onExit(({ exitCode, signal }) => {
-      broadcast('terminal:exit', { id: sessionId, exitCode, signal });
-      terminalSessions.delete(sessionId);
-    });
-
-    return { id: sessionId };
-  }
-);
-
-ipcMain.handle('terminal:input', async (_event, payload: { id: string; data: string }) => {
-  const session = terminalSessions.get(payload.id);
-  if (!session) {
-    throw new Error('Terminal session not found');
-  }
-  session.write(payload.data);
-  return { success: true };
-});
-
-ipcMain.handle('terminal:resize', async (_event, payload: { id: string; columns: number; rows: number }) => {
-  const session = terminalSessions.get(payload.id);
-  if (!session) {
-    throw new Error('Terminal session not found');
-  }
-  session.resize(Math.max(1, payload.columns), Math.max(1, payload.rows));
-  return { success: true };
-});
-
-ipcMain.handle('terminal:dispose', async (_event, sessionId: string) => {
-  const session = terminalSessions.get(sessionId);
-  if (session) {
-    try {
-      session.kill();
-    } catch {
-      // ignore
-    }
-    terminalSessions.delete(sessionId);
-  }
-  return { success: true };
 });
 
 // Settings IPC handlers

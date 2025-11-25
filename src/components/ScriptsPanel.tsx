@@ -9,6 +9,8 @@ interface ScriptsPanelProps {
   onRestartScript: (script: ScriptInfo) => void;
   forceStopReady: boolean;
   onForceStopScript: () => void;
+  onEditOverrides?: (script: ScriptInfo) => void;
+  hasOverrides?: (script: ScriptInfo) => boolean;
 }
 
 export function ScriptsPanel({
@@ -18,7 +20,9 @@ export function ScriptsPanel({
   onStopScript,
   onRestartScript,
   forceStopReady,
-  onForceStopScript
+  onForceStopScript,
+  onEditOverrides,
+  hasOverrides
 }: ScriptsPanelProps) {
   if (scripts.length === 0) {
     return <p className="text-sm text-slate-500 dark:text-slate-400">No scripts detected for this project.</p>;
@@ -63,6 +67,19 @@ export function ScriptsPanel({
                   >
                     Restart
                   </button>
+                  {onEditOverrides && (
+                    <button
+                      className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                        hasOverrides?.(script)
+                          ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-400/50 dark:bg-amber-500/10 dark:text-amber-200'
+                          : 'border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:text-slate-300 dark:hover:border-indigo-400/40'
+                      }`}
+                      onClick={() => onEditOverrides(script)}
+                      disabled={Boolean(scriptInFlight && !isRunning)}
+                    >
+                      Env overrides{hasOverrides?.(script) ? ' • set' : ''}
+                    </button>
+                  )}
                   {isRunning && forceStopReady && (
                     <button
                       className="rounded-full border border-rose-500/70 px-4 py-1 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-400 transition"

@@ -6,18 +6,6 @@ function registerListener<T>(channel: string, callback: (event: Electron.IpcRend
   return () => ipcRenderer.removeListener(channel, handler);
 }
 
-const terminalApi = {
-  createSession: (payload?: { cwd?: string; env?: Record<string, string>; shell?: string; columns?: number; rows?: number }) =>
-    ipcRenderer.invoke('terminal:create', payload),
-  sendInput: (payload: { id: string; data: string }) => ipcRenderer.invoke('terminal:input', payload),
-  resize: (payload: { id: string; columns: number; rows: number }) => ipcRenderer.invoke('terminal:resize', payload),
-  dispose: (sessionId: string) => ipcRenderer.invoke('terminal:dispose', sessionId),
-  onData: (callback: (payload: { id: string; data: string }) => void) =>
-    registerListener<{ id: string; data: string }>('terminal:data', (_event, payload) => callback(payload)),
-  onExit: (callback: (payload: { id: string; exitCode: number | null; signal?: number | string }) => void) =>
-    registerListener<{ id: string; exitCode: number | null; signal?: number | string }>('terminal:exit', (_event, payload) => callback(payload))
-};
-
 const api: Window['electronAPI'] = {
   ping: () => ipcRenderer.invoke('ping'),
   projects: {
@@ -41,7 +29,16 @@ const api: Window['electronAPI'] = {
     }) => ipcRenderer.invoke('projects:create', payload)
   },
   git: {
-    status: (projectPath: string) => ipcRenderer.invoke('git:status', projectPath)
+    status: (projectPath: string) => ipcRenderer.invoke('git:status', projectPath),
+    stageFiles: (payload: { projectPath: string; files: string[] }) => ipcRenderer.invoke('git:stageFiles', payload),
+    unstageFiles: (payload: { projectPath: string; files: string[] }) => ipcRenderer.invoke('git:unstageFiles', payload),
+    commit: (payload: { projectPath: string; message: string }) => ipcRenderer.invoke('git:commit', payload),
+    push: (payload: { projectPath: string; remote?: string; branch?: string; credentials?: { username: string; password: string } }) =>
+      ipcRenderer.invoke('git:push', payload),
+    checkout: (payload: { projectPath: string; branch: string }) => ipcRenderer.invoke('git:checkout', payload),
+    createBranch: (payload: { projectPath: string; branch: string }) => ipcRenderer.invoke('git:createBranch', payload),
+    stashSave: (payload: { projectPath: string; message?: string }) => ipcRenderer.invoke('git:stashSave', payload),
+    stashPop: (payload: { projectPath: string }) => ipcRenderer.invoke('git:stashPop', payload)
   },
   processes: {
     active: () => ipcRenderer.invoke('processes:active'),
@@ -54,7 +51,10 @@ const api: Window['electronAPI'] = {
     selectDirectory: (options?: { title?: string }) => ipcRenderer.invoke('dialog:selectDirectory', options)
   },
   scripts: {
-    run: (payload: { projectPath: string; script: string; projectId?: string }) => ipcRenderer.invoke('scripts:run', payload),
+    run: (payload: { projectPath: string; script: string; projectId?: string; envOverrides?: Record<string, string> }) =>
+      ipcRenderer.invoke('scripts:run', payload),
+    runCustom: (payload: { projectPath: string; command: string; label?: string; projectId?: string; envOverrides?: Record<string, string> }) =>
+      ipcRenderer.invoke('scripts:runCustom', payload),
     stop: (runId: string) => ipcRenderer.invoke('scripts:stop', runId),
     install: (payload: { projectPath: string; packageManager?: string }) => ipcRenderer.invoke('scripts:install', payload),
     detectPackageManager: (projectPath: string) => ipcRenderer.invoke('scripts:detectPackageManager', projectPath),
@@ -119,6 +119,11 @@ const api: Window['electronAPI'] = {
     setVars: (payload: { profileId: number; vars: Array<{ key: string; value: string; isSecret?: boolean }> }) =>
       ipcRenderer.invoke('envProfiles:setVars', payload)
   },
+  envFiles: {
+    list: (projectPath: string) => ipcRenderer.invoke('envFiles:list', projectPath),
+    read: (payload: { projectPath: string; file: string }) => ipcRenderer.invoke('envFiles:read', payload),
+    write: (payload: { projectPath: string; file: string; contents: string }) => ipcRenderer.invoke('envFiles:write', payload)
+  },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (payload: { key: string; value: string }) => ipcRenderer.invoke('settings:set', payload),
@@ -148,14 +153,5 @@ const api: Window['electronAPI'] = {
       registerListener<{ workspaceId: number; activeRunCount: number }>('workspaces:status', (_event, payload) => callback(payload))
   }
 };
-
-ipcRenderer
-  .invoke('terminal:available')
-  .then(() => {
-    api.terminal = terminalApi;
-  })
-  .catch(() => {
-    console.warn('[terminal] backend not available; feature disabled');
-  });
 
 contextBridge.exposeInMainWorld('electronAPI', api);
