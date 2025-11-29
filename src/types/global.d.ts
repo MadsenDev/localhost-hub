@@ -156,6 +156,40 @@ export type GitStatusInfo = {
   };
 };
 
+export type PluginLaunchTarget = {
+  path: string;
+  args?: string[];
+  cwd?: string;
+};
+
+export type PluginProjectAction = {
+  id: string;
+  label: string;
+  description?: string;
+  requiredContext?: string[];
+};
+
+export type PluginLaunchConfig = {
+  requiredContext?: string[];
+  targets?: Partial<Record<NodeJS.Platform, PluginLaunchTarget>>;
+  gallery?: boolean;
+  projectActions?: PluginProjectAction[];
+};
+
+export type PluginManifest = {
+  id: string;
+  name: string;
+  description?: string;
+  version?: string;
+  author?: string;
+  capabilities?: string[];
+  source: 'builtin' | 'user';
+  iconDataUrl?: string | null;
+  homepage?: string;
+  type?: 'embedded' | 'externalApp';
+  launch?: PluginLaunchConfig;
+};
+
 export interface ElectronAPI {
   ping: () => Promise<string>;
   projects: {
@@ -251,6 +285,10 @@ export interface ElectronAPI {
     restartItem: (payload: { workspaceId: number; itemId: number }) => Promise<{ success: boolean }>;
     onStatus: (callback: (payload: { workspaceId: number; activeRunCount: number }) => void) => () => void;
   };
+  plugins: {
+    list: () => Promise<PluginManifest[]>;
+    launchExternal: (pluginId: string, context?: Record<string, string>) => Promise<void>;
+  };
 }
 
 declare global {
@@ -263,3 +301,4 @@ declare module '*.svg' {
   const src: string;
   export default src;
 }
+

@@ -40,6 +40,7 @@ import {
 } from './database';
 import { findProjectIdByPath as findProjectIdByPathHelper } from './utils/projectLookup';
 import { scanExternalProcesses } from './externalProcessScanner';
+import { registerPluginHandlers } from './pluginsManager';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -322,6 +323,21 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    const levelLabel = ['log', 'warn', 'error'][level] ?? 'log';
+    console[levelLabel === 'error' ? 'error' : levelLabel === 'warn' ? 'warn' : 'log'](
+      `[renderer:${level}] ${sourceId}:${line} ${message}`
+    );
+  });
+
+  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error('[renderer] Failed to load', { errorCode, errorDescription, validatedURL });
+  });
+
+  window.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[renderer] process gone', details);
+  });
+
   // Handle minimize to tray
   window.on('minimize', () => {
     const minimizeToTray = getSetting('minimizeToTray') === 'true';
@@ -429,6 +445,7 @@ app.whenReady().then(async () => {
   
   // Start auto-scan if enabled
   startAutoScan();
+  registerPluginHandlers();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -444,6 +461,11 @@ app.on('window-all-closed', () => {
 });
 
 ipcMain.handle('ping', () => 'pong');
+ipcMain.handle('os:reveal', (_event, targetPath: string) => {
+  if (targetPath) {
+    shell.showItemInFolder(targetPath);
+  }
+});
 
 function broadcast(channel: string, payload: unknown) {
   for (const window of BrowserWindow.getAllWindows()) {

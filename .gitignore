@@ -7,3 +7,4 @@ dist-electron
 npm-debug.log*
 *.log
 /release
+/plugins

@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ActiveProcessInfo, RunHistory, ScriptInfo, ProjectInfo, GitStatusInfo } from './types/global';
+import type {
+  ActiveProcessInfo,
+  RunHistory,
+  ScriptInfo,
+  ProjectInfo,
+  GitStatusInfo,
+  PluginManifest,
+  PluginProjectAction,
+} from './types/global';
 import ProjectSidebar from './components/ProjectSidebar';
 import SetupModal from './components/SetupModal';
 import SettingsModal from './components/SettingsModal';
@@ -20,12 +28,21 @@ import RunCommandModal from './components/RunCommandModal';
 import ScriptOverridesModal from './components/ScriptOverridesModal';
 import GitInstallModal from './components/GitInstallModal';
 import type { UtilityWorkflowDefinition } from './components/UtilityCommandsPanel';
+import { PluginGallery } from './plugins/PluginGallery';
+import { usePluginManager } from './plugins/usePluginManager';
+
 
 const HISTORY_STORAGE_KEY = 'localhost-hub:run-history';
 const MAX_HISTORY = 20;
 const FORCE_STOP_DELAY_MS = 6000;
 const HIDDEN_PROJECTS_STORAGE_KEY = 'localhost-hub:hidden-projects';
 const getOverrideKey = (projectId: string, scriptName: string) => `${projectId}::${scriptName}`;
+
+type ProjectPluginActionEntry = {
+  plugin: PluginManifest;
+  action: PluginProjectAction;
+  context: Record<string, string>;
+};
 
 function AppContent() {
   const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
@@ -66,11 +83,48 @@ function AppContent() {
     removeFolder,
     rescan
   } = useProjects({ electronAPI });
+  const {
+    plugins: availablePlugins,
+    pluginMap,
+    loading: pluginsLoading,
+    error: pluginsError,
+    refresh: refreshPlugins,
+    launchPlugin,
+    enabledProjectPlugins,
+    setProjectPluginEnabled,
+  } = usePluginManager(electronAPI);
   const projectsById = useMemo(() => new Map(projects.map((project) => [project.id, project] as const)), [projects]);
   const projectPathToId = useMemo(() => new Map(projects.map((project) => [project.path, project.id] as const)), [projects]);
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId]
+  );
+  const projectPluginActions = useMemo<ProjectPluginActionEntry[]>(() => {
+    if (!selectedProject) return [];
+    return availablePlugins.flatMap((plugin) => {
+      const actions = plugin.launch?.projectActions ?? [];
+      if (!actions.length) return [];
+      if (!enabledProjectPlugins.has(plugin.id)) return [];
+      return actions
+        .map((action) => {
+          const context: Record<string, string> = {};
+          const required = new Set([
+            ...(plugin.launch?.requiredContext ?? []),
+            ...(action.requiredContext ?? []),
+          ]);
+          if (required.has('projectPath')) {
+            context.projectPath = selectedProject.path;
+          }
+          const missing = Array.from(required).some((key) => key && !context[key]);
+          if (missing) return null;
+          return { plugin, action, context };
+        })
+        .filter((entry): entry is ProjectPluginActionEntry => Boolean(entry));
+    });
+  }, [availablePlugins, enabledProjectPlugins, selectedProject]);
+  const pluginProjectActions = useMemo(
+    () => availablePlugins.filter((plugin) => plugin.launch?.projectAction),
+    [availablePlugins]
   );
 
   useEffect(() => {
@@ -136,6 +190,7 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<'scripts' | 'logs' | 'env-profiles' | 'ports' | 'packages' | 'git'>('scripts');
   const [showSettings, setShowSettings] = useState(false);
   const [showWorkspaces, setShowWorkspaces] = useState(false);
+  const [pluginGalleryOpen, setPluginGalleryOpen] = useState(false);
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [showGitInstallModal, setShowGitInstallModal] = useState(false);
   const [gitInstalled, setGitInstalled] = useState<boolean | null>(null);
@@ -192,7 +247,6 @@ function AppContent() {
   // Track runId to projectId mapping
   const runIdToProjectId = useRef<Map<string, string>>(new Map());
   const forceStopTimersRef = useRef<Map<string, { timerId: number }>>(new Map());
-
   const persistHiddenProjects = useCallback(
     (ids: string[]) => {
       if (typeof window !== 'undefined') {
@@ -245,6 +299,50 @@ function AppContent() {
   const handleToggleHiddenProjects = useCallback(() => {
     setShowHiddenProjects((prev) => !prev);
   }, []);
+
+  const handleOpenPlugins = useCallback(() => {
+    setPluginGalleryOpen(true);
+    refreshPlugins();
+  }, [refreshPlugins]);
+
+  const handleLaunchPlugin = useCallback(
+    async (
+      plugin: PluginManifest,
+      context?: Record<string, string>,
+      options?: { closeGallery?: boolean }
+    ) => {
+      try {
+        await launchPlugin(plugin.id, context);
+        pushToast({ title: `Launching ${plugin.name}`, variant: 'info' });
+        if (options?.closeGallery ?? true) {
+          setPluginGalleryOpen(false);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        pushToast({ title: `Failed to launch ${plugin.name}`, description: message, variant: 'error' });
+      }
+    },
+    [launchPlugin, pushToast]
+  );
+
+  const handleGalleryLaunch = useCallback(
+    (plugin: PluginManifest, context?: Record<string, string>) =>
+      handleLaunchPlugin(plugin, context, { closeGallery: true }),
+    [handleLaunchPlugin]
+  );
+
+  const handleProjectPluginLaunch = useCallback(
+    (plugin: PluginManifest, context: Record<string, string>) =>
+      handleLaunchPlugin(plugin, context, { closeGallery: false }),
+    [handleLaunchPlugin]
+  );
+
+  const handleToggleProjectPlugin = useCallback(
+    (pluginId: string, enabled: boolean) => {
+      setProjectPluginEnabled(pluginId, enabled);
+    },
+    [setProjectPluginEnabled]
+  );
 
   const clearForceStopEligibility = useCallback((runId?: string | null) => {
     if (!runId) return;
@@ -1356,6 +1454,7 @@ function AppContent() {
           onRescan={rescan}
           onOpenSetup={openSetup}
           onOpenWorkspaces={() => setShowWorkspaces(true)}
+          onOpenPlugins={handleOpenPlugins}
           onCreateProject={() => setShowCreateProject(true)}
           hiddenProjects={hiddenProjectsForSidebar}
           showHiddenProjects={showHiddenProjects}
@@ -1364,7 +1463,8 @@ function AppContent() {
           onUnhideProject={handleUnhideProject}
         />
 
-      <main className={`flex flex-1 flex-col ${compactClass} p-8 overflow-y-auto`}>
+      <main className={`flex flex-1 flex-col ${compactClass} p-0 overflow-hidden`}>
+        <div className="flex-1 overflow-y-auto p-8">
         {!selectedProject && (
           <ProjectEmptyState
             scanDirectories={scanDirectories}
@@ -1378,8 +1478,11 @@ function AppContent() {
         <ScanStatusBanner scanDirectories={scanDirectories} scanError={scanError} />
 
         {selectedProject && (
+            <>
           <ProjectView
             project={selectedProject}
+                projectPluginActions={projectPluginActions}
+                onLaunchPlugin={handleProjectPluginLaunch}
             scriptInFlight={scriptInFlight}
             activeProcesses={activeProcesses}
             expectedPorts={expectedPorts.get(selectedProject.id) || {}}
@@ -1417,7 +1520,9 @@ function AppContent() {
             hasOverrides={electronAPI ? hasOverridesForScript : undefined}
             onRunUtilityWorkflow={electronAPI ? handleRunUtilityWorkflow : undefined}
           />
+            </>
         )}
+        </div>
       </main>
 
         <SetupModal
@@ -1517,6 +1622,18 @@ function AppContent() {
               }
             }
           }}
+        />
+        <PluginGallery
+          isOpen={pluginGalleryOpen}
+          onClose={() => setPluginGalleryOpen(false)}
+          plugins={availablePlugins}
+          onLaunch={handleGalleryLaunch}
+          onRefresh={refreshPlugins}
+          loading={pluginsLoading}
+          error={pluginsError}
+          selectedProjectPath={selectedProject?.path ?? null}
+          enabledProjectPlugins={enabledProjectPlugins}
+          onToggleProjectPlugin={handleToggleProjectPlugin}
         />
       </div>
     </div>

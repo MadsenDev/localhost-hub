@@ -1,5 +1,12 @@
 import type { RefObject } from 'react';
-import type { ActiveProcessInfo, ProjectInfo, ScriptInfo, GitStatusInfo } from '../types/global';
+import type {
+  ActiveProcessInfo,
+  ProjectInfo,
+  ScriptInfo,
+  GitStatusInfo,
+  PluginManifest,
+  PluginProjectAction,
+} from '../types/global';
 import Section from './Section';
 import ScriptsPanel from './ScriptsPanel';
 import LogsPanel from './LogsPanel';
@@ -11,8 +18,15 @@ import { GitPanel } from './GitPanel';
 import UtilityCommandsPanel, { UtilityWorkflowDefinition } from './UtilityCommandsPanel';
 import EnvFileEditor from './EnvFileEditor';
 
+type ProjectPluginActionEntry = {
+  plugin: PluginManifest;
+  action: PluginProjectAction;
+  context: Record<string, string>;
+};
+
 interface ProjectViewProps {
   project: ProjectInfo;
+  projectPluginActions?: ProjectPluginActionEntry[];
   scriptInFlight: string | null;
   activeProcesses: ActiveProcessInfo[];
   expectedPorts: Record<string, number>;
@@ -49,10 +63,12 @@ interface ProjectViewProps {
   onEditScriptOverrides?: (script: ScriptInfo) => void;
   hasOverrides?: (script: ScriptInfo) => boolean;
   onRunUtilityWorkflow?: (workflow: UtilityWorkflowDefinition) => void;
+  onLaunchPlugin?: (plugin: PluginManifest, context: Record<string, string>) => void;
 }
 
 export function ProjectView({
   project,
+  projectPluginActions,
   scriptInFlight,
   activeProcesses,
   expectedPorts,
@@ -88,7 +104,8 @@ export function ProjectView({
   onOpenRunCommandModal,
   onEditScriptOverrides,
   hasOverrides,
-  onRunUtilityWorkflow
+  onRunUtilityWorkflow,
+  onLaunchPlugin,
 }: ProjectViewProps) {
   const handleHeaderRestart = () => {
     if (!scriptInFlight) return;
@@ -102,6 +119,8 @@ export function ProjectView({
     <>
       <ProjectHeader
         project={project}
+        projectPluginActions={projectPluginActions}
+        onLaunchPlugin={onLaunchPlugin}
         scriptInFlight={scriptInFlight}
         activeProcesses={activeProcesses}
         expectedPorts={expectedPorts}

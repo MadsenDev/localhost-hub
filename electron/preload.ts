@@ -161,6 +161,11 @@ const api: Window['electronAPI'] = {
     restartItem: (payload: { workspaceId: number; itemId: number }) => ipcRenderer.invoke('workspaceItems:restart', payload),
     onStatus: (callback: (payload: { workspaceId: number; activeRunCount: number }) => void) =>
       registerListener<{ workspaceId: number; activeRunCount: number }>('workspaces:status', (_event, payload) => callback(payload))
+  },
+  plugins: {
+    list: () => ipcRenderer.invoke('plugins:list'),
+    launchExternal: (pluginId: string, context?: Record<string, string>) =>
+      ipcRenderer.invoke('plugins:launch-external', { pluginId, context })
   }
 };
 

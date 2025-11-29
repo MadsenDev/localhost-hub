@@ -1,9 +1,23 @@
-import { useMemo, useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import type { ProjectInfo, ActiveProcessInfo, GitStatusInfo } from '../types/global';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { FiCpu, FiExternalLink, FiZap } from 'react-icons/fi';
+import type {
+  ProjectInfo,
+  ActiveProcessInfo,
+  GitStatusInfo,
+  PluginManifest,
+  PluginProjectAction,
+} from '../types/global';
+
+type ProjectPluginMenuEntry = {
+  plugin: PluginManifest;
+  action: PluginProjectAction;
+  context: Record<string, string>;
+};
 
 interface ProjectHeaderProps {
   project: ProjectInfo;
+  projectPluginActions?: ProjectPluginMenuEntry[];
   scriptInFlight: string | null;
   activeProcesses: ActiveProcessInfo[];
   expectedPorts: Record<string, number>;
@@ -19,6 +33,7 @@ interface ProjectHeaderProps {
   onRestartScript: () => void;
   electronAPI?: Window['electronAPI'];
   forceStopReady: boolean;
+  onLaunchPlugin?: (plugin: PluginManifest, context: Record<string, string>) => void;
 }
 
 function formatDuration(startedAt: number): string {
@@ -30,8 +45,22 @@ function formatDuration(startedAt: number): string {
   return `${hours}h ${minutes % 60}m`;
 }
 
+const CONTEXT_LABELS: Record<string, string> = {
+  projectPath: 'Project path',
+};
+
+function formatContextLabel(key: string): string {
+  if (CONTEXT_LABELS[key]) {
+    return CONTEXT_LABELS[key];
+  }
+  const withSpaces = key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim();
+  if (!withSpaces) return key;
+  return withSpaces.charAt(0).toUpperCase() + withSpaces.slice(1);
+}
+
 export function ProjectHeader({
   project,
+  projectPluginActions = [],
   scriptInFlight,
   activeProcesses,
   expectedPorts,
@@ -46,10 +75,27 @@ export function ProjectHeader({
   onForceStopScript,
   onRestartScript,
   electronAPI,
-  forceStopReady
+  forceStopReady,
+  onLaunchPlugin,
 }: ProjectHeaderProps) {
   const [packageManager, setPackageManager] = useState<'npm' | 'pnpm' | 'yarn' | 'bun' | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
+  const [pluginMenuOpen, setPluginMenuOpen] = useState(false);
+  const pluginMenuRef = useRef<HTMLDivElement | null>(null);
+  const pluginActionGroups = useMemo(() => {
+    if (!projectPluginActions.length) return [];
+    const grouped = new Map<string, { plugin: PluginManifest; actions: ProjectPluginMenuEntry[] }>();
+    projectPluginActions.forEach((entry) => {
+      const existing = grouped.get(entry.plugin.id);
+      if (existing) {
+        existing.actions.push(entry);
+        return;
+      }
+      grouped.set(entry.plugin.id, { plugin: entry.plugin, actions: [entry] });
+    });
+    return Array.from(grouped.values());
+  }, [projectPluginActions]);
+  const pluginActionCount = projectPluginActions.length;
 
   useEffect(() => {
     if (!electronAPI?.scripts?.detectPackageManager) return;
@@ -64,6 +110,42 @@ export function ProjectHeader({
         setIsDetecting(false);
       });
   }, [electronAPI, project.path]);
+
+  useEffect(() => {
+    function handleClick(event: MouseEvent) {
+      if (pluginMenuRef.current && !pluginMenuRef.current.contains(event.target as Node)) {
+        setPluginMenuOpen(false);
+      }
+    }
+    if (!pluginMenuOpen) {
+      return undefined;
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+    };
+  }, [pluginMenuOpen]);
+  useEffect(() => {
+    if (!pluginMenuOpen) {
+      return undefined;
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setPluginMenuOpen(false);
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [pluginMenuOpen]);
+  const handlePluginLaunch = useCallback(
+    (entry: ProjectPluginMenuEntry) => {
+      onLaunchPlugin?.(entry.plugin, entry.context);
+      setPluginMenuOpen(false);
+    },
+    [onLaunchPlugin]
+  );
   // Find processes running for this project
   const projectProcesses = useMemo(() => {
     return activeProcesses.filter((p) => p.projectPath === project.path && !p.isExternal);
@@ -266,6 +348,122 @@ export function ProjectHeader({
         </div>
 
         <div className="flex flex-col gap-2">
+          {pluginActionCount > 0 && (
+            <div
+              className="relative"
+              onMouseEnter={() => setPluginMenuOpen(true)}
+              onMouseLeave={() => setPluginMenuOpen(false)}
+              ref={pluginMenuRef}
+            >
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setPluginMenuOpen((open) => !open)}
+                className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 transition hover:border-emerald-300 dark:hover:border-emerald-400/60 whitespace-nowrap"
+                aria-expanded={pluginMenuOpen}
+                aria-label="Project plugins menu"
+              >
+                <span aria-hidden="true">🔌</span>
+                Plugins
+                <span className="rounded-full bg-slate-100 px-2 py-[1px] text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-100">
+                  {pluginActionCount > 99 ? '99+' : pluginActionCount}
+                </span>
+              </motion.button>
+              <AnimatePresence>
+                {pluginMenuOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 z-30 mt-2 w-[22rem] max-w-[90vw] rounded-2xl border border-slate-200/80 bg-white/95 p-3 shadow-2xl dark:border-slate-700/80 dark:bg-slate-900/95"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+                          Project plugins
+                        </p>
+                        <p className="text-sm font-semibold text-slate-800 dark:text-white">Launch contextual tools</p>
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-200">
+                        {pluginActionCount} {pluginActionCount === 1 ? 'action' : 'actions'}
+                      </span>
+                    </div>
+                    <div className="mt-3 max-h-80 space-y-3 overflow-y-auto pr-1">
+                      {pluginActionGroups.map(({ plugin, actions }) => (
+                        <div
+                          key={plugin.id}
+                          className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-900/40"
+                        >
+                          <div className="flex items-start gap-3">
+                            {plugin.iconDataUrl ? (
+                              <img
+                                src={plugin.iconDataUrl}
+                                alt=""
+                                className="h-10 w-10 rounded-xl border border-slate-200 bg-white object-cover dark:border-slate-700 dark:bg-slate-900"
+                              />
+                            ) : (
+                              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-900">
+                                <FiCpu className="h-4 w-4" />
+                              </div>
+                            )}
+                            <div className="flex-1">
+                              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{plugin.name}</p>
+                              {plugin.description && (
+                                <p className="text-xs text-slate-500 dark:text-slate-400">{plugin.description}</p>
+                              )}
+                            </div>
+                            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                              {actions.length === 1 ? '1 action' : `${actions.length} actions`}
+                            </span>
+                          </div>
+                          <div className="mt-3 space-y-2">
+                            {actions.map((entry) => {
+                              const contextKeys = Object.keys(entry.context ?? {});
+                              return (
+                                <button
+                                  key={`${entry.plugin.id}-${entry.action.id}`}
+                                  onClick={() => handlePluginLaunch(entry)}
+                                  className="group flex w-full items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-emerald-300 hover:bg-emerald-50/70 dark:border-slate-700 dark:bg-slate-900/40 dark:hover:border-emerald-400/40 dark:hover:bg-emerald-500/10"
+                                >
+                                  <span className="mt-1 text-emerald-500 dark:text-emerald-300">
+                                    <FiZap className="h-4 w-4" />
+                                  </span>
+                                  <div className="flex-1">
+                                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                      {entry.action.label}
+                                    </p>
+                                    {entry.action.description && (
+                                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                                        {entry.action.description}
+                                      </p>
+                                    )}
+                                    {contextKeys.length > 0 && (
+                                      <div className="mt-1 flex flex-wrap gap-1.5">
+                                        {contextKeys.map((ctx) => (
+                                          <span
+                                            key={ctx}
+                                            className="rounded-full bg-emerald-100 px-2 py-[2px] text-[11px] font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200"
+                                          >
+                                            {formatContextLabel(ctx)}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <FiExternalLink className="mt-0.5 h-4 w-4 text-slate-400 transition group-hover:text-emerald-500 dark:text-slate-500" />
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
           {hasRunningScript && primaryProcess && (
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">

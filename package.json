@@ -1,6 +1,6 @@
 {
   "name": "localhost-hub",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Desktop control center for managing local development projects, scripts, and processes.",
   "main": "dist-electron/main.js",
   "license": "MIT",
@@ -37,6 +37,9 @@
     "react"
   ],
   "dependencies": {
+    "@babel/parser": "^7.28.5",
+    "@babel/traverse": "^7.28.5",
+    "fast-glob": "^3.3.3",
     "framer-motion": "^12.23.24",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

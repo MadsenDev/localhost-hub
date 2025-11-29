@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2025-11-29
+
+### Added
+- Desktop plugin architecture that scans both bundled and user `plugins/` directories, surfaces manifests to the renderer, and launches external tooling through new `plugins:list`/`plugins:launch-external` IPC endpoints.
+- Plugin gallery experience with enable/disable toggles, project-context validation, and a sidebar shortcut so plugins can be launched or wired into project menus without leaving Localhost Hub.
+- Project-level plugin quick actions in the project header, including grouping by plugin, action descriptions, and context chips so you can see exactly what a plugin receives before launching.
+- First built-in plugin (`LocaleForge`) plus locale resource files for English, French, Norwegian, and Swedish to kick off the upcoming localization work.
+
+### Changed
+- Redesigned the project header plugin menu with counts, icons, and richer hover states for a faster, more informative command palette.
+
 ## [0.5.0] - 2025-11-25
 
 ### Added
@@ -105,7 +116,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Build configuration for macOS, Windows, and Linux
 - Development environment with Vite and live reloading
 
-[Unreleased]: https://github.com/MadsenDev/localhost-hub/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/MadsenDev/localhost-hub/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.2.0...v0.3.0
