@@ -117,31 +117,34 @@ export function ProjectView({
 
   return (
     <>
-      <ProjectHeader
-        project={project}
-        projectPluginActions={projectPluginActions}
-        onLaunchPlugin={onLaunchPlugin}
-        scriptInFlight={scriptInFlight}
-        activeProcesses={activeProcesses}
-        expectedPorts={expectedPorts}
-        detectedUrl={detectedUrl}
-        currentRunId={currentRunId}
-        gitStatus={gitStatus}
-        gitStatusLoading={gitStatusLoading}
-        onRefreshGit={onRefreshGit}
-        onOpenInBrowser={onOpenInBrowser}
-        onInstall={onInstall}
-        onStopScript={onStopScript}
-        onForceStopScript={onForceStopScript}
-        onRestartScript={handleHeaderRestart}
-        electronAPI={electronAPI}
-        forceStopReady={forceStopReady}
-      />
+      <div data-tour="project-header">
+        <ProjectHeader
+          project={project}
+          projectPluginActions={projectPluginActions}
+          onLaunchPlugin={onLaunchPlugin}
+          scriptInFlight={scriptInFlight}
+          activeProcesses={activeProcesses}
+          expectedPorts={expectedPorts}
+          detectedUrl={detectedUrl}
+          currentRunId={currentRunId}
+          gitStatus={gitStatus}
+          gitStatusLoading={gitStatusLoading}
+          onRefreshGit={onRefreshGit}
+          onOpenInBrowser={onOpenInBrowser}
+          onInstall={onInstall}
+          onStopScript={onStopScript}
+          onForceStopScript={onForceStopScript}
+          onRestartScript={handleHeaderRestart}
+          electronAPI={electronAPI}
+          forceStopReady={forceStopReady}
+        />
+      </div>
 
       <div className="flex gap-2 border-b border-slate-200 dark:border-slate-800 mt-6">
         {(['scripts', 'logs', 'env-profiles', 'ports', 'packages', 'git'] as const).map((tab) => (
           <button
             key={tab}
+            data-tour={tab === 'scripts' ? 'tab-scripts' : tab === 'logs' ? 'tab-logs' : tab === 'ports' ? 'tab-ports' : undefined}
             onClick={() => onChangeTab(tab)}
             className={`px-4 py-2 text-sm font-medium transition ${
               activeTab === tab

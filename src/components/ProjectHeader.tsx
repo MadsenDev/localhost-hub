@@ -503,6 +503,7 @@ export function ProjectHeader({
           )}
           {browserUrl && (
             <motion.button
+              data-tour="open-in-browser"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => onOpenInBrowser(browserUrl)}

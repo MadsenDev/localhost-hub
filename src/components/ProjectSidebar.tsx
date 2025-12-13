@@ -180,7 +180,7 @@ export function ProjectSidebar({
         <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400 dark:text-slate-500 text-xs">⌘K</span>
       </div>
       <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-4 -mr-5 pr-5">
-        <div>
+        <div data-tour="sidebar-projects">
           <p className="text-xs uppercase tracking-widest text-slate-500 dark:text-slate-500">Projects</p>
           {onCreateProject && (
             <motion.button

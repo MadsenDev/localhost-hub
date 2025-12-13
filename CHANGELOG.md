@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2025-12-13
+
+### Added
+- Guided onboarding tour with 7-step interactive walkthrough
+  - Welcome modal on first launch with option to start tour or skip
+  - Demo project injection that safely showcases features without touching filesystem
+  - Highlight overlay with callout bubbles that guide users through key UI elements
+  - Keyboard navigation support (ESC to skip, arrow keys for next/back)
+  - Tour steps covering: Projects sidebar, Project header, Scripts, Logs, Ports, Open in browser, and completion
+- Onboarding state persistence in settings (onboarding_v1_completed, onboarding_v1_skipped, onboarding_v1_seen_at)
+- Reset onboarding button in Settings panel About section
+- Demo project protection: all destructive actions (run, stop, install, open folder, etc.) are disabled with informative toast messages
+- Fake data for demo project: simulated git status, ports, and logs to provide realistic tour experience
+
 ## [0.6.0] - 2025-11-29
 
 ### Added
@@ -116,7 +130,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Build configuration for macOS, Windows, and Linux
 - Development environment with Vite and live reloading
 
-[Unreleased]: https://github.com/MadsenDev/localhost-hub/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/MadsenDev/localhost-hub/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.3.0...v0.4.0

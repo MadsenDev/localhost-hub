@@ -30,6 +30,10 @@ import GitInstallModal from './components/GitInstallModal';
 import type { UtilityWorkflowDefinition } from './components/UtilityCommandsPanel';
 import { PluginGallery } from './plugins/PluginGallery';
 import { usePluginManager } from './plugins/usePluginManager';
+import { useOnboarding, tourSteps } from './hooks/useOnboarding';
+import { OnboardingTour } from './components/OnboardingTour';
+import { OnboardingModal } from './components/OnboardingModal';
+import { isDemoProject, getDemoLogs } from './utils/demoProject';
 
 
 const HISTORY_STORAGE_KEY = 'localhost-hub:run-history';
@@ -93,12 +97,38 @@ function AppContent() {
     enabledProjectPlugins,
     setProjectPluginEnabled,
   } = usePluginManager(electronAPI);
-  const projectsById = useMemo(() => new Map(projects.map((project) => [project.id, project] as const)), [projects]);
-  const projectPathToId = useMemo(() => new Map(projects.map((project) => [project.path, project.id] as const)), [projects]);
+  const {
+    showWelcomeModal,
+    isOnboardingActive,
+    currentStep,
+    demoProject,
+    startOnboarding,
+    skipOnboarding,
+    finishOnboarding,
+    nextStep,
+    backStep
+  } = useOnboarding(electronAPI);
+  // Add demo project to projects list when onboarding is active
+  const projectsWithDemo = useMemo(() => {
+    if (isOnboardingActive && demoProject) {
+      return [demoProject, ...projects];
+    }
+    return projects;
+  }, [projects, isOnboardingActive, demoProject]);
+
+  const projectsById = useMemo(() => new Map(projectsWithDemo.map((project) => [project.id, project] as const)), [projectsWithDemo]);
+  const projectPathToId = useMemo(() => new Map(projectsWithDemo.map((project) => [project.path, project.id] as const)), [projectsWithDemo]);
   const selectedProject = useMemo(
-    () => projects.find((project) => project.id === selectedProjectId) ?? null,
-    [projects, selectedProjectId]
+    () => projectsWithDemo.find((project) => project.id === selectedProjectId) ?? null,
+    [projectsWithDemo, selectedProjectId]
   );
+
+  // Auto-select demo project when onboarding starts
+  useEffect(() => {
+    if (isOnboardingActive && demoProject && selectedProjectId !== demoProject.id) {
+      selectProject(demoProject.id);
+    }
+  }, [isOnboardingActive, demoProject, selectedProjectId, selectProject]);
   const projectPluginActions = useMemo<ProjectPluginActionEntry[]>(() => {
     if (!selectedProject) return [];
     return availablePlugins.flatMap((plugin) => {
@@ -393,8 +423,12 @@ function AppContent() {
     if (!selectedProjectId) {
       return 'Select a project to view logs.';
     }
+    // Show demo logs for demo project
+    if (isDemoProject(selectedProject)) {
+      return getDemoLogs();
+    }
     return projectLogs.get(selectedProjectId) || 'Select a script to run and view logs.';
-  }, [selectedProjectId, projectLogs]);
+  }, [selectedProjectId, projectLogs, selectedProject]);
 
   // Get current run for the selected project
   const currentRun = useMemo(() => {
@@ -409,17 +443,45 @@ function AppContent() {
   const isForceStopReady = useMemo(() => (currentRun ? forceStopCandidates.has(currentRun.id) : false), [currentRun, forceStopCandidates]);
   const currentGitStatus = useMemo(() => {
     if (!selectedProject) return null;
+    // Return fake git status for demo project
+    if (isDemoProject(selectedProject)) {
+      return {
+        isRepo: true,
+        branch: 'main',
+        ahead: 0,
+        behind: 0,
+        dirty: false,
+        upstream: 'origin/main',
+        lastCommit: {
+          hash: 'a1b2c3d',
+          message: 'Initial commit',
+          relativeTime: '2 days ago'
+        }
+      };
+    }
     return gitStatusMap.get(selectedProject.id) || null;
   }, [gitStatusMap, selectedProject]);
   const isGitStatusLoading = selectedProject ? gitLoadingProjectId === selectedProject.id : false;
   const hiddenProjectIdSet = useMemo(() => new Set(hiddenProjectIds), [hiddenProjectIds]);
+  // Apply filtering to projectsWithDemo
+  const filteredProjectsWithDemo = useMemo(() => {
+    if (!query.trim()) return projectsWithDemo;
+    const lowerQuery = query.toLowerCase();
+    return projectsWithDemo.filter(
+      (project) =>
+        project.name.toLowerCase().includes(lowerQuery) ||
+        project.path.toLowerCase().includes(lowerQuery) ||
+        project.tags.some((tag) => tag.toLowerCase().includes(lowerQuery))
+    );
+  }, [projectsWithDemo, query]);
+
   const visibleProjects = useMemo(
-    () => filteredProjects.filter((project) => !hiddenProjectIdSet.has(project.id)),
-    [filteredProjects, hiddenProjectIdSet]
+    () => filteredProjectsWithDemo.filter((project) => !hiddenProjectIdSet.has(project.id)),
+    [filteredProjectsWithDemo, hiddenProjectIdSet]
   );
   const hiddenProjectsForSidebar = useMemo(
-    () => filteredProjects.filter((project) => hiddenProjectIdSet.has(project.id)),
-    [filteredProjects, hiddenProjectIdSet]
+    () => filteredProjectsWithDemo.filter((project) => hiddenProjectIdSet.has(project.id)),
+    [filteredProjectsWithDemo, hiddenProjectIdSet]
   );
 
   useEffect(() => {
@@ -847,6 +909,14 @@ function AppContent() {
   const handleRunScript = useCallback(
     async (script: ScriptInfo) => {
       if (!selectedProject) return;
+      if (isDemoProject(selectedProject)) {
+        pushToast({
+          title: 'Demo project',
+          description: 'Action disabled in demo mode.',
+          variant: 'info'
+        });
+        return;
+      }
       if (!electronAPI) {
         setProjectLogs((current) => {
           const updated = new Map(current);
@@ -1018,6 +1088,15 @@ function AppContent() {
 
   const handleRestartScript = useCallback(
     async (script: ScriptInfo) => {
+      if (!selectedProject) return;
+      if (isDemoProject(selectedProject)) {
+        pushToast({
+          title: 'Demo project',
+          description: 'Action disabled in demo mode.',
+          variant: 'info'
+        });
+        return;
+      }
       if (!electronAPI) {
         if (selectedProject) {
           setProjectLogs((current) => {
@@ -1101,6 +1180,14 @@ function AppContent() {
 
   const handleStopScript = useCallback(async () => {
     if (!electronAPI || !selectedProject || !currentRun) return;
+    if (isDemoProject(selectedProject)) {
+      pushToast({
+        title: 'Demo project',
+        description: 'Action disabled in demo mode.',
+        variant: 'info'
+      });
+      return;
+    }
     try {
       await electronAPI.scripts.stop(currentRun.id);
       setProjectLogs((current) => {
@@ -1225,12 +1312,20 @@ function AppContent() {
   }, [selectedProject]);
 
   const handleOpenInBrowser = useCallback(async (url: string) => {
+    if (selectedProject && isDemoProject(selectedProject)) {
+      pushToast({
+        title: 'Demo project',
+        description: 'Action disabled in demo mode.',
+        variant: 'info'
+      });
+      return;
+    }
     if (electronAPI?.shell?.openExternal) {
       await electronAPI.shell.openExternal(url);
     } else if (typeof window !== 'undefined') {
       window.open(url, '_blank');
     }
-  }, [electronAPI]);
+  }, [electronAPI, selectedProject]);
 
   const handleRefreshGit = useCallback(() => {
     if (!selectedProject) {
@@ -1242,6 +1337,14 @@ function AppContent() {
   const handleInstall = useCallback(
     async (packageManager: string) => {
       if (!electronAPI?.scripts?.install || !selectedProject) return;
+      if (isDemoProject(selectedProject)) {
+        pushToast({
+          title: 'Demo project',
+          description: 'Action disabled in demo mode.',
+          variant: 'info'
+        });
+        return;
+      }
       try {
         setProjectLogs((current) => {
           const updated = new Map(current);
@@ -1485,8 +1588,8 @@ function AppContent() {
                 onLaunchPlugin={handleProjectPluginLaunch}
             scriptInFlight={scriptInFlight}
             activeProcesses={activeProcesses}
-            expectedPorts={expectedPorts.get(selectedProject.id) || {}}
-            detectedUrl={detectedUrls.get(selectedProject.id) || null}
+            expectedPorts={isDemoProject(selectedProject) ? { dev: 1716 } : (expectedPorts.get(selectedProject.id) || {})}
+            detectedUrl={isDemoProject(selectedProject) ? 'http://localhost:1716' : (detectedUrls.get(selectedProject.id) || null)}
             currentRunId={currentRun?.id || null}
             gitStatus={currentGitStatus}
             gitStatusLoading={isGitStatusLoading}
@@ -1635,6 +1738,21 @@ function AppContent() {
           enabledProjectPlugins={enabledProjectPlugins}
           onToggleProjectPlugin={handleToggleProjectPlugin}
         />
+        <OnboardingModal
+          isOpen={showWelcomeModal}
+          onStart={startOnboarding}
+          onSkip={skipOnboarding}
+        />
+        {isOnboardingActive && (
+          <OnboardingTour
+            steps={tourSteps}
+            currentStep={currentStep}
+            onNext={nextStep}
+            onBack={backStep}
+            onSkip={skipOnboarding}
+            onFinish={finishOnboarding}
+          />
+        )}
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import {
   HiChevronRight
 } from 'react-icons/hi2';
 import { LoadingSkeleton } from './LoadingSkeleton';
+import packageJson from '../../package.json';
 
 interface SettingsPanelProps {
   electronAPI?: Window['electronAPI'];
@@ -497,7 +498,7 @@ export function SettingsPanel({ electronAPI }: SettingsPanelProps) {
                       Localhost Hub
                     </h4>
                     <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400 light:text-indigo-600">
-                      Version 0.5.0
+                      Version {packageJson.version}
                     </p>
                   </div>
                 </div>
@@ -564,6 +565,32 @@ export function SettingsPanel({ electronAPI }: SettingsPanelProps) {
                     </span>
                   ))}
                 </div>
+              </div>
+
+              {/* Reset Onboarding */}
+              <div className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 light:border-slate-200/50 bg-slate-50/50 dark:bg-slate-900/30 light:bg-slate-50/50 p-6">
+                <h5 className="text-sm font-semibold text-slate-900 dark:text-slate-100 light:text-slate-900 mb-2">
+                  Onboarding
+                </h5>
+                <p className="text-sm text-slate-600 dark:text-slate-400 light:text-slate-600 mb-4">
+                  Reset the guided onboarding tour to see it again.
+                </p>
+                <button
+                  onClick={async () => {
+                    if (!electronAPI?.settings) return;
+                    try {
+                      await electronAPI.settings.set({ key: 'onboarding_v1_completed', value: 'false' });
+                      await electronAPI.settings.set({ key: 'onboarding_v1_skipped', value: 'false' });
+                      await loadSettings();
+                      window.dispatchEvent(new CustomEvent('onboarding:reset'));
+                    } catch (error) {
+                      console.error('Error resetting onboarding:', error);
+                    }
+                  }}
+                  className="rounded-lg border border-indigo-200 dark:border-indigo-500/40 bg-indigo-50 dark:bg-indigo-500/10 px-4 py-2 text-sm font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition"
+                >
+                  Reset onboarding
+                </button>
               </div>
 
               {/* Author & Links */}

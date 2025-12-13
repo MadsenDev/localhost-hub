@@ -66,6 +66,21 @@ export function useSettings(electronAPI?: Window['electronAPI']) {
     [getSetting]
   );
 
+  const setSetting = useCallback(
+    async (key: string, value: SettingValue) => {
+      if (!electronAPI?.settings) return;
+      try {
+        const stringValue = typeof value === 'boolean' ? (value ? 'true' : 'false') : String(value ?? '');
+        await electronAPI.settings.set({ key, value: stringValue });
+        setSettings((prev) => ({ ...prev, [key]: stringValue }));
+      } catch (error) {
+        console.error('Error saving setting:', error);
+        throw error;
+      }
+    },
+    [electronAPI]
+  );
+
   return {
     settings,
     loading,
@@ -73,6 +88,7 @@ export function useSettings(electronAPI?: Window['electronAPI']) {
     getSettingAsNumber,
     getSettingAsBoolean,
     getSettingAsString,
+    setSetting,
     reload: loadSettings
   };
 }

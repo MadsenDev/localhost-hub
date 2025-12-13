@@ -50,6 +50,7 @@ export function ScriptsPanel({
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
+                    data-tour={index === 0 ? 'script-run' : undefined}
                     className={`rounded-full border px-4 py-1 text-xs font-semibold transition ${
                       isRunning
                         ? 'border-rose-300 dark:border-rose-400/40 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-200 hover:bg-rose-100 dark:hover:bg-rose-500/30'
