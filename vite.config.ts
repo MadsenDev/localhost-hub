@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => ({
         vite: {
           build: {
             rollupOptions: {
-              external: ['sql.js']
+              external: ['sql.js', 'toml']
             }
           }
         }

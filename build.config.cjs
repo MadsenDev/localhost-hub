@@ -6,8 +6,15 @@ module.exports = {
   files: [
     'dist-electron/**/*',
     'dist/**/*',
-    'node_modules/**/*',
     'package.json'
+  ],
+  // Manually include toml to avoid electron-builder dependency parsing issues
+  // electron-builder will auto-detect other dependencies from package.json
+  extraFiles: [
+    {
+      from: 'node_modules/toml',
+      to: 'node_modules/toml'
+    }
   ],
   extraResources: [
     {
