@@ -20,6 +20,7 @@ export type ScriptInfo = {
   name: string;
   command: string;
   description?: string;
+  runner?: 'npm' | 'cargo' | 'custom';
 };
 
 export type ActiveProcessInfo = {

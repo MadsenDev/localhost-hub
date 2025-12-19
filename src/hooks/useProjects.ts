@@ -15,12 +15,14 @@ const mockProjects: ProjectInfo[] = [
       {
         name: 'dev',
         command: 'vite dev',
-        description: 'Starts the Vite development server.'
+        description: 'Starts the Vite development server.',
+        runner: 'npm'
       },
       {
         name: 'build',
         command: 'vite build',
-        description: 'Creates an optimized production build.'
+        description: 'Creates an optimized production build.',
+        runner: 'npm'
       }
     ]
   },
@@ -31,8 +33,8 @@ const mockProjects: ProjectInfo[] = [
     type: 'Node Project',
     tags: ['TypeScript'],
     scripts: [
-      { name: 'dev', command: 'npm run dev', description: 'Run API in watch mode.' },
-      { name: 'test', command: 'npm run test', description: 'Execute unit tests.' }
+      { name: 'dev', command: 'npm run dev', description: 'Run API in watch mode.', runner: 'npm' },
+      { name: 'test', command: 'npm run test', description: 'Execute unit tests.', runner: 'npm' }
     ]
   }
 ];
@@ -115,7 +117,11 @@ export function useProjects({ electronAPI }: UseProjectsOptions) {
       try {
         const result = await electronAPI.projects.scan(directories);
         applyScanResults(result);
-        setScanError(result.length === 0 ? 'No package.json files detected in the configured directories.' : null);
+        setScanError(
+          result.length === 0
+            ? 'No package.json or Cargo.toml files detected in the configured directories.'
+            : null
+        );
       } catch (error) {
         setScanError(error instanceof Error ? error.message : 'Failed to scan for projects.');
       } finally {
@@ -142,17 +148,19 @@ export function useProjects({ electronAPI }: UseProjectsOptions) {
     }
 
     let ignore = false;
-    const scan = async () => {
-      setIsScanning(true);
-      try {
-        const result = await electronAPI.projects.scan(scanDirectories);
-        if (ignore) return;
-        applyScanResults(result);
-        setScanError(result.length === 0 ? 'No package.json files detected in the configured directories.' : null);
-      } catch (error) {
-        if (!ignore) {
-          setScanError(error instanceof Error ? error.message : 'Failed to scan for projects.');
-        }
+      const scan = async () => {
+        setIsScanning(true);
+        try {
+          const result = await electronAPI.projects.scan(scanDirectories);
+          if (ignore) return;
+          applyScanResults(result);
+          setScanError(
+            result.length === 0 ? 'No package.json or Cargo.toml files detected in the configured directories.' : null
+          );
+        } catch (error) {
+          if (!ignore) {
+            setScanError(error instanceof Error ? error.message : 'Failed to scan for projects.');
+          }
       } finally {
         if (!ignore) {
           setIsScanning(false);

@@ -7,22 +7,26 @@ export function createDemoProject(): ProjectInfo {
     {
       name: 'dev',
       command: 'vite',
-      description: 'Start development server'
+      description: 'Start development server',
+      runner: 'npm'
     },
     {
       name: 'build',
       command: 'tsc && vite build',
-      description: 'Build for production'
+      description: 'Build for production',
+      runner: 'npm'
     },
     {
       name: 'lint',
       command: 'eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0',
-      description: 'Run linter'
+      description: 'Run linter',
+      runner: 'npm'
     },
     {
       name: 'start',
       command: 'vite preview',
-      description: 'Preview production build'
+      description: 'Preview production build',
+      runner: 'npm'
     }
   ];
 

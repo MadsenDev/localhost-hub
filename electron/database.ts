@@ -115,6 +115,7 @@ export async function initializeDatabase() {
       name TEXT NOT NULL,
       command TEXT NOT NULL,
       description TEXT,
+      runner TEXT,
       PRIMARY KEY (project_id, name),
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
@@ -122,6 +123,7 @@ export async function initializeDatabase() {
 
   // Add expected_port column to project_scripts if it doesn't exist
   addColumnIfNotExists(db, 'project_scripts', 'expected_port', 'INTEGER');
+  addColumnIfNotExists(db, 'project_scripts', 'runner', 'TEXT');
 
   // Create new scripts table (preferred going forward)
   db.run(`
@@ -130,6 +132,7 @@ export async function initializeDatabase() {
       project_id TEXT NOT NULL,
       name TEXT NOT NULL,
       command TEXT NOT NULL,
+      runner TEXT,
       raw_script TEXT,
       description TEXT,
       is_default INTEGER DEFAULT 0,
@@ -139,6 +142,8 @@ export async function initializeDatabase() {
       UNIQUE(project_id, name)
     );
   `);
+
+  addColumnIfNotExists(db, 'scripts', 'runner', 'TEXT');
 
   // Create env_profiles table
   db.run(`
@@ -355,15 +360,16 @@ export async function saveProjects(projects: ProjectInfo[], scannedAt = Date.now
 
         for (const script of project.scripts ?? []) {
           db.run(
-            'INSERT INTO project_scripts (project_id, name, command, description) VALUES (?, ?, ?, ?)',
-            [project.id, script.name, script.command, script.description ?? null]
+            'INSERT INTO project_scripts (project_id, name, command, description, runner) VALUES (?, ?, ?, ?, ?)',
+            [project.id, script.name, script.command, script.description ?? null, script.runner ?? 'npm']
           );
           db.run(
-            `INSERT INTO scripts (project_id, name, command, raw_script, description, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO scripts (project_id, name, command, runner, raw_script, description, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               project.id,
               script.name,
               script.command,
+              script.runner ?? 'npm',
               script.command,
               script.description ?? null,
               0,
@@ -429,7 +435,8 @@ export function loadProjects(): StoredProject[] {
       list.push({
         name: script.name,
         command: script.command,
-        description: script.description ?? undefined
+        description: script.description ?? undefined,
+        runner: script.runner ?? 'npm'
       });
       scriptsByProject.set(script.project_id, list);
     }

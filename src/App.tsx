@@ -934,12 +934,21 @@ function AppContent() {
         });
 
         const overrides = scriptEnvOverrides.get(getOverrideKey(selectedProject.id, script.name));
-        const run = await electronAPI.scripts.run({
-          projectPath: selectedProject.path,
-          projectId: selectedProject.id,
-          script: script.name,
-          envOverrides: overrides
-        });
+        const useCustomRunner = script.runner && script.runner !== 'npm';
+        const run = useCustomRunner
+          ? await electronAPI.scripts.runCustom({
+              projectPath: selectedProject.path,
+              projectId: selectedProject.id,
+              command: script.command,
+              label: script.name,
+              envOverrides: overrides
+            })
+          : await electronAPI.scripts.run({
+              projectPath: selectedProject.path,
+              projectId: selectedProject.id,
+              script: script.name,
+              envOverrides: overrides
+            });
         if (!run) return;
 
         // Map runId to projectId

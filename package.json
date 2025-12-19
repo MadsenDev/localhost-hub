@@ -44,7 +44,8 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-icons": "^5.5.0",
-    "sql.js": "^1.13.0"
+    "sql.js": "^1.13.0",
+    "toml": "^3.0.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
