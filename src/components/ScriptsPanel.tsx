@@ -33,6 +33,7 @@ export function ScriptsPanel({
       <AnimatePresence mode="popLayout">
         {scripts.map((script, index) => {
           const isRunning = scriptInFlight === script.name;
+          const runnerLabel = script.runner === 'cargo' ? 'cargo' : script.runner === 'custom' ? 'command' : 'npm run';
           return (
             <motion.div
               key={script.name}
@@ -46,7 +47,7 @@ export function ScriptsPanel({
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-base font-semibold text-slate-900 dark:text-white">{script.name}</p>
-                  <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-500">npm run</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-500">{runnerLabel}</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button

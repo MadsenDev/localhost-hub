@@ -84,11 +84,21 @@ export function PortsProcessesPanel({ electronAPI, selectedProject }: PortsProce
       const key = `${selectedProject.id}:${script.name}`;
       setLaunchingScripts((prev) => ({ ...prev, [key]: true }));
       try {
-        await electronAPI.scripts.run({
-          projectPath: selectedProject.path,
-          projectId: selectedProject.id,
-          script: script.name
-        });
+        const useCustomRunner = script.runner && script.runner !== 'npm';
+        if (useCustomRunner) {
+          await electronAPI.scripts.runCustom({
+            projectPath: selectedProject.path,
+            projectId: selectedProject.id,
+            command: script.command,
+            label: script.name
+          });
+        } else {
+          await electronAPI.scripts.run({
+            projectPath: selectedProject.path,
+            projectId: selectedProject.id,
+            script: script.name
+          });
+        }
         setTimeout(loadProcesses, 750);
       } catch (error) {
         console.error('Error launching script:', error);
