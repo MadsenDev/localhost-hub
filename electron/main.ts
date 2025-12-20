@@ -521,6 +521,11 @@ ipcMain.handle('projects:scan', async (_event, directories?: string[]) => {
   return performProjectScan(directories);
 });
 
+ipcMain.handle('projects:reload', async () => {
+  cachedProjects = loadProjects();
+  return cachedProjects;
+});
+
 type LaunchScriptOptions = {
   projectPath: string;
   script: string;
@@ -1441,6 +1446,19 @@ ipcMain.handle('scripts:setExpectedPort', async (_event, payload: { projectId: s
 
 ipcMain.handle('scripts:getAllExpectedPorts', async (_event, projectId: string) => {
   return getAllScriptExpectedPorts(projectId);
+});
+
+// Custom script management IPC handlers
+ipcMain.handle('scripts:addCustom', async (_event, payload: { projectId: string; name: string; command: string; description?: string }) => {
+  const { addCustomScript } = await import('./database');
+  addCustomScript(payload.projectId, payload.name, payload.command, payload.description);
+  return { success: true };
+});
+
+ipcMain.handle('scripts:deleteCustom', async (_event, payload: { projectId: string; name: string }) => {
+  const { deleteCustomScript } = await import('./database');
+  deleteCustomScript(payload.projectId, payload.name);
+  return { success: true };
 });
 
 ipcMain.handle('shell:openExternal', async (_event, url: string) => {

@@ -196,6 +196,7 @@ export interface ElectronAPI {
   projects: {
     list: () => Promise<ProjectInfo[]>;
     scan: (directories?: string[]) => Promise<ProjectInfo[]>;
+    reload: () => Promise<ProjectInfo[]>;
     create: (payload: CreateProjectPayload) => Promise<{ success: boolean; path: string }>;
   };
   processes: {
@@ -218,6 +219,8 @@ export interface ElectronAPI {
     getExpectedPort: (payload: { projectId: string; scriptName: string }) => Promise<number | null>;
     setExpectedPort: (payload: { projectId: string; scriptName: string; port: number | null }) => Promise<{ success: boolean }>;
     getAllExpectedPorts: (projectId: string) => Promise<Record<string, number>>;
+    addCustom: (payload: { projectId: string; name: string; command: string; description?: string }) => Promise<{ success: boolean }>;
+    deleteCustom: (payload: { projectId: string; name: string }) => Promise<{ success: boolean }>;
     onLog: (callback: (payload: ScriptLogChunk) => void) => () => void;
     onExit: (callback: (payload: ScriptExitEvent) => void) => () => void;
     onError: (callback: (payload: ScriptErrorEvent) => void) => () => void;

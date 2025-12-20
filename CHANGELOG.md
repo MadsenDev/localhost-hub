@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2025-12-19
+
+### Added
+- Custom script management: users can now add, save, and delete custom scripts for any project
+  - "Add custom script" button in Scripts section to create persistent custom scripts
+  - Custom scripts are saved to the database and persist across rescans
+  - Delete button (trash icon) shown only for custom scripts
+  - Custom scripts are distinguished from detected scripts with `runner = 'custom'`
+  - Custom scripts cannot overwrite detected scripts with the same name
+- Cargo script support: detection and execution of Rust/Cargo projects
+  - Automatic detection of `Cargo.toml` files
+  - Support for running cargo commands (build, test, run, etc.)
+  - Cargo scripts displayed alongside npm/yarn/pnpm scripts
+
+### Changed
+- Custom scripts are preserved during project rescans (they won't be deleted when scanning)
+- Scripts panel now shows runner type (npm run, cargo, or command) for each script
+
 ## [0.7.0] - 2025-12-13
 
 ### Added
@@ -130,7 +148,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Build configuration for macOS, Windows, and Linux
 - Development environment with Vite and live reloading
 
-[Unreleased]: https://github.com/MadsenDev/localhost-hub/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/MadsenDev/localhost-hub/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.4.0...v0.5.0

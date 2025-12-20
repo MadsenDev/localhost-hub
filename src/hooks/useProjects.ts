@@ -182,6 +182,16 @@ export function useProjects({ electronAPI }: UseProjectsOptions) {
     await performScan(scanDirectories);
   }, [electronAPI, scanDirectories, performScan]);
 
+  const reloadProjects = useCallback(async () => {
+    if (!electronAPI) return;
+    try {
+      const result = await electronAPI.projects.reload();
+      applyScanResults(result);
+    } catch (error) {
+      console.error('Error reloading projects:', error);
+    }
+  }, [electronAPI, applyScanResults]);
+
   const handleSaveDirectories = useCallback(() => {
     const directories = parseDirectories(setupInput);
     if (directories.length === 0) {
@@ -265,7 +275,8 @@ export function useProjects({ electronAPI }: UseProjectsOptions) {
     useRepoRoot: handleUseRepoRoot,
     selectFolder: handleSelectFolder,
     removeFolder: handleRemoveFolder,
-    rescan: handleRescan
+    rescan: handleRescan,
+    reloadProjects
   };
 }
 

@@ -11,6 +11,7 @@ const api: Window['electronAPI'] = {
   projects: {
     list: () => ipcRenderer.invoke('projects:list'),
     scan: (directories?: string[]) => ipcRenderer.invoke('projects:scan', directories),
+    reload: () => ipcRenderer.invoke('projects:reload'),
     create: (payload: {
       name: string;
       directory: string;
@@ -65,6 +66,9 @@ const api: Window['electronAPI'] = {
     getExpectedPort: (payload: { projectId: string; scriptName: string }) => ipcRenderer.invoke('scripts:getExpectedPort', payload),
     setExpectedPort: (payload: { projectId: string; scriptName: string; port: number | null }) => ipcRenderer.invoke('scripts:setExpectedPort', payload),
     getAllExpectedPorts: (projectId: string) => ipcRenderer.invoke('scripts:getAllExpectedPorts', projectId),
+    addCustom: (payload: { projectId: string; name: string; command: string; description?: string }) =>
+      ipcRenderer.invoke('scripts:addCustom', payload),
+    deleteCustom: (payload: { projectId: string; name: string }) => ipcRenderer.invoke('scripts:deleteCustom', payload),
     onLog: (callback: (payload: { runId: string; chunk: string; source: 'stdout' | 'stderr'; timestamp: number; projectId?: string; script?: string }) => void) =>
       registerListener<{ runId: string; chunk: string; source: 'stdout' | 'stderr'; timestamp: number; projectId?: string; script?: string }>(
         'scripts:log',

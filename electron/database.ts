@@ -335,7 +335,23 @@ export async function saveProjects(projects: ProjectInfo[], scannedAt = Date.now
       }
 
       // For sql.js, we'll use a simpler approach: delete and reinsert
-      // First, delete all existing data
+      // First, preserve custom scripts (runner = 'custom')
+      const customScriptsResult = db.exec("SELECT * FROM project_scripts WHERE runner = 'custom'");
+      const customScripts: Array<{ project_id: string; name: string; command: string; description: string | null; runner: string }> = [];
+      
+      if (customScriptsResult.length > 0) {
+        const scriptRows = customScriptsResult[0];
+        const scriptColumns = scriptRows.columns;
+        for (const row of scriptRows.values) {
+          const script: any = {};
+          scriptColumns.forEach((col: string, idx: number) => {
+            script[col] = row[idx];
+          });
+          customScripts.push(script);
+        }
+      }
+
+      // Delete all existing data (custom scripts will be re-added)
       db.run('DELETE FROM project_scripts;');
       db.run('DELETE FROM scripts;');
       db.run('DELETE FROM projects;');
@@ -377,6 +393,31 @@ export async function saveProjects(projects: ProjectInfo[], scannedAt = Date.now
               scannedAt
             ]
           );
+        }
+      }
+      
+      // Re-add custom scripts for projects that still exist
+      for (const customScript of customScripts) {
+        const projectExists = projects.some((p) => p.id === customScript.project_id);
+        if (projectExists) {
+          const escapedProjectId = customScript.project_id.replace(/'/g, "''");
+          const escapedName = customScript.name.replace(/'/g, "''");
+          const escapedCommand = customScript.command.replace(/'/g, "''");
+          const escapedDescription = customScript.description ? customScript.description.replace(/'/g, "''") : 'NULL';
+          
+          // Check if a detected script with the same name exists (don't overwrite)
+          const hasDetectedScript = projects
+            .find((p) => p.id === customScript.project_id)
+            ?.scripts?.some((s) => s.name === customScript.name);
+          
+          if (!hasDetectedScript) {
+            db.run(
+              `INSERT INTO project_scripts (project_id, name, command, description, runner) VALUES ('${escapedProjectId}', '${escapedName}', '${escapedCommand}', ${escapedDescription === 'NULL' ? 'NULL' : `'${escapedDescription}'`}, 'custom')`
+            );
+            db.run(
+              `INSERT INTO scripts (project_id, name, command, runner, raw_script, description, is_default, created_at, updated_at) VALUES ('${escapedProjectId}', '${escapedName}', '${escapedCommand}', 'custom', '${escapedCommand}', ${escapedDescription === 'NULL' ? 'NULL' : `'${escapedDescription}'`}, 0, ${scannedAt}, ${scannedAt})`
+            );
+          }
         }
       }
     }
@@ -462,6 +503,72 @@ function safeParseTags(value: unknown): string[] {
     return Array.isArray(parsed) ? (parsed.filter((tag) => typeof tag === 'string') as string[]) : [];
   } catch {
     return [];
+  }
+}
+
+// Add a custom script to a project
+export function addCustomScript(projectId: string, name: string, command: string, description?: string): void {
+  const db = getDatabase();
+  const dbPath = getDatabasePath();
+  
+  try {
+    const escapedProjectId = projectId.replace(/'/g, "''");
+    const escapedName = name.replace(/'/g, "''");
+    const escapedCommand = command.replace(/'/g, "''");
+    const escapedDescription = description ? description.replace(/'/g, "''") : 'NULL';
+    const now = Date.now();
+    
+    // Check if script already exists
+    const existingResult = db.exec(`SELECT name FROM project_scripts WHERE project_id = '${escapedProjectId}' AND name = '${escapedName}'`);
+    if (existingResult.length > 0 && existingResult[0].values.length > 0) {
+      throw new Error(`Script "${name}" already exists`);
+    }
+    
+    // Insert into project_scripts (for compatibility)
+    db.run(
+      `INSERT INTO project_scripts (project_id, name, command, description, runner) VALUES ('${escapedProjectId}', '${escapedName}', '${escapedCommand}', ${escapedDescription === 'NULL' ? 'NULL' : `'${escapedDescription}'`}, 'custom')`
+    );
+    
+    // Insert into scripts table
+    db.run(
+      `INSERT INTO scripts (project_id, name, command, runner, raw_script, description, is_default, created_at, updated_at) VALUES ('${escapedProjectId}', '${escapedName}', '${escapedCommand}', 'custom', '${escapedCommand}', ${escapedDescription === 'NULL' ? 'NULL' : `'${escapedDescription}'`}, 0, ${now}, ${now})`
+    );
+    
+    saveDatabase(db, dbPath);
+  } catch (error) {
+    console.error('Error adding custom script:', error);
+    throw error;
+  }
+}
+
+// Delete a custom script from a project
+export function deleteCustomScript(projectId: string, name: string): void {
+  const db = getDatabase();
+  const dbPath = getDatabasePath();
+  
+  try {
+    const escapedProjectId = projectId.replace(/'/g, "''");
+    const escapedName = name.replace(/'/g, "''");
+    
+    // Only delete if it's a custom script (runner = 'custom')
+    const checkResult = db.exec(`SELECT runner FROM project_scripts WHERE project_id = '${escapedProjectId}' AND name = '${escapedName}'`);
+    if (checkResult.length === 0 || checkResult[0].values.length === 0) {
+      throw new Error(`Script "${name}" not found`);
+    }
+    
+    const runner = checkResult[0].values[0][0];
+    if (runner !== 'custom') {
+      throw new Error(`Cannot delete detected script "${name}". Only custom scripts can be deleted.`);
+    }
+    
+    // Delete from both tables
+    db.run(`DELETE FROM project_scripts WHERE project_id = '${escapedProjectId}' AND name = '${escapedName}'`);
+    db.run(`DELETE FROM scripts WHERE project_id = '${escapedProjectId}' AND name = '${escapedName}'`);
+    
+    saveDatabase(db, dbPath);
+  } catch (error) {
+    console.error('Error deleting custom script:', error);
+    throw error;
   }
 }
 

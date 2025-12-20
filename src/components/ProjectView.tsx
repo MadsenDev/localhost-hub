@@ -64,6 +64,8 @@ interface ProjectViewProps {
   hasOverrides?: (script: ScriptInfo) => boolean;
   onRunUtilityWorkflow?: (workflow: UtilityWorkflowDefinition) => void;
   onLaunchPlugin?: (plugin: PluginManifest, context: Record<string, string>) => void;
+  onOpenAddCustomScriptModal?: () => void;
+  onDeleteCustomScript?: (script: ScriptInfo) => void;
 }
 
 export function ProjectView({
@@ -106,6 +108,8 @@ export function ProjectView({
   hasOverrides,
   onRunUtilityWorkflow,
   onLaunchPlugin,
+  onOpenAddCustomScriptModal,
+  onDeleteCustomScript,
 }: ProjectViewProps) {
   const handleHeaderRestart = () => {
     if (!scriptInFlight) return;
@@ -163,14 +167,24 @@ export function ProjectView({
             <Section
               title="Scripts"
               action={
-                onOpenRunCommandModal ? (
-                  <button
-                    onClick={onOpenRunCommandModal}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200 dark:hover:border-indigo-500/40"
-                  >
-                    Run custom command
-                  </button>
-                ) : null
+                <div className="flex gap-2">
+                  {onOpenAddCustomScriptModal && (
+                    <button
+                      onClick={onOpenAddCustomScriptModal}
+                      className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-semibold text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-500/40 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:border-indigo-400 dark:hover:bg-indigo-500/20"
+                    >
+                      Add custom script
+                    </button>
+                  )}
+                  {onOpenRunCommandModal && (
+                    <button
+                      onClick={onOpenRunCommandModal}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200 dark:hover:border-indigo-500/40"
+                    >
+                      Run custom command
+                    </button>
+                  )}
+                </div>
               }
             >
               <ScriptsPanel
@@ -183,6 +197,7 @@ export function ProjectView({
                 onForceStopScript={onForceStopScript}
                 onEditOverrides={onEditScriptOverrides}
                 hasOverrides={hasOverrides}
+                onDeleteScript={onDeleteCustomScript}
               />
             </Section>
             <Section title="Utility workflows">

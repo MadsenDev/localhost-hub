@@ -25,6 +25,7 @@ import { LoadingScreen } from './components/LoadingScreen';
 import { TerminalModal } from './components/TerminalModal';
 import { CreateProjectModal } from './components/CreateProjectModal';
 import RunCommandModal from './components/RunCommandModal';
+import { AddCustomScriptModal } from './components/AddCustomScriptModal';
 import ScriptOverridesModal from './components/ScriptOverridesModal';
 import GitInstallModal from './components/GitInstallModal';
 import type { UtilityWorkflowDefinition } from './components/UtilityCommandsPanel';
@@ -85,7 +86,8 @@ function AppContent() {
     useRepoRoot,
     selectFolder,
     removeFolder,
-    rescan
+    rescan,
+    reloadProjects
   } = useProjects({ electronAPI });
   const {
     plugins: availablePlugins,
@@ -228,6 +230,7 @@ function AppContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [showTerminalModal, setShowTerminalModal] = useState(false);
   const [showRunCommandModal, setShowRunCommandModal] = useState(false);
+  const [showAddCustomScriptModal, setShowAddCustomScriptModal] = useState(false);
   const [scriptEnvOverrides, setScriptEnvOverrides] = useState<Map<string, Record<string, string>>>(new Map());
   const [editingOverridesScript, setEditingOverridesScript] = useState<ScriptInfo | null>(null);
   const terminalLogContainerRef = useRef<HTMLPreElement | null>(null);
@@ -1084,6 +1087,70 @@ function AppContent() {
     [electronAPI, selectedProject]
   );
 
+  const handleAddCustomScript = useCallback(
+    async (name: string, command: string, description?: string) => {
+      if (!selectedProject) {
+        throw new Error('Select a project first.');
+      }
+      if (!electronAPI) {
+        throw new Error('Adding scripts requires the desktop app.');
+      }
+      await electronAPI.scripts.addCustom({
+        projectId: selectedProject.id,
+        name,
+        command,
+        description
+      });
+      // Reload projects from database to show the new script (faster than rescan)
+      await reloadProjects();
+      pushToast({
+        title: 'Script added',
+        description: `Successfully added "${name}" script.`,
+        variant: 'success'
+      });
+    },
+    [electronAPI, selectedProject, reloadProjects, pushToast]
+  );
+
+  const handleDeleteCustomScript = useCallback(
+    async (script: ScriptInfo) => {
+      if (!selectedProject) {
+        return;
+      }
+      if (!electronAPI) {
+        return;
+      }
+      if (script.runner !== 'custom') {
+        pushToast({
+          title: 'Cannot delete',
+          description: 'Only custom scripts can be deleted.',
+          variant: 'error'
+        });
+        return;
+      }
+      try {
+        await electronAPI.scripts.deleteCustom({
+          projectId: selectedProject.id,
+          name: script.name
+        });
+        // Reload projects from database to remove the script (faster than rescan)
+        await reloadProjects();
+        pushToast({
+          title: 'Script deleted',
+          description: `Successfully deleted "${script.name}" script.`,
+          variant: 'success'
+        });
+      } catch (error) {
+        pushToast({
+          title: 'Failed to delete',
+          description: error instanceof Error ? error.message : 'Failed to delete script.',
+          variant: 'error'
+        });
+      }
+    },
+    [electronAPI, selectedProject, reloadProjects, pushToast]
+  );
+
   const handleRunUtilityWorkflow = useCallback(
     async (workflow: UtilityWorkflowDefinition) => {
       if (workflow.kind === 'script') {
@@ -1631,6 +1698,8 @@ function AppContent() {
             onEditScriptOverrides={electronAPI ? handleOpenScriptOverrides : undefined}
             hasOverrides={electronAPI ? hasOverridesForScript : undefined}
             onRunUtilityWorkflow={electronAPI ? handleRunUtilityWorkflow : undefined}
+            onOpenAddCustomScriptModal={electronAPI ? () => setShowAddCustomScriptModal(true) : undefined}
+            onDeleteCustomScript={electronAPI ? handleDeleteCustomScript : undefined}
           />
             </>
         )}
@@ -1678,12 +1747,21 @@ function AppContent() {
           />
         )}
         {selectedProject && (
-          <RunCommandModal
-            isOpen={showRunCommandModal}
-            onClose={() => setShowRunCommandModal(false)}
-            onRun={handleRunCustomCommand}
-            projectName={selectedProject.name}
-          />
+          <>
+            <RunCommandModal
+              isOpen={showRunCommandModal}
+              onClose={() => setShowRunCommandModal(false)}
+              onRun={handleRunCustomCommand}
+              projectName={selectedProject.name}
+            />
+            <AddCustomScriptModal
+              isOpen={showAddCustomScriptModal}
+              onClose={() => setShowAddCustomScriptModal(false)}
+              onSave={handleAddCustomScript}
+              projectName={selectedProject.name}
+              existingScriptNames={projectScripts.map((s) => s.name)}
+            />
+          </>
         )}
         {selectedProject && editingOverridesScript && (
           <ScriptOverridesModal

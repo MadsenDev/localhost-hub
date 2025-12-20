@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
+import { HiTrash } from 'react-icons/hi2';
 import type { ScriptInfo } from '../types/global';
 
 interface ScriptsPanelProps {
@@ -11,6 +12,7 @@ interface ScriptsPanelProps {
   onForceStopScript: () => void;
   onEditOverrides?: (script: ScriptInfo) => void;
   hasOverrides?: (script: ScriptInfo) => boolean;
+  onDeleteScript?: (script: ScriptInfo) => void;
 }
 
 export function ScriptsPanel({
@@ -22,7 +24,8 @@ export function ScriptsPanel({
   forceStopReady,
   onForceStopScript,
   onEditOverrides,
-  hasOverrides
+  hasOverrides,
+  onDeleteScript
 }: ScriptsPanelProps) {
   if (scripts.length === 0) {
     return <p className="text-sm text-slate-500 dark:text-slate-400">No scripts detected for this project.</p>;
@@ -88,6 +91,16 @@ export function ScriptsPanel({
                       onClick={onForceStopScript}
                     >
                       Force stop
+                    </button>
+                  )}
+                  {onDeleteScript && script.runner === 'custom' && (
+                    <button
+                      className="rounded-full border border-slate-200 dark:border-slate-800/80 px-3 py-1 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-rose-300 dark:hover:border-rose-400/40 hover:text-rose-600 dark:hover:text-rose-300 disabled:opacity-40"
+                      onClick={() => onDeleteScript(script)}
+                      disabled={Boolean(scriptInFlight && isRunning)}
+                      title="Delete custom script"
+                    >
+                      <HiTrash className="h-3.5 w-3.5" />
                     </button>
                   )}
                 </div>
