@@ -39,7 +39,7 @@ module.exports = {
   linux: {
     icon: 'buildResources/linux-icons',
     category: 'Development',
-    target: ['AppImage', 'deb']
+    target: ['AppImage']
   }
 };
 
