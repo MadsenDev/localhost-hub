@@ -47,9 +47,41 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
 const isMac = process.platform === 'darwin';
+const isLinux = process.platform === 'linux';
 let mainWindow: BrowserWindow | null = null;
 let appTray: Tray | null = null;
 let isQuitting = false;
+
+const validOzonePlatforms = new Set(['auto', 'wayland', 'x11']);
+const appendEnableFeatures = (features: string[]) => {
+  const existing = app.commandLine.getSwitchValue('enable-features');
+  const merged = new Set(existing.split(',').filter(Boolean));
+  for (const feature of features) {
+    merged.add(feature);
+  }
+  if (merged.size > 0) {
+    app.commandLine.appendSwitch('enable-features', Array.from(merged).join(','));
+  }
+};
+
+const configureLinuxRuntime = () => {
+  if (!isLinux) {
+    return;
+  }
+
+  const requestedOzone = process.env.LOCALHOST_HUB_OZONE_PLATFORM?.toLowerCase();
+  const ozonePlatform = validOzonePlatforms.has(requestedOzone ?? '') ? requestedOzone! : 'auto';
+
+  appendEnableFeatures(['UseOzonePlatform']);
+  app.commandLine.appendSwitch('ozone-platform-hint', ozonePlatform);
+
+  if (process.env.LOCALHOST_HUB_DISABLE_GPU === '1') {
+    app.disableHardwareAcceleration();
+    app.commandLine.appendSwitch('disable-gpu');
+  }
+};
+
+configureLinuxRuntime();
 
 const getIconAssetPath = (fileName: string) => {
   const packagedPath = join(process.resourcesPath, fileName);

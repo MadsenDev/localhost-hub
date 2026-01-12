@@ -209,6 +209,11 @@ npm run test:watch
 ### Vite chunk size warning
 - Vite warns when a chunk exceeds 500 kB minified. Consider future code-splitting of rarely used panels if it becomes a perf problem; not currently blocking.
 
+### Linux AppImage feels sluggish (Wayland/X11)
+- Try `LOCALHOST_HUB_OZONE_PLATFORM=wayland` (or `x11`) to see which compositor performs better.
+- If GPU drivers are flaky, test with `LOCALHOST_HUB_DISABLE_GPU=1`.
+- In-app, enable **Minimize animations** for lighter UI transitions.
+
 ### Icon/resource mismatch
 - Re-run `npm run generate:icons` if you change assets under `public/logo-icons`.
 - Ensure `buildResources/` contains the generated `.icns`, `.ico`, `.png`, and `linux-icons/**`.
