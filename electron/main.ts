@@ -506,6 +506,17 @@ function broadcast(channel: string, payload: unknown) {
 }
 
 let cachedProjects: ProjectInfo[] = [];
+let cachedExternalProcesses: Awaited<ReturnType<typeof scanExternalProcesses>> = [];
+let lastExternalProcessScanAt = 0;
+let externalProcessScanInFlight: Promise<Awaited<ReturnType<typeof scanExternalProcesses>>> | null = null;
+
+function getExternalProcessScanIntervalMs() {
+  const configured = getSetting('portRefreshInterval');
+  const parsed = configured ? parseInt(configured, 10) : NaN;
+  const refreshMs = Number.isFinite(parsed) ? parsed * 1000 : 2000;
+  // Clamp to avoid hammering lsof/ps on Linux.
+  return Math.max(5000, refreshMs);
+}
 
 function findProjectId(projectPath: string): string | null {
   return findProjectIdByPathHelper(projectPath, cachedProjects, () => loadProjects());
@@ -1142,8 +1153,22 @@ async function detectPortForPid(pid: number | undefined): Promise<number | null>
 }
 
 ipcMain.handle('processes:active', async () => {
-  // Get external processes first (they have port info)
-  const externalProcesses = await scanExternalProcesses();
+  // Get external processes first (they have port info), but throttle the scan.
+  const now = Date.now();
+  const scanIntervalMs = getExternalProcessScanIntervalMs();
+  if (!externalProcessScanInFlight && now - lastExternalProcessScanAt >= scanIntervalMs) {
+    externalProcessScanInFlight = scanExternalProcesses()
+      .then((processes) => {
+        cachedExternalProcesses = processes;
+        lastExternalProcessScanAt = Date.now();
+        return processes;
+      })
+      .finally(() => {
+        externalProcessScanInFlight = null;
+      });
+  }
+  const externalProcesses =
+    externalProcessScanInFlight ? await externalProcessScanInFlight : cachedExternalProcesses;
   const externalPidToPort = new Map<number, number>();
   externalProcesses.forEach(p => {
     if (p.pid && p.port) {
