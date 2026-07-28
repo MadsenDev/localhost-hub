@@ -29,6 +29,7 @@ pub fn run() {
             commands::kill_process,
             commands::start_service,
             commands::stop_service,
+            commands::restart_service,
             commands::list_managed_services,
             commands::open_in_editor,
             commands::open_url,

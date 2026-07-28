@@ -93,7 +93,7 @@ export interface EnvEntry {
 
 export interface ServiceEvent {
   service_id: string;
-  kind: "started" | "stdout" | "stderr" | "exited" | "error" | "stopped";
+  kind: "starting" | "started" | "restarting" | "stdout" | "stderr" | "exited" | "error" | "stopped";
   message: string;
   pid: number | null;
   code: number | null;
@@ -105,6 +105,10 @@ export interface ManagedServiceInfo {
   cmd: string;
   pid: number;
   started_at_ms: number;
+  uptime_ms: number;
+  cpu_usage: number;
+  memory_mb: number;
+  ports: number[];
 }
 
 export interface GitHubRepo {
@@ -134,6 +138,9 @@ export const tauriApi = {
 
   stopManagedService: (serviceId: string) =>
     invoke<void>("stop_service", { serviceId }),
+
+  restartManagedService: (serviceId: string) =>
+    invoke<number>("restart_service", { serviceId }),
 
   listManagedServices: () =>
     invoke<ManagedServiceInfo[]>("list_managed_services"),
