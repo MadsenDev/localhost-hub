@@ -12,9 +12,15 @@ interface WorkspaceViewProps {
   onStartAll: (wsId: string) => void;
   onStopAll: (wsId: string) => void;
   onOpenLogs: (srcId: string) => void;
+  onOpenWorkspaceLogs: (wsId: string) => void;
   onDeleteWorkspace: (id: string) => void;
   onUpdateWorkspace: (id: string, patch: { name?: string; color?: string }) => void;
   onRemoveService: (wsId: string, svcId: string) => void;
+  onUpdateService: (
+    wsId: string,
+    svcId: string,
+    patch: { run_mode?: 'parallel' | 'sequential'; order?: number },
+  ) => void;
   onAddService: () => void;
   repos: Repo[];
   onAddToWorkspace: (wsId: string, svc: StoredService) => void;
@@ -28,7 +34,8 @@ const COLOR_OPTIONS = [
 
 export function WorkspaceView({
   workspace: w, onStartSvc, onStopSvc, onRestartSvc, onStartAll, onStopAll,
-  onOpenLogs, onDeleteWorkspace, onUpdateWorkspace, onRemoveService, onAddService,
+  onOpenLogs, onOpenWorkspaceLogs, onDeleteWorkspace, onUpdateWorkspace,
+  onRemoveService, onUpdateService, onAddService,
 }: WorkspaceViewProps) {
 
   const [editingName, setEditingName] = React.useState(false);
@@ -61,8 +68,9 @@ export function WorkspaceView({
   }
 
   const running = w.services.filter(s => s.status === 'running').length;
+  const active = w.services.filter(s => s.status === 'running' || s.status === 'starting' || s.status === 'restarting').length;
   const total = w.services.length;
-  const liveAny = running > 0;
+  const liveAny = active > 0;
 
   function startNameEdit() {
     setNameInput(w!.name);
@@ -141,6 +149,9 @@ export function WorkspaceView({
         </div>
 
         <div className="actions">
+          <button className="btn ghost" onClick={() => onOpenWorkspaceLogs(w.id)} disabled={total === 0}>
+            <Ic.Logs size={12} /> Combined logs
+          </button>
           {liveAny
             ? <button className="btn danger" onClick={() => onStopAll(w.id)}><Ic.Stop size={12} /> Stop all</button>
             : <button className="btn primary" onClick={() => onStartAll(w.id)} disabled={total === 0}><Ic.Play size={12} /> Boot all</button>}
@@ -193,7 +204,19 @@ export function WorkspaceView({
                     {s.pid ? <span style={{ color: 'var(--fg-3)' }}> · pid {s.pid}</span> : null}
                   </span>
                 </div>
-                <div className="svc-cmd">{s.cmd}</div>
+                <div className="svc-cmd">
+                  <div>{s.cmd}</div>
+                  <button
+                    className="btn sm ghost"
+                    style={{ marginTop: 4, paddingInline: 6 }}
+                    title="Toggle workspace startup mode"
+                    onClick={() => onUpdateService(w.id, s.id, {
+                      run_mode: s.run_mode === 'sequential' ? 'parallel' : 'sequential',
+                    })}
+                  >
+                    {s.run_mode === 'sequential' ? `Sequential ${(s.order ?? 0) + 1}` : 'Parallel'}
+                  </button>
+                </div>
                 <div className="svc-port">
                   {s.port ? (
                     <><Ic.Globe size={12} /><a href="#" onClick={e => e.preventDefault()}>localhost:{s.port}</a></>

@@ -21,6 +21,8 @@ export interface StoredService {
   repo_path: string;
   script: string;
   cmd: string;
+  run_mode?: 'parallel' | 'sequential';
+  order?: number;
 }
 
 export interface StoredWorkspace {

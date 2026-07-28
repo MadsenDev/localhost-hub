@@ -1,10 +1,15 @@
+use crate::services::{terminate_process_tree, ServiceManager};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Duration;
+use tauri::{AppHandle, Emitter};
 
 const DEFAULT_MAX_DEPTH: usize = 4;
+const SEQUENTIAL_START_DELAY: Duration = Duration::from_millis(250);
 const DEFAULT_IGNORED_DIRS: &[&str] = &[
     ".git",
     ".next",
@@ -52,6 +57,299 @@ pub struct ScriptEntry {
     pub raw_cmd: String,
     pub runner: String,
     pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceRunMode {
+    #[default]
+    Parallel,
+    Sequential,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkspaceServiceSpec {
+    pub service_id: String,
+    pub cwd: String,
+    pub cmd: String,
+    #[serde(default)]
+    pub run_mode: WorkspaceRunMode,
+    #[serde(default)]
+    pub order: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceServiceFailure {
+    pub service_id: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkspaceStopSpec {
+    pub service_id: String,
+    pub pid: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceRunResult {
+    pub workspace_id: String,
+    pub started: Vec<String>,
+    pub already_running: Vec<String>,
+    pub stopped: Vec<String>,
+    pub not_running: Vec<String>,
+    pub failed: Vec<WorkspaceServiceFailure>,
+}
+
+impl WorkspaceRunResult {
+    fn new(workspace_id: String) -> Self {
+        Self {
+            workspace_id,
+            started: Vec::new(),
+            already_running: Vec::new(),
+            stopped: Vec::new(),
+            not_running: Vec::new(),
+            failed: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum WorkspaceEventKind {
+    Starting,
+    Started,
+    Partial,
+    Stopping,
+    Stopped,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct WorkspaceEvent {
+    workspace_id: String,
+    kind: WorkspaceEventKind,
+    message: String,
+    service_ids: Vec<String>,
+}
+
+pub fn start_workspace(
+    app: AppHandle,
+    manager: &ServiceManager,
+    workspace_id: String,
+    services: Vec<WorkspaceServiceSpec>,
+) -> Result<WorkspaceRunResult, String> {
+    let (parallel, sequential) = plan_workspace_services(services)?;
+    let service_ids = parallel
+        .iter()
+        .chain(sequential.iter())
+        .map(|service| service.service_id.clone())
+        .collect::<Vec<_>>();
+    emit_workspace(
+        &app,
+        &workspace_id,
+        WorkspaceEventKind::Starting,
+        format!("starting {} workspace services", service_ids.len()),
+        service_ids,
+    );
+
+    let mut result = WorkspaceRunResult::new(workspace_id.clone());
+    for service in parallel {
+        start_workspace_service(&app, manager, service, &mut result);
+    }
+    for (index, service) in sequential.into_iter().enumerate() {
+        if index > 0 {
+            thread::sleep(SEQUENTIAL_START_DELAY);
+        }
+        start_workspace_service(&app, manager, service, &mut result);
+    }
+
+    let (kind, message) = if result.failed.is_empty() {
+        (
+            WorkspaceEventKind::Started,
+            format!("started {} workspace services", result.started.len()),
+        )
+    } else if result.started.is_empty() && result.already_running.is_empty() {
+        (
+            WorkspaceEventKind::Error,
+            format!("failed to start {} workspace services", result.failed.len()),
+        )
+    } else {
+        (
+            WorkspaceEventKind::Partial,
+            format!(
+                "started {} services; {} failed",
+                result.started.len(),
+                result.failed.len()
+            ),
+        )
+    };
+    emit_workspace(&app, &workspace_id, kind, message, result.started.clone());
+    Ok(result)
+}
+
+pub fn stop_workspace(
+    app: AppHandle,
+    manager: &ServiceManager,
+    workspace_id: String,
+    services: Vec<WorkspaceStopSpec>,
+) -> Result<WorkspaceRunResult, String> {
+    let services = validate_stop_services(services)?;
+    let service_ids = services
+        .iter()
+        .map(|service| service.service_id.clone())
+        .collect::<Vec<_>>();
+    emit_workspace(
+        &app,
+        &workspace_id,
+        WorkspaceEventKind::Stopping,
+        format!("stopping {} workspace services", service_ids.len()),
+        service_ids.clone(),
+    );
+
+    let mut result = WorkspaceRunResult::new(workspace_id.clone());
+    for service in services {
+        match manager.is_managed(&service.service_id) {
+            Ok(false) => match service.pid {
+                Some(pid) => match terminate_process_tree(pid) {
+                    Ok(()) => result.stopped.push(service.service_id),
+                    Err(error) => result.failed.push(WorkspaceServiceFailure {
+                        service_id: service.service_id,
+                        error,
+                    }),
+                },
+                None => result.not_running.push(service.service_id),
+            },
+            Ok(true) => match manager.stop(app.clone(), service.service_id.clone()) {
+                Ok(()) => result.stopped.push(service.service_id),
+                Err(error) => result
+                    .failed
+                    .push(WorkspaceServiceFailure {
+                        service_id: service.service_id,
+                        error,
+                    }),
+            },
+            Err(error) => result
+                .failed
+                .push(WorkspaceServiceFailure {
+                    service_id: service.service_id,
+                    error,
+                }),
+        }
+    }
+
+    let (kind, message) = if result.failed.is_empty() {
+        (
+            WorkspaceEventKind::Stopped,
+            format!("stopped {} workspace services", result.stopped.len()),
+        )
+    } else if result.stopped.is_empty() {
+        (
+            WorkspaceEventKind::Error,
+            format!("failed to stop {} workspace services", result.failed.len()),
+        )
+    } else {
+        (
+            WorkspaceEventKind::Partial,
+            format!(
+                "stopped {} services; {} failed",
+                result.stopped.len(),
+                result.failed.len()
+            ),
+        )
+    };
+    emit_workspace(&app, &workspace_id, kind, message, result.stopped.clone());
+    Ok(result)
+}
+
+fn start_workspace_service(
+    app: &AppHandle,
+    manager: &ServiceManager,
+    service: WorkspaceServiceSpec,
+    result: &mut WorkspaceRunResult,
+) {
+    match manager.is_running(&service.service_id) {
+        Ok(true) => result.already_running.push(service.service_id),
+        Ok(false) => match manager.start(
+            app.clone(),
+            service.service_id.clone(),
+            service.cwd,
+            service.cmd,
+        ) {
+            Ok(_) => result.started.push(service.service_id),
+            Err(error) => result.failed.push(WorkspaceServiceFailure {
+                service_id: service.service_id,
+                error,
+            }),
+        },
+        Err(error) => result.failed.push(WorkspaceServiceFailure {
+            service_id: service.service_id,
+            error,
+        }),
+    }
+}
+
+fn plan_workspace_services(
+    services: Vec<WorkspaceServiceSpec>,
+) -> Result<(Vec<WorkspaceServiceSpec>, Vec<WorkspaceServiceSpec>), String> {
+    if services.is_empty() {
+        return Err("workspace has no services to run".to_string());
+    }
+
+    let mut seen = HashSet::new();
+    for service in &services {
+        if service.service_id.trim().is_empty() {
+            return Err("workspace service id cannot be empty".to_string());
+        }
+        if !seen.insert(service.service_id.clone()) {
+            return Err(format!(
+                "workspace contains duplicate service id: {}",
+                service.service_id
+            ));
+        }
+    }
+
+    let (mut sequential, parallel): (Vec<_>, Vec<_>) = services
+        .into_iter()
+        .partition(|service| service.run_mode == WorkspaceRunMode::Sequential);
+    sequential.sort_by_key(|service| service.order);
+    Ok((parallel, sequential))
+}
+
+fn validate_stop_services(
+    services: Vec<WorkspaceStopSpec>,
+) -> Result<Vec<WorkspaceStopSpec>, String> {
+    if services.is_empty() {
+        return Err("workspace has no services to stop".to_string());
+    }
+    let mut seen = HashSet::new();
+    let mut validated = Vec::new();
+    for service in services {
+        if service.service_id.trim().is_empty() {
+            return Err("workspace service id cannot be empty".to_string());
+        }
+        if seen.insert(service.service_id.clone()) {
+            validated.push(service);
+        }
+    }
+    Ok(validated)
+}
+
+fn emit_workspace(
+    app: &AppHandle,
+    workspace_id: &str,
+    kind: WorkspaceEventKind,
+    message: String,
+    service_ids: Vec<String>,
+) {
+    let _ = app.emit(
+        "workspace://event",
+        WorkspaceEvent {
+            workspace_id: workspace_id.to_string(),
+            kind,
+            message,
+            service_ids,
+        },
+    );
 }
 
 #[derive(Debug)]
@@ -763,6 +1061,60 @@ mod tests {
         ));
         fs::create_dir_all(&path).expect("create fixture");
         path
+    }
+
+    fn workspace_service(
+        service_id: &str,
+        run_mode: WorkspaceRunMode,
+        order: usize,
+    ) -> WorkspaceServiceSpec {
+        WorkspaceServiceSpec {
+            service_id: service_id.to_string(),
+            cwd: "/tmp".to_string(),
+            cmd: "sleep 10".to_string(),
+            run_mode,
+            order,
+        }
+    }
+
+    #[test]
+    fn plans_parallel_services_before_ordered_sequential_services() {
+        let services = vec![
+            workspace_service("second", WorkspaceRunMode::Sequential, 2),
+            workspace_service("parallel", WorkspaceRunMode::Parallel, 99),
+            workspace_service("first", WorkspaceRunMode::Sequential, 1),
+        ];
+
+        let (parallel, sequential) = plan_workspace_services(services).expect("plan");
+        assert_eq!(parallel[0].service_id, "parallel");
+        assert_eq!(
+            sequential
+                .iter()
+                .map(|service| service.service_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["first", "second"]
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_workspace_service_ids() {
+        let services = vec![
+            workspace_service("duplicate", WorkspaceRunMode::Parallel, 0),
+            workspace_service("duplicate", WorkspaceRunMode::Sequential, 1),
+        ];
+
+        let error = plan_workspace_services(services).expect_err("duplicate should fail");
+        assert!(error.contains("duplicate service id"));
+    }
+
+    #[test]
+    fn defaults_missing_run_mode_to_parallel() {
+        let service: WorkspaceServiceSpec = serde_json::from_str(
+            r#"{"service_id":"web","cwd":"/tmp","cmd":"npm run dev"}"#,
+        )
+        .expect("deserialize");
+        assert_eq!(service.run_mode, WorkspaceRunMode::Parallel);
+        assert_eq!(service.order, 0);
     }
 
     #[test]

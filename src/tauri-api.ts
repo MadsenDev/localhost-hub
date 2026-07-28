@@ -111,6 +111,28 @@ export interface ManagedServiceInfo {
   ports: number[];
 }
 
+export interface WorkspaceServiceSpec {
+  service_id: string;
+  cwd: string;
+  cmd: string;
+  run_mode: "parallel" | "sequential";
+  order: number;
+}
+
+export interface WorkspaceStopSpec {
+  service_id: string;
+  pid: number | null;
+}
+
+export interface WorkspaceRunResult {
+  workspace_id: string;
+  started: string[];
+  already_running: string[];
+  stopped: string[];
+  not_running: string[];
+  failed: Array<{ service_id: string; error: string }>;
+}
+
 export interface GitHubRepo {
   name: string;
   full_name: string;
@@ -144,6 +166,12 @@ export const tauriApi = {
 
   listManagedServices: () =>
     invoke<ManagedServiceInfo[]>("list_managed_services"),
+
+  startWorkspace: (workspaceId: string, workspaceServices: WorkspaceServiceSpec[]) =>
+    invoke<WorkspaceRunResult>("start_workspace", { workspaceId, workspaceServices }),
+
+  stopWorkspace: (workspaceId: string, workspaceServices: WorkspaceStopSpec[]) =>
+    invoke<WorkspaceRunResult>("stop_workspace", { workspaceId, workspaceServices }),
 
   getSystemStats: () => invoke<SystemStats>("get_system_stats"),
 

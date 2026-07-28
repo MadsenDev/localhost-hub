@@ -31,6 +31,8 @@ pub fn run() {
             commands::stop_service,
             commands::restart_service,
             commands::list_managed_services,
+            commands::start_workspace,
+            commands::stop_workspace,
             commands::open_in_editor,
             commands::open_url,
             commands::scan_workspaces,

@@ -51,6 +51,14 @@ pub struct StoredService {
     pub repo_path: String,
     pub script: String,
     pub cmd: String,
+    #[serde(default = "default_run_mode")]
+    pub run_mode: String,
+    #[serde(default)]
+    pub order: usize,
+}
+
+fn default_run_mode() -> String {
+    "parallel".to_string()
 }
 
 fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
