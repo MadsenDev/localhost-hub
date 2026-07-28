@@ -1,0 +1,4 @@
+[env]
+# GitHub OAuth App client ID — create your app at https://github.com/settings/developers
+# Enable "Device Authorization Flow" in the app settings. No client secret needed.
+GITHUB_CLIENT_ID = "Ov23lii7srGC0t6WP0nC"

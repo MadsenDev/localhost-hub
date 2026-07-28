@@ -1,0 +1,47 @@
+[package]
+name = "localhost-hub"
+version = "0.9.0-alpha.0"
+description = "Localhost Hub — mission control for local development"
+authors = ["Chris Madsen <chris@madsens.dev>"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.1", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.11.1", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+
+# System / process introspection
+sysinfo = "0.33"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Git
+git2 = { version = "0.20", default-features = false }
+
+# TOML parsing (for Cargo.toml introspection)
+toml = { version = "0.8", features = ["parse"] }
+
+# OS default app/browser opener
+open = "5"
+
+# HTTP client for GitHub API (rustls avoids OpenSSL system dep)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "1"

@@ -1,6 +1,9 @@
 # Localhost Hub
 
-Localhost Hub is a desktop “mission control” for running everything in your local dev universe. Scan directories for projects, launch scripts (individually or as saved workspaces), inspect logs, verify Git status, and scaffold new repos without leaving an Electron shell that feels like a native IDE.
+Localhost Hub is a local-first desktop control center for development projects. Discover projects, run services, inspect logs and ports, manage Git, and keep your local development environment under control from one app.
+
+> [!IMPORTANT]
+> The canonical project is migrating from Electron to Tauri 2 on the `0.9.x` line. The new UI and Rust backend have landed, while the Electron implementation remains as the behavioral reference until feature parity is verified. See [the unification plan](docs/UNIFICATION.md).
 
 ![Localhost Hub hero](./public/logo.svg)
 
@@ -29,7 +32,8 @@ Localhost Hub is a desktop “mission control” for running everything in your 
 - **Deep process insight** – live logs with per-project history, toast alerts, Open-In-Browser buttons that parse stdout for URLs/ports, and terminal pop-outs.
 - **Git awareness** – branch, dirty/ahead/behind status, last commit summary, and change lists right from the project header/tab.
 - **New project scaffolding** – step-based creator with templates, dependencies, script planner, Tailwind presets (4.x Oxide or classic 3.4 stack), icon packs, README/git automation, and optional dependency installs.
-- **Cross-platform packaging** – one `npm run build:*` pipeline that produces signed/unsigned installers for Linux, macOS, and Windows with consistent iconography.
+- **Tauri migration** – the new interface is backed by Rust commands for project scanning, managed services, live process events, ports, Git status, settings, and GitHub authentication.
+- **Cross-platform packaging** – the Electron `0.8.x` path remains available during migration; Tauri becomes the production packaging path once parity is complete.
 
 ---
 
@@ -39,19 +43,21 @@ Localhost Hub is a desktop “mission control” for running everything in your 
 - Node.js 20+
 - npm 10+ (pnpm/yarn/bun supported inside projects; the app itself uses npm)
 - Git
+- Rust 1.77.2+ and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for native development
 
-### Install & run in dev
+### Install & run the Tauri app
 ```bash
 npm install
-npm run dev
+npm run tauri:dev
 ```
 
-`npm run dev` boots Vite + Electron with live reload for the renderer, main, and preload bundles. The renderer opens automatically once compilation completes.
+Set `GITHUB_CLIENT_ID` at build time to enable the optional GitHub OAuth device flow. The app still builds and its local features remain available without it.
 
-### Recommended dev loop
-1. `npm run dev`
-2. Toggle DevTools inside the Electron window (`Ctrl/Cmd+Shift+I`) when needed.
-3. Use the Setup dialog to add directories under active development.
+The migration branch also retains the Electron path for parity work:
+
+```bash
+npm run dev:electron
+```
 
 ---
 
@@ -119,6 +125,8 @@ Backend scaffolding handles:
 
 ```
 .
+├── src-tauri/
+│   └── src/             # Projects, services, ports, Git, GitHub, storage
 ├── electron/
 │   ├── main.ts          # Main process, IPC handlers, process runner
 │   ├── preload.ts       # Secure bridge exposing limited API surface
@@ -136,10 +144,11 @@ Backend scaffolding handles:
 ```
 
 Key tech:
-- **Renderer**: React 19 + Vite + Tailwind
+- **Renderer**: React 19 + Vite
+- **Native backend**: Tauri 2 + Rust + Tokio
 - **Animations**: Framer Motion
 - **DB**: sql.js (SQLite compiled to WASM)
-- **IPC**: Electron contextBridge (no node integration in renderer)
+- **Bridge**: typed Tauri commands/events; legacy Electron IPC remains during parity work
 - **Testing**: Vitest + Testing Library + jsdom
 
 ---
