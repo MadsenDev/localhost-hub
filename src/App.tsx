@@ -96,7 +96,7 @@ function buildHubData(
   }
 
   const workspaces: Workspace[] = stored.map((sw) => {
-    const services: Service[] = sw.services.map((ss) => {
+    const services: Service[] = sw.services.map((ss, index) => {
       const managedRuntime = managedRuntimes[ss.id];
       const proc = managedRuntime?.pid
         ? processes.find(p => p.pid === managedRuntime.pid)
@@ -117,6 +117,8 @@ function buildHubData(
         cpu: proc?.cpu_usage ?? 0,
         mem: proc ? Math.round(proc.memory_kb / 1024) : 0,
         framework: '',
+        run_mode: ss.run_mode ?? 'parallel',
+        order: ss.order ?? index,
       };
     });
     return {
@@ -386,18 +388,77 @@ export default function App() {
     saveWorkspaces(storedWsRef.current.map(w => w.id === id ? { ...w, ...patch } : w));
   }
 
-  function deleteWorkspace(id: string) {
+  async function deleteWorkspace(id: string) {
+    const liveWorkspace = data.workspaces.find((workspace) => workspace.id === id);
+    if (liveWorkspace?.services.length) {
+      try {
+        const result = await tauriApi.stopWorkspace(
+          id,
+          liveWorkspace.services.map((service) => ({
+            service_id: service.id,
+            pid: service.pid ?? null,
+          })),
+        );
+        if (result.failed.length > 0) {
+          result.failed.forEach(({ service_id, error }) => pushLog(service_id, error, "error"));
+          toast(`Could not stop every service in ${liveWorkspace.name}`, "error");
+          return;
+        }
+      } catch (error) {
+        pushLog(id, String(error), "error");
+        toast(`Could not stop ${liveWorkspace.name}`, "error");
+        return;
+      }
+    }
     const next = storedWsRef.current.filter(w => w.id !== id);
-    saveWorkspaces(next);
+    await saveWorkspaces(next);
     if (ws === id) { setWs(next[0]?.id ?? ''); setView(next.length > 0 ? 'workspace' : 'home'); }
   }
 
   function addServiceToWorkspace(wsId: string, svc: StoredService) {
-    saveWorkspaces(storedWsRef.current.map(w => w.id === wsId ? { ...w, services: [...w.services, svc] } : w));
+    saveWorkspaces(storedWsRef.current.map(w => w.id === wsId ? {
+      ...w,
+      services: [...w.services, {
+        ...svc,
+        run_mode: svc.run_mode ?? 'parallel',
+        order: svc.order ?? w.services.length,
+      }],
+    } : w));
   }
 
-  function removeServiceFromWorkspace(wsId: string, svcId: string) {
-    saveWorkspaces(storedWsRef.current.map(w => w.id === wsId ? { ...w, services: w.services.filter(s => s.id !== svcId) } : w));
+  async function removeServiceFromWorkspace(wsId: string, svcId: string) {
+    const service = data.workspaces
+      .find((workspace) => workspace.id === wsId)
+      ?.services.find((item) => item.id === svcId);
+    if (service && service.status !== "stopped") {
+      try {
+        const result = await tauriApi.stopWorkspace(wsId, [{
+          service_id: service.id,
+          pid: service.pid ?? null,
+        }]);
+        if (result.failed.length > 0) {
+          pushLog(svcId, result.failed[0].error, "error");
+          toast(`Could not stop ${service.name}`, "error");
+          return;
+        }
+      } catch (error) {
+        pushLog(svcId, String(error), "error");
+        toast(`Could not stop ${service.name}`, "error");
+        return;
+      }
+    }
+    await saveWorkspaces(storedWsRef.current.map(w => w.id === wsId ? { ...w, services: w.services.filter(s => s.id !== svcId) } : w));
+  }
+
+  function updateWorkspaceService(
+    wsId: string,
+    svcId: string,
+    patch: Partial<Pick<StoredService, 'run_mode' | 'order'>>,
+  ) {
+    saveWorkspaces(storedWsRef.current.map(w => w.id === wsId ? {
+      ...w,
+      services: w.services.map(service => service.id === svcId ? { ...service, ...patch } : service),
+    } : w));
   }
 
   // Keep log sources in sync with detected services
@@ -427,7 +488,7 @@ export default function App() {
     const running = status === "starting" || status === "running" || status === "restarting";
     const nextRuntime: ManagedRuntime = {
       status,
-      pid: pid ?? existing?.pid ?? null,
+      pid: running ? (pid ?? existing?.pid ?? null) : null,
       startedAt: running ? (existing?.startedAt ?? Date.now()) : null,
     };
     managedRuntimesRef.current = { ...managedRuntimesRef.current, [svcId]: nextRuntime };
@@ -454,8 +515,8 @@ export default function App() {
     for (const [svcId, runtime] of Object.entries(managedRuntimesRef.current)) {
       const service = managedById.get(svcId);
       if (!service) {
-        if (runtime.status === "starting" || runtime.status === "running") {
-          next[svcId] = { ...runtime, status: "stopped", pid: runtime.pid, startedAt: null };
+        if (runtime.status === "starting" || runtime.status === "running" || runtime.status === "restarting") {
+          next[svcId] = { ...runtime, status: "stopped", pid: null, startedAt: null };
         } else {
           next[svcId] = runtime;
         }
@@ -529,22 +590,88 @@ export default function App() {
     }
   }
 
-  function startAll(wsId: string) {
-    const w = data.workspaces.find((x) => x.id === wsId);
-    if (!w) return;
-    w.services.forEach((s, i) => {
-      if (s.status !== "running") setTimeout(() => startService(wsId, s.id), i * 350);
+  async function startAll(wsId: string) {
+    const stored = storedWsRef.current.find((workspace) => workspace.id === wsId);
+    const live = data.workspaces.find((workspace) => workspace.id === wsId);
+    if (!stored || !live || stored.services.length === 0) return;
+
+    live.services.forEach((service) => {
+      if (service.status !== "running") {
+        setManagedServiceStatus(wsId, service.id, "starting");
+      }
     });
-    toast(`Booting workspace ${w.name}`, "info");
+    toast(`Booting workspace ${stored.name}`, "info");
+
+    try {
+      const result = await tauriApi.startWorkspace(
+        wsId,
+        stored.services.map((service, index) => ({
+          service_id: service.id,
+          cwd: service.repo_path,
+          cmd: service.cmd,
+          run_mode: service.run_mode ?? "parallel",
+          order: service.order ?? index,
+        })),
+      );
+      result.started.forEach((serviceId) => {
+        setManagedServiceStatus(wsId, serviceId, "running");
+      });
+      result.already_running.forEach((serviceId) => {
+        const service = live.services.find((item) => item.id === serviceId);
+        setManagedServiceStatus(wsId, serviceId, "running", service?.pid ?? null);
+      });
+      result.failed.forEach(({ service_id, error }) => {
+        setManagedServiceStatus(wsId, service_id, "failed");
+        pushLog(service_id, error, "error");
+      });
+      if (result.failed.length > 0) {
+        toast(`${result.failed.length} service${result.failed.length === 1 ? '' : 's'} failed to start`, "error");
+      }
+    } catch (error) {
+      live.services.forEach((service) => {
+        if (service.status !== "running") setManagedServiceStatus(wsId, service.id, "failed");
+      });
+      pushLog(wsId, String(error), "error");
+      toast(`Failed to boot ${stored.name}`, "error");
+    }
   }
 
-  function stopAll(wsId: string) {
+  async function stopAll(wsId: string) {
     const w = data.workspaces.find((x) => x.id === wsId);
-    if (!w) return;
-    w.services.forEach((s) => {
-      if (s.status === "running" || s.status === "starting" || s.status === "restarting") stopService(wsId, s.id);
-    });
+    if (!w || w.services.length === 0) return;
     toast(`Stopping workspace ${w.name}`, "warn");
+    try {
+      const result = await tauriApi.stopWorkspace(
+        wsId,
+        w.services.map((service) => ({
+          service_id: service.id,
+          pid: service.pid ?? null,
+        })),
+      );
+      [...result.stopped, ...result.not_running].forEach((serviceId) => {
+        setManagedServiceStatus(wsId, serviceId, "stopped");
+      });
+      result.failed.forEach(({ service_id, error }) => {
+        pushLog(service_id, error, "error");
+      });
+      if (result.failed.length > 0) {
+        toast(`${result.failed.length} service${result.failed.length === 1 ? '' : 's'} failed to stop`, "error");
+      }
+    } catch (error) {
+      pushLog(wsId, String(error), "error");
+      toast(`Failed to stop ${w.name}`, "error");
+    }
+  }
+
+  function openLogsForSources(serviceIds: string[]) {
+    const selected = new Set(serviceIds);
+    setSources(Object.fromEntries(allServices.map((service) => [service.id, selected.has(service.id)])));
+    setView("logs");
+  }
+
+  function openWorkspaceLogs(wsId: string) {
+    const workspace = data.workspaces.find((item) => item.id === wsId);
+    openLogsForSources(workspace?.services.map((service) => service.id) ?? []);
   }
 
   React.useEffect(() => {
@@ -597,10 +724,12 @@ export default function App() {
         onRestartSvc={restartService}
         onStartAll={startAll}
         onStopAll={stopAll}
-        onOpenLogs={() => setView("logs")}
+        onOpenLogs={(serviceId) => openLogsForSources([serviceId])}
+        onOpenWorkspaceLogs={openWorkspaceLogs}
         onDeleteWorkspace={deleteWorkspace}
         onUpdateWorkspace={updateWorkspace}
         onRemoveService={removeServiceFromWorkspace}
+        onUpdateService={updateWorkspaceService}
         onAddService={() => setView("repos")}
         repos={repos}
         onAddToWorkspace={addServiceToWorkspace}
@@ -614,10 +743,12 @@ export default function App() {
         onRestartSvc={restartService}
         onStartAll={startAll}
         onStopAll={stopAll}
-        onOpenLogs={() => setView("logs")}
+        onOpenLogs={(serviceId) => openLogsForSources([serviceId])}
+        onOpenWorkspaceLogs={openWorkspaceLogs}
         onDeleteWorkspace={deleteWorkspace}
         onUpdateWorkspace={updateWorkspace}
         onRemoveService={removeServiceFromWorkspace}
+        onUpdateService={updateWorkspaceService}
         onAddService={() => setView("repos")}
         repos={repos}
         onAddToWorkspace={addServiceToWorkspace}

@@ -24,8 +24,19 @@ This backlog captures the current product direction in implementation order. Kee
 
 - [x] Stream stdout/stderr from Rust to frontend.
 - [x] Store per-service logs in frontend state.
-- [ ] Add workspace-combined logs.
+- [x] Add workspace-combined logs with workspace-scoped source filtering.
 - [ ] Add timestamps, filtering, search, error highlighting, copy/export.
+
+### Workspace orchestration
+
+- [x] Move workspace start-all and stop-all orchestration from frontend timers into Rust.
+- [x] Preserve per-service parallel and ordered sequential startup modes.
+- [x] Continue workspace startup after individual service failures and report partial results.
+- [x] Stop managed process trees and externally detected matching services from one workspace command.
+- [x] Stop workspace services before deleting a workspace.
+- [ ] Add configurable startup delays and readiness/health checks.
+- [ ] Add service dependencies and dependency-aware startup ordering.
+- [ ] Add workspace environment profiles.
 
 ### Persist app preferences
 

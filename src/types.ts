@@ -14,6 +14,8 @@ export interface Service {
   cpu: number;
   mem: number;
   framework: string;
+  run_mode?: 'parallel' | 'sequential';
+  order?: number;
   _ws?: string;
 }
 
@@ -131,6 +133,8 @@ export interface StoredService {
   repo_path: string;
   script: string;
   cmd: string;
+  run_mode?: 'parallel' | 'sequential';
+  order?: number;
 }
 
 export interface StoredWorkspace {

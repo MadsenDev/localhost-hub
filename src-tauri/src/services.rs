@@ -167,6 +167,23 @@ impl ServiceManager {
             .collect())
     }
 
+    pub fn is_running(&self, service_id: &str) -> Result<bool, String> {
+        let children = self.children.lock().map_err(|e| e.to_string())?;
+        let Some(managed) = children.get(service_id) else {
+            return Ok(false);
+        };
+        let mut child = managed.child.lock().map_err(|e| e.to_string())?;
+        Ok(matches!(child.try_wait(), Ok(None)))
+    }
+
+    pub fn is_managed(&self, service_id: &str) -> Result<bool, String> {
+        Ok(self
+            .children
+            .lock()
+            .map_err(|e| e.to_string())?
+            .contains_key(service_id))
+    }
+
     fn start_with_sink(
         &self,
         sink: Arc<dyn EventSink>,

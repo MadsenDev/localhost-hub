@@ -3,7 +3,11 @@ use tauri::{AppHandle, State};
 use crate::ports::{scan_live_ports, LivePort};
 use crate::processes::{get_dev_processes, get_system_stats as sys_stats, ProcessInfo, SystemStats};
 use crate::git::{get_git_status as git_status, GitStatus};
-use crate::workspace::{scan_for_projects, scan_as_workspace_groups, DetectedProject, WorkspaceGroup};
+use crate::workspace::{
+    scan_as_workspace_groups, scan_for_projects, start_workspace as start_workspace_runs,
+    stop_workspace as stop_workspace_runs, DetectedProject, WorkspaceGroup, WorkspaceRunResult,
+    WorkspaceServiceSpec, WorkspaceStopSpec,
+};
 use crate::config::{AppConfig, load as load_cfg, save as save_cfg};
 use crate::github::{fetch_repos, request_device_code, poll_token, DeviceCodeResponse, GitHubRepo, GitHubUser};
 use crate::services::{terminate_process_tree, ManagedServiceInfo, ServiceManager};
@@ -102,6 +106,26 @@ pub fn list_managed_services(
     services: State<ServiceManager>,
 ) -> Result<Vec<ManagedServiceInfo>, String> {
     services.list()
+}
+
+#[tauri::command]
+pub fn start_workspace(
+    app: AppHandle,
+    services: State<ServiceManager>,
+    workspace_id: String,
+    workspace_services: Vec<WorkspaceServiceSpec>,
+) -> Result<WorkspaceRunResult, String> {
+    start_workspace_runs(app, services.inner(), workspace_id, workspace_services)
+}
+
+#[tauri::command]
+pub fn stop_workspace(
+    app: AppHandle,
+    services: State<ServiceManager>,
+    workspace_id: String,
+    workspace_services: Vec<WorkspaceStopSpec>,
+) -> Result<WorkspaceRunResult, String> {
+    stop_workspace_runs(app, services.inner(), workspace_id, workspace_services)
 }
 
 // ── System stats ──────────────────────────────────────────────────────────────
