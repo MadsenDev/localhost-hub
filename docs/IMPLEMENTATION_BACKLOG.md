@@ -14,8 +14,9 @@ This backlog captures the current product direction in implementation order. Kee
 - [x] Add fallback stop-by-PID for services detected from process scanning but not started by the manager.
 - [x] Add Rust query command for currently managed services so frontend state can recover after refresh/missed events.
 - [x] Track service lifecycle states: stopped, starting, running, failed, crashed, exited, restarting.
-- [ ] Track cwd, command, memory, CPU, and detected ports per managed service in the UI model.
-- [ ] Implement robust restart and kill behavior.
+- [x] Track cwd, command, memory, CPU, uptime, and detected ports per managed service.
+- [x] Implement backend-owned restart and bounded process-tree termination.
+- [x] Add Linux lifecycle tests for start, streamed output, duplicate protection, stop, and restart.
 - [ ] Reconnect UI state to already-running matching processes where practical.
 - [ ] Add persisted service run history/state as needed.
 

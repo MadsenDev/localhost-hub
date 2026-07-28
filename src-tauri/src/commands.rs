@@ -6,7 +6,7 @@ use crate::git::{get_git_status as git_status, GitStatus};
 use crate::workspace::{scan_for_projects, scan_as_workspace_groups, DetectedProject, WorkspaceGroup};
 use crate::config::{AppConfig, load as load_cfg, save as save_cfg};
 use crate::github::{fetch_repos, request_device_code, poll_token, DeviceCodeResponse, GitHubRepo, GitHubUser};
-use crate::services::{ManagedServiceInfo, ServiceManager};
+use crate::services::{terminate_process_tree, ManagedServiceInfo, ServiceManager};
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -65,23 +65,7 @@ pub fn get_processes() -> Vec<ProcessInfo> {
 
 #[tauri::command]
 pub fn kill_process(pid: u32) -> Result<(), String> {
-    #[cfg(unix)]
-    {
-        use std::process::Command;
-        Command::new("kill")
-            .args(["-SIGTERM", &pid.to_string()])
-            .status()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(windows)]
-    {
-        use std::process::Command;
-        Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/F"])
-            .status()
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    terminate_process_tree(pid)
 }
 
 #[tauri::command]
@@ -102,6 +86,15 @@ pub fn stop_service(
     service_id: String,
 ) -> Result<(), String> {
     services.stop(app, service_id)
+}
+
+#[tauri::command]
+pub fn restart_service(
+    app: AppHandle,
+    services: State<ServiceManager>,
+    service_id: String,
+) -> Result<u32, String> {
+    services.restart(app, service_id)
 }
 
 #[tauri::command]

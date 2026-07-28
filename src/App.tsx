@@ -97,9 +97,11 @@ function buildHubData(
 
   const workspaces: Workspace[] = stored.map((sw) => {
     const services: Service[] = sw.services.map((ss) => {
-      const proc = processes.find(p => p.cwd && (p.cwd === ss.repo_path || p.cwd.startsWith(ss.repo_path + '/')));
-      const port = proc ? (pidToPort[proc.pid] ?? null) : null;
       const managedRuntime = managedRuntimes[ss.id];
+      const proc = managedRuntime?.pid
+        ? processes.find(p => p.pid === managedRuntime.pid)
+        : processes.find(p => p.cwd && (p.cwd === ss.repo_path || p.cwd.startsWith(ss.repo_path + '/')));
+      const port = proc ? (pidToPort[proc.pid] ?? null) : null;
       const startedAt = managedRuntime?.startedAt ?? null;
       return {
         id: ss.id,
@@ -333,6 +335,10 @@ export default function App() {
     listenToServiceEvents((event) => {
       const kind = event.kind === "stderr" || event.kind === "error" ? "error" : event.kind === "started" ? "ok" : "info";
       pushLog(event.service_id, event.message, kind);
+      if (event.kind === "starting" || event.kind === "restarting") {
+        const svc = storedWsRef.current.flatMap((w) => w.services.map((s) => ({ ...s, wsId: w.id }))).find((s) => s.id === event.service_id);
+        if (svc) setManagedServiceStatus(svc.wsId, event.service_id, event.kind, event.pid ?? null);
+      }
       if (event.kind === "started") {
         const svc = storedWsRef.current.flatMap((w) => w.services.map((s) => ({ ...s, wsId: w.id }))).find((s) => s.id === event.service_id);
         if (svc) setManagedServiceStatus(svc.wsId, event.service_id, "running", event.pid ?? null);
@@ -510,9 +516,17 @@ export default function App() {
   }
 
   async function restartService(wsId: string, svcId: string) {
+    const svc = data.workspaces.find((w) => w.id === wsId)?.services.find((s) => s.id === svcId);
+    if (!svc) return;
     setManagedServiceStatus(wsId, svcId, "restarting");
-    await stopService(wsId, svcId);
-    window.setTimeout(() => startService(wsId, svcId), 400);
+    toast(`Restarting ${svc.name}`, "info");
+    try {
+      await tauriApi.restartManagedService(svc.id);
+    } catch (err) {
+      setManagedServiceStatus(wsId, svcId, "failed");
+      pushLog(svcId, String(err), "error");
+      toast(`Failed to restart ${svc.name}`, "error");
+    }
   }
 
   function startAll(wsId: string) {
