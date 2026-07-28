@@ -37,6 +37,12 @@ This backlog captures the current product direction in implementation order. Kee
 
 ### Project detail and metadata
 
+- [x] Discover manifest-based projects without requiring a Git repository.
+- [x] Continue scanning inside repositories so nested monorepo packages are found.
+- [x] Detect package managers from declarations and lockfiles.
+- [x] Return directly runnable package scripts with raw command and runner metadata.
+- [x] Detect Git ownership for nested projects.
+- [x] Detect JavaScript, Rust, Go, Python, Ruby, and PHP project foundations.
 - [ ] Populate `data.projects` from scanned repos.
 - [ ] Make Project Detail work with live scanned data.
 - [ ] Add project tabs: Overview, Scripts, Git, GitHub, Ports, Logs, Health.

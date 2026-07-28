@@ -59,14 +59,23 @@ export interface GitStatus {
 }
 
 export interface DetectedProject {
+  id: string;
   path: string;
   name: string;
   framework: string;
   package_manager: string;
-  scripts: Array<{ name: string; cmd: string }>;
+  scripts: Array<{
+    name: string;
+    cmd: string;
+    raw_cmd: string;
+    runner: string;
+    description: string | null;
+  }>;
   has_git: boolean;
+  git_root: string | null;
   has_env: boolean;
   env_files: string[];
+  manifests: string[];
 }
 
 export interface WorkspaceGroup {
@@ -135,11 +144,11 @@ export const tauriApi = {
 
   listGitHubRepos: () => invoke<GitHubRepo[]>("github_list_repos"),
 
-  scanWorkspaces: (root: string, maxDepth?: number) =>
-    invoke<DetectedProject[]>("scan_workspaces", { root, maxDepth }),
+  scanWorkspaces: (root: string, maxDepth?: number, ignorePatterns?: string[]) =>
+    invoke<DetectedProject[]>("scan_workspaces", { root, maxDepth, ignorePatterns }),
 
-  scanWorkspaceGroups: (roots: string[]) =>
-    invoke<WorkspaceGroup[]>("scan_workspace_groups", { roots }),
+  scanWorkspaceGroups: (roots: string[], maxDepth?: number, ignorePatterns?: string[]) =>
+    invoke<WorkspaceGroup[]>("scan_workspace_groups", { roots, maxDepth, ignorePatterns }),
 
   findDefaultWorkspaceRoots: () =>
     invoke<string[]>("find_default_workspace_roots"),

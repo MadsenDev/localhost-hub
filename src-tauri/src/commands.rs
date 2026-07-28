@@ -128,13 +128,21 @@ pub fn get_git_status(path: String) -> Option<GitStatus> {
 // ── Workspace / project scanning ──────────────────────────────────────────────
 
 #[tauri::command]
-pub fn scan_workspaces(root: String, max_depth: Option<usize>) -> Vec<DetectedProject> {
-    scan_for_projects(&root, max_depth.unwrap_or(3))
+pub fn scan_workspaces(
+    root: String,
+    max_depth: Option<usize>,
+    ignore_patterns: Option<Vec<String>>,
+) -> Vec<DetectedProject> {
+    scan_for_projects(&root, max_depth.unwrap_or(4), ignore_patterns)
 }
 
 #[tauri::command]
-pub fn scan_workspace_groups(roots: Vec<String>) -> Vec<WorkspaceGroup> {
-    scan_as_workspace_groups(&roots)
+pub fn scan_workspace_groups(
+    roots: Vec<String>,
+    max_depth: Option<usize>,
+    ignore_patterns: Option<Vec<String>>,
+) -> Vec<WorkspaceGroup> {
+    scan_as_workspace_groups(&roots, max_depth, ignore_patterns)
 }
 
 #[tauri::command]
