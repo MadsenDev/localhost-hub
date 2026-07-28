@@ -235,7 +235,7 @@ fn detected_manifests(file_names: &HashSet<String>) -> Vec<String> {
     ];
     candidates
         .iter()
-        .filter(|candidate| file_names.contains(*candidate))
+        .filter(|candidate| file_names.contains(**candidate))
         .map(|candidate| candidate.to_string())
         .collect()
 }
