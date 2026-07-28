@@ -35,7 +35,15 @@ const ACCENT_MAP: Record<string, { blue: string; warm: string }> = {
 };
 
 interface Toast { id: string; msg: string; kind: string; }
-interface ManagedRuntime { status: ServiceStatus; pid: number | null; startedAt: number | null; }
+interface ManagedRuntime {
+  status: ServiceStatus;
+  pid: number | null;
+  startedAt: number | null;
+  ports: number[];
+  urls: string[];
+  cpu: number;
+  memoryMb: number;
+}
 type AppearanceKey = "theme" | "accent" | "density" | "sidebar";
 
 const EMPTY_HUB: HubDataShape = { workspaces: [], projects: {}, activity: [], sessions: [], logSeeds: {}, ports: [], portEdges: [] };
@@ -101,7 +109,8 @@ function buildHubData(
       const proc = managedRuntime?.pid
         ? processes.find(p => p.pid === managedRuntime.pid)
         : processes.find(p => p.cwd && (p.cwd === ss.repo_path || p.cwd.startsWith(ss.repo_path + '/')));
-      const port = proc ? (pidToPort[proc.pid] ?? null) : null;
+      const port = managedRuntime?.ports[0] ?? (proc ? (pidToPort[proc.pid] ?? null) : null);
+      const url = managedRuntime?.urls[0] ?? (port ? `http://localhost:${port}` : null);
       const startedAt = managedRuntime?.startedAt ?? null;
       return {
         id: ss.id,
@@ -110,12 +119,13 @@ function buildHubData(
         cmd: ss.cmd,
         repo_path: ss.repo_path,
         port,
+        url,
         status: managedRuntime?.status ?? ((proc ? 'running' : 'stopped') as ServiceStatus),
         uptime: startedAt ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0,
         pid: managedRuntime?.pid ?? proc?.pid ?? null,
         pkg: '',
-        cpu: proc?.cpu_usage ?? 0,
-        mem: proc ? Math.round(proc.memory_kb / 1024) : 0,
+        cpu: managedRuntime?.cpu ?? proc?.cpu_usage ?? 0,
+        mem: managedRuntime?.memoryMb ?? (proc ? Math.round(proc.memory_kb / 1024) : 0),
         framework: '',
         run_mode: ss.run_mode ?? 'parallel',
         order: ss.order ?? index,
@@ -134,13 +144,43 @@ function buildHubData(
     };
   });
 
-  const portsList: Port[] = ports.map(p => {
+  const portsByNumber = new Map<number, Port>();
+  ports.forEach(p => {
     const proc = processes.find(pr => pr.pid === p.pid);
     const matchWs = proc?.cwd
       ? stored.find(sw => sw.services.some(ss => proc.cwd!.startsWith(ss.repo_path)))
       : null;
-    return { id: `p-${p.port}`, port: p.port, svc: p.process_name ?? 'unknown', host: 'localhost', status: 'running' as ServiceStatus, ws: matchWs?.id ?? 'system', group: guessPortGroup(p.port) };
+    portsByNumber.set(p.port, {
+      id: `p-${p.port}`,
+      port: p.port,
+      svc: p.process_name ?? 'unknown',
+      host: p.bind_address || 'localhost',
+      url: p.url || `http://localhost:${p.port}`,
+      status: 'running' as ServiceStatus,
+      ws: matchWs?.id ?? 'system',
+      group: guessPortGroup(p.port),
+    });
   });
+  stored.forEach(workspace => {
+    workspace.services.forEach(service => {
+      const runtime = managedRuntimes[service.id];
+      runtime?.ports.forEach(port => {
+        const url = runtime.urls.find(candidate => candidate.includes(`:${port}`))
+          ?? `http://localhost:${port}`;
+        portsByNumber.set(port, {
+          id: `p-${port}`,
+          port,
+          svc: service.id,
+          host: 'localhost',
+          url,
+          status: runtime.status,
+          ws: workspace.id,
+          group: guessPortGroup(port),
+        });
+      });
+    });
+  });
+  const portsList = [...portsByNumber.values()].sort((a, b) => a.port - b.port);
 
   return { workspaces, projects: {}, activity: [], sessions: [], logSeeds: {}, ports: portsList, portEdges: [] };
 }
@@ -336,7 +376,7 @@ export default function App() {
     let cancelled = false;
     listenToServiceEvents((event) => {
       const kind = event.kind === "stderr" || event.kind === "error" ? "error" : event.kind === "started" ? "ok" : "info";
-      pushLog(event.service_id, event.message, kind);
+      if (event.kind !== "url") pushLog(event.service_id, event.message, kind);
       if (event.kind === "starting" || event.kind === "restarting") {
         const svc = storedWsRef.current.flatMap((w) => w.services.map((s) => ({ ...s, wsId: w.id }))).find((s) => s.id === event.service_id);
         if (svc) setManagedServiceStatus(svc.wsId, event.service_id, event.kind, event.pid ?? null);
@@ -344,6 +384,10 @@ export default function App() {
       if (event.kind === "started") {
         const svc = storedWsRef.current.flatMap((w) => w.services.map((s) => ({ ...s, wsId: w.id }))).find((s) => s.id === event.service_id);
         if (svc) setManagedServiceStatus(svc.wsId, event.service_id, "running", event.pid ?? null);
+      }
+      if (event.kind === "url") {
+        const svc = storedWsRef.current.flatMap((w) => w.services.map((s) => ({ ...s, wsId: w.id }))).find((s) => s.id === event.service_id);
+        if (svc) setManagedServiceUrl(svc.wsId, event.service_id, event.message);
       }
       if (event.kind === "stopped" || event.kind === "exited" || event.kind === "error") {
         const svc = storedWsRef.current.flatMap((w) => w.services.map((s) => ({ ...s, wsId: w.id }))).find((s) => s.id === event.service_id);
@@ -490,6 +534,10 @@ export default function App() {
       status,
       pid: running ? (pid ?? existing?.pid ?? null) : null,
       startedAt: running ? (existing?.startedAt ?? Date.now()) : null,
+      ports: running ? (existing?.ports ?? []) : [],
+      urls: running ? (existing?.urls ?? []) : [],
+      cpu: running ? (existing?.cpu ?? 0) : 0,
+      memoryMb: running ? (existing?.memoryMb ?? 0) : 0,
     };
     managedRuntimesRef.current = { ...managedRuntimesRef.current, [svcId]: nextRuntime };
     setManagedRuntimes(managedRuntimesRef.current);
@@ -507,6 +555,36 @@ export default function App() {
     }));
   }
 
+  function setManagedServiceUrl(wsId: string, svcId: string, url: string) {
+    const existing = managedRuntimesRef.current[svcId];
+    if (!existing) return;
+    let port: number | null = null;
+    try {
+      const parsed = new URL(url);
+      port = parsed.port ? Number(parsed.port) : null;
+    } catch {
+      return;
+    }
+    const nextRuntime: ManagedRuntime = {
+      ...existing,
+      urls: existing.urls.includes(url) ? existing.urls : [...existing.urls, url],
+      ports: port && !existing.ports.includes(port) ? [...existing.ports, port] : existing.ports,
+    };
+    managedRuntimesRef.current = { ...managedRuntimesRef.current, [svcId]: nextRuntime };
+    setManagedRuntimes(managedRuntimesRef.current);
+    setData(current => ({
+      ...current,
+      workspaces: current.workspaces.map(workspace => workspace.id !== wsId ? workspace : {
+        ...workspace,
+        services: workspace.services.map(service => service.id !== svcId ? service : {
+          ...service,
+          url,
+          port,
+        }),
+      }),
+    }));
+  }
+
   function syncManagedServiceRuntimes(managed: ManagedServiceInfo[]) {
     if (managed.length === 0 && Object.keys(managedRuntimesRef.current).length === 0) return;
     const managedById = new Map(managed.map((service) => [service.service_id, service]));
@@ -516,7 +594,16 @@ export default function App() {
       const service = managedById.get(svcId);
       if (!service) {
         if (runtime.status === "starting" || runtime.status === "running" || runtime.status === "restarting") {
-          next[svcId] = { ...runtime, status: "stopped", pid: null, startedAt: null };
+          next[svcId] = {
+            ...runtime,
+            status: "stopped",
+            pid: null,
+            startedAt: null,
+            ports: [],
+            urls: [],
+            cpu: 0,
+            memoryMb: 0,
+          };
         } else {
           next[svcId] = runtime;
         }
@@ -526,6 +613,10 @@ export default function App() {
         status: "running",
         pid: service.pid,
         startedAt: service.started_at_ms,
+        ports: service.ports,
+        urls: service.urls,
+        cpu: service.cpu_usage,
+        memoryMb: service.memory_mb,
       };
     }
 
@@ -535,6 +626,10 @@ export default function App() {
         status: "running",
         pid: service.pid,
         startedAt: service.started_at_ms,
+        ports: service.ports,
+        urls: service.urls,
+        cpu: service.cpu_usage,
+        memoryMb: service.memory_mb,
       };
     }
 
@@ -674,6 +769,15 @@ export default function App() {
     openLogsForSources(workspace?.services.map((service) => service.id) ?? []);
   }
 
+  async function openLocalUrl(url: string) {
+    try {
+      await tauriApi.openUrl(url);
+    } catch (error) {
+      pushLog("system", String(error), "error");
+      toast("Could not open the local URL", "error");
+    }
+  }
+
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -726,6 +830,7 @@ export default function App() {
         onStopAll={stopAll}
         onOpenLogs={(serviceId) => openLogsForSources([serviceId])}
         onOpenWorkspaceLogs={openWorkspaceLogs}
+        onOpenUrl={openLocalUrl}
         onDeleteWorkspace={deleteWorkspace}
         onUpdateWorkspace={updateWorkspace}
         onRemoveService={removeServiceFromWorkspace}
@@ -745,6 +850,7 @@ export default function App() {
         onStopAll={stopAll}
         onOpenLogs={(serviceId) => openLogsForSources([serviceId])}
         onOpenWorkspaceLogs={openWorkspaceLogs}
+        onOpenUrl={openLocalUrl}
         onDeleteWorkspace={deleteWorkspace}
         onUpdateWorkspace={updateWorkspace}
         onRemoveService={removeServiceFromWorkspace}
@@ -755,7 +861,13 @@ export default function App() {
       />
     );
     if (view === "ports") return (
-      <PortsView ports={data.ports} edges={data.portEdges} workspaces={data.workspaces} services={allServices} />
+      <PortsView
+        ports={data.ports}
+        edges={data.portEdges}
+        workspaces={data.workspaces}
+        services={allServices}
+        onOpenUrl={openLocalUrl}
+      />
     );
     if (view === "logs") return (
       <LogsView
@@ -888,6 +1000,7 @@ export default function App() {
         onSwitchWs={(id) => { setWs(id); setView("workspace"); }}
         onOpenView={(v) => setView(v)}
         onOpenProject={(id) => { setProject(id); setView("project"); }}
+        onOpenUrl={openLocalUrl}
       />
 
       <TweaksPanel title="Tweaks" noDeckControls={true}>

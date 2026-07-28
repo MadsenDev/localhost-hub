@@ -1,7 +1,7 @@
-use crate::ports::scan_live_ports;
+use crate::ports::{extract_local_urls, port_from_local_url, scan_live_ports};
 use serde::Serialize;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::{BufRead, BufReader},
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
@@ -26,6 +26,7 @@ struct ManagedProcess {
     cmd: String,
     pid: u32,
     started_at_ms: u128,
+    detected_urls: Arc<Mutex<Vec<String>>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -39,6 +40,7 @@ pub struct ManagedServiceInfo {
     pub cpu_usage: f32,
     pub memory_mb: u64,
     pub ports: Vec<u16>,
+    pub urls: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -49,6 +51,7 @@ pub enum ServiceEventKind {
     Restarting,
     Stdout,
     Stderr,
+    Url,
     Exited,
     Error,
     Stopped,
@@ -128,6 +131,11 @@ impl ServiceManager {
                         managed.cmd.clone(),
                         managed.pid,
                         managed.started_at_ms,
+                        managed
+                            .detected_urls
+                            .lock()
+                            .map(|urls| urls.clone())
+                            .unwrap_or_default(),
                     )
                 })
                 .collect::<Vec<_>>()
@@ -142,15 +150,46 @@ impl ServiceManager {
 
         Ok(snapshots
             .into_iter()
-            .map(|(service_id, cwd, cmd, pid, started_at_ms)| {
-                let process = system.process(Pid::from_u32(pid));
+            .map(|(service_id, cwd, cmd, pid, started_at_ms, detected_urls)| {
+                let process_ids = process_tree_ids(&system, pid);
                 let mut ports = live_ports
                     .iter()
-                    .filter(|port| port.pid == Some(pid))
+                    .filter(|port| {
+                        port.pid
+                            .map(|pid| process_ids.contains(&Pid::from_u32(pid)))
+                            .unwrap_or(false)
+                    })
                     .map(|port| port.port)
                     .collect::<Vec<_>>();
+                ports.extend(
+                    detected_urls
+                        .iter()
+                        .filter_map(|url| port_from_local_url(url)),
+                );
                 ports.sort_unstable();
                 ports.dedup();
+                let mut urls = detected_urls;
+                for port in &ports {
+                    let fallback = format!("http://localhost:{port}");
+                    if !urls
+                        .iter()
+                        .any(|url| port_from_local_url(url) == Some(*port))
+                    {
+                        urls.push(fallback);
+                    }
+                }
+                let cpu_usage = process_ids
+                    .iter()
+                    .filter_map(|pid| system.process(*pid))
+                    .map(|process| process.cpu_usage())
+                    .sum();
+                let memory_mb = process_ids
+                    .iter()
+                    .filter_map(|pid| system.process(*pid))
+                    .map(|process| process.memory())
+                    .sum::<u64>()
+                    / 1024
+                    / 1024;
 
                 ManagedServiceInfo {
                     service_id,
@@ -159,9 +198,10 @@ impl ServiceManager {
                     pid,
                     started_at_ms,
                     uptime_ms: now.saturating_sub(started_at_ms),
-                    cpu_usage: process.map(|process| process.cpu_usage()).unwrap_or(0.0),
-                    memory_mb: process.map(|process| process.memory() / 1024 / 1024).unwrap_or(0),
+                    cpu_usage,
+                    memory_mb,
                     ports,
+                    urls,
                 }
             })
             .collect())
@@ -241,6 +281,7 @@ impl ServiceManager {
         let stderr = child.stderr.take();
         let child = Arc::new(Mutex::new(child));
         let started_at_ms = now_ms();
+        let detected_urls = Arc::new(Mutex::new(Vec::new()));
 
         self.children
             .lock()
@@ -253,6 +294,7 @@ impl ServiceManager {
                     cmd: cmd.clone(),
                     pid,
                     started_at_ms,
+                    detected_urls: detected_urls.clone(),
                 },
             );
 
@@ -270,6 +312,7 @@ impl ServiceManager {
                 service_id.clone(),
                 stdout,
                 ServiceEventKind::Stdout,
+                detected_urls.clone(),
             );
         }
         if let Some(stderr) = stderr {
@@ -278,6 +321,7 @@ impl ServiceManager {
                 service_id.clone(),
                 stderr,
                 ServiceEventKind::Stderr,
+                detected_urls,
             );
         }
 
@@ -495,6 +539,7 @@ fn spawn_reader<R>(
     service_id: String,
     reader: R,
     kind: ServiceEventKind,
+    detected_urls: Arc<Mutex<Vec<String>>>,
 ) where
     R: std::io::Read + Send + 'static,
 {
@@ -502,13 +547,37 @@ fn spawn_reader<R>(
         let reader = BufReader::new(reader);
         for line in reader.lines() {
             match line {
-                Ok(message) => sink.emit(ServiceEvent {
-                    service_id: service_id.clone(),
-                    kind: kind.clone(),
-                    message,
-                    pid: None,
-                    code: None,
-                }),
+                Ok(message) => {
+                    for url in extract_local_urls(&message) {
+                        let is_new = detected_urls
+                            .lock()
+                            .map(|mut urls| {
+                                if urls.contains(&url) {
+                                    false
+                                } else {
+                                    urls.push(url.clone());
+                                    true
+                                }
+                            })
+                            .unwrap_or(false);
+                        if is_new {
+                            sink.emit(ServiceEvent {
+                                service_id: service_id.clone(),
+                                kind: ServiceEventKind::Url,
+                                message: url,
+                                pid: None,
+                                code: None,
+                            });
+                        }
+                    }
+                    sink.emit(ServiceEvent {
+                        service_id: service_id.clone(),
+                        kind: kind.clone(),
+                        message,
+                        pid: None,
+                        code: None,
+                    });
+                }
                 Err(error) => {
                     sink.emit(ServiceEvent {
                         service_id: service_id.clone(),
@@ -522,6 +591,31 @@ fn spawn_reader<R>(
             }
         }
     });
+}
+
+fn process_tree_ids(system: &System, root_pid: u32) -> HashSet<Pid> {
+    let root = Pid::from_u32(root_pid);
+    system
+        .processes()
+        .keys()
+        .copied()
+        .filter(|candidate| is_descendant_or_self(system, *candidate, root))
+        .collect()
+}
+
+fn is_descendant_or_self(system: &System, candidate: Pid, root: Pid) -> bool {
+    let mut current = Some(candidate);
+    let mut visited = HashSet::new();
+    while let Some(pid) = current {
+        if pid == root {
+            return true;
+        }
+        if !visited.insert(pid) {
+            return false;
+        }
+        current = system.process(pid).and_then(|process| process.parent());
+    }
+    false
 }
 
 fn spawn_exit_watcher(
@@ -640,6 +734,16 @@ mod tests {
                 .iter()
                 .any(|event| event.kind == kind)
         }
+
+        fn messages(&self, kind: ServiceEventKind) -> Vec<String> {
+            self.events
+                .lock()
+                .expect("events")
+                .iter()
+                .filter(|event| event.kind == kind)
+                .map(|event| event.message.clone())
+                .collect()
+        }
     }
 
     fn wait_until(predicate: impl Fn() -> bool) {
@@ -677,6 +781,30 @@ mod tests {
         manager
             .stop_for_test(sink, "duplicate")
             .expect("cleanup");
+    }
+
+    #[test]
+    fn captures_local_urls_from_service_output() {
+        let manager = ServiceManager::default();
+        let sink = Arc::new(TestSink::default());
+        manager
+            .start_for_test(
+                sink.clone(),
+                "url",
+                "/tmp",
+                "printf '\\033[32mLocal: http://0.0.0.0:4567/\\033[0m\\n'; sleep 10",
+            )
+            .expect("start");
+
+        wait_until(|| sink.has(ServiceEventKind::Url));
+        assert_eq!(
+            sink.messages(ServiceEventKind::Url),
+            vec!["http://localhost:4567/"]
+        );
+        let service = manager.list().expect("list").remove(0);
+        assert_eq!(service.ports, vec![4567]);
+        assert_eq!(service.urls, vec!["http://localhost:4567/"]);
+        manager.stop_for_test(sink, "url").expect("cleanup");
     }
 
     #[test]

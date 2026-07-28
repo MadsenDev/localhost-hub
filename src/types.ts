@@ -7,6 +7,7 @@ export interface Service {
   cmd: string;
   repo_path?: string;
   port: number | null;
+  url?: string | null;
   status: ServiceStatus;
   uptime: number;
   pid?: number | null;
@@ -99,6 +100,7 @@ export interface Port {
   port: number;
   svc: string;
   host: string;
+  url?: string;
   status: ServiceStatus;
   ws: string;
   group: string;

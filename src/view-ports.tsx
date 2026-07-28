@@ -8,6 +8,7 @@ interface PortsViewProps {
   edges: PortEdge[];
   workspaces: Workspace[];
   services: Service[];
+  onOpenUrl: (url: string) => void;
 }
 
 interface PortNode extends Port {
@@ -15,7 +16,7 @@ interface PortNode extends Port {
   y: number;
 }
 
-export function PortsView({ ports, edges, workspaces, services }: PortsViewProps) {
+export function PortsView({ ports, edges, workspaces, services, onOpenUrl }: PortsViewProps) {
   const [hovered, setHovered] = React.useState<string | null>(null);
 
   const wsList = workspaces.map((w) => w.id);
@@ -101,6 +102,7 @@ export function PortsView({ ports, edges, workspaces, services }: PortsViewProps
           {nodes.map((n) => {
             const svc = svcById[n.svc];
             const w = wsById[n.ws];
+            const url = n.url ?? `http://localhost:${n.port}`;
             const touching = edges.filter((e) => e.from === n.id || e.to === n.id);
             const peers = touching.map((e) => {
               const other = e.from === n.id ? byId[e.to] : byId[e.from];
@@ -116,6 +118,7 @@ export function PortsView({ ports, edges, workspaces, services }: PortsViewProps
                 style={{ left: n.x + "%", top: n.y + "%", borderLeft: `3px solid ${w?.swatch ?? 'var(--line-1)'}` }}
                 onMouseEnter={() => setHovered(n.id)}
                 onMouseLeave={() => setHovered(null)}
+                onDoubleClick={() => onOpenUrl(url)}
               >
                 <StatusDot s={n.status} />
                 <div>
@@ -135,7 +138,20 @@ export function PortsView({ ports, edges, workspaces, services }: PortsViewProps
                     <div className="pn-flyout-meta">
                       <div className="row"><span className="k">Workspace</span><span className="v">{w?.name ?? '—'}</span></div>
                       <div className="row"><span className="k">Project</span><span className="v mono">{svc ? svc.project : "—"}</span></div>
-                      <div className="row"><span className="k">URL</span><a className="v mono" href="#" onClick={(ev) => ev.preventDefault()} style={{ color: "var(--blue)" }}>http://localhost:{n.port}</a></div>
+                      <div className="row">
+                        <span className="k">URL</span>
+                        <a
+                          className="v mono"
+                          href={url}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            onOpenUrl(url);
+                          }}
+                          style={{ color: "var(--blue)" }}
+                        >
+                          {url}
+                        </a>
+                      </div>
                       <div className="row"><span className="k">Status</span><span className="v"><StatusBadge s={n.status} /></span></div>
                     </div>
                     {peers.length > 0 ? (
@@ -182,6 +198,7 @@ export function PortsView({ ports, edges, workspaces, services }: PortsViewProps
         {nodes.map((n) => {
           const svc = svcById[n.svc];
           const w = wsById[n.ws];
+          const url = n.url ?? `http://localhost:${n.port}`;
           return (
             <div key={n.id} style={{ display: "grid", gridTemplateColumns: "70px 1fr 1fr 1fr auto", gap: 10, padding: "10px 14px", alignItems: "center", borderBottom: "1px solid var(--line-soft)", fontSize: 12 }}>
               <span className="mono" style={{ color: "var(--fg-1)" }}>:{n.port}</span>
@@ -190,7 +207,17 @@ export function PortsView({ ports, edges, workspaces, services }: PortsViewProps
                 <span style={{ width: 8, height: 8, borderRadius: 2, background: w?.swatch ?? 'var(--line-1)' }} />
                 <span>{w?.name ?? '—'}</span>
               </span>
-              <a href="#" onClick={(e) => e.preventDefault()} className="mono" style={{ color: "var(--blue)", textDecoration: "none" }}>http://localhost:{n.port}</a>
+              <a
+                href={url}
+                onClick={(event) => {
+                  event.preventDefault();
+                  onOpenUrl(url);
+                }}
+                className="mono"
+                style={{ color: "var(--blue)", textDecoration: "none" }}
+              >
+                {url}
+              </a>
               <span style={{ textAlign: "right" }}><StatusBadge s={n.status} /></span>
             </div>
           );

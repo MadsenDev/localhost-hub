@@ -38,6 +38,17 @@ This backlog captures the current product direction in implementation order. Kee
 - [ ] Add service dependencies and dependency-aware startup ordering.
 - [ ] Add workspace environment profiles.
 
+### Ports and local URLs
+
+- [x] Inspect listening TCP ports on Linux, macOS, and Windows.
+- [x] Attribute ports and resource usage across each managed process tree.
+- [x] Parse local HTTP/HTTPS URLs from stdout and stderr, including ANSI-coloured output.
+- [x] Combine socket inspection with output-detected ports and URLs.
+- [x] Open detected local URLs from workspace rows, the ports view, and command palette.
+- [x] Reject non-local URLs in the backend browser-opening command.
+- [ ] Detect port conflicts before starting a service.
+- [ ] Add explicit user-managed watched ports.
+
 ### Persist app preferences
 
 - [x] Persist theme in config.

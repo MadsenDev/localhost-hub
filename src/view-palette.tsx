@@ -20,9 +20,10 @@ interface CommandPaletteProps {
   onSwitchWs: (id: string) => void;
   onOpenView: (v: string) => void;
   onOpenProject: (id: string) => void;
+  onOpenUrl: (url: string) => void;
 }
 
-export function CommandPalette({ open, onClose, data, onRunScript, onSwitchWs, onOpenView, onOpenProject }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, data, onRunScript, onSwitchWs, onOpenView, onOpenProject, onOpenUrl }: CommandPaletteProps) {
   const [q, setQ] = React.useState("");
   const [tab, setTab] = React.useState("all");
   const [idx, setIdx] = React.useState(0);
@@ -56,7 +57,8 @@ export function CommandPalette({ open, onClose, data, onRunScript, onSwitchWs, o
     });
 
     data.ports.filter((p) => p.status === "running").forEach((p) => {
-      out.push({ id: "open-" + p.port, label: `Open localhost:${p.port}`, sub: "in browser", kind: "open", icon: <Ic.Globe size={13} />, run: () => {} });
+      const url = p.url ?? `http://localhost:${p.port}`;
+      out.push({ id: "open-" + p.port, label: `Open ${url.replace(/^https?:\/\//, '')}`, sub: "in browser", kind: "open", icon: <Ic.Globe size={13} />, run: () => onOpenUrl(url) });
     });
 
     Object.values(data.projects).forEach((p) => {
