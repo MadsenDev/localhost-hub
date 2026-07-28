@@ -115,6 +115,9 @@ export interface Repo {
   package_manager: string;
   scripts: Script[];
   has_env: boolean;
+  has_git: boolean;
+  git_root: string | null;
+  manifests: string[];
   // live-derived
   is_running: boolean;
   running_port: number | null;

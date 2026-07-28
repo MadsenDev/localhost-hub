@@ -157,6 +157,7 @@ function RepoCard({ repo, onAddScript }: { repo: Repo; onAddScript: (script: str
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, color: 'var(--fg-3)', fontFamily: 'var(--font-mono)', background: 'var(--bg-2)', padding: '1px 6px', borderRadius: 4 }}>{repo.framework || 'Project'}</span>
             {repo.package_manager && <span style={{ fontSize: 11, color: 'var(--fg-4)', fontFamily: 'var(--font-mono)' }}>{repo.package_manager}</span>}
+            {repo.has_git && <span style={{ fontSize: 11, color: 'var(--fg-4)', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Ic.Branch size={10} /> Git</span>}
             {repo.running_port && <span style={{ fontSize: 11, color: 'var(--ok)', fontFamily: 'var(--font-mono)' }}>:{repo.running_port}</span>}
           </div>
           <div style={{ fontSize: 11, color: 'var(--fg-4)', fontFamily: 'var(--font-mono)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={repo.path}>
