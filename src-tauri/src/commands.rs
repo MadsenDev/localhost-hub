@@ -1,6 +1,6 @@
 use tauri::{AppHandle, State};
 
-use crate::ports::{scan_live_ports, LivePort};
+use crate::ports::{normalize_local_url, scan_live_ports, LivePort};
 use crate::processes::{get_dev_processes, get_system_stats as sys_stats, ProcessInfo, SystemStats};
 use crate::git::{get_git_status as git_status, GitStatus};
 use crate::workspace::{
@@ -213,6 +213,8 @@ pub fn open_in_editor(path: String, _app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
+    let url = normalize_local_url(&url)
+        .ok_or_else(|| "only local HTTP and HTTPS URLs can be opened".to_string())?;
     std::thread::spawn(move || {
         let _ = open::that(url);
     });

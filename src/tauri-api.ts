@@ -27,6 +27,8 @@ export interface LivePort {
   pid: number | null;
   process_name: string | null;
   protocol: string;
+  bind_address: string;
+  url: string;
 }
 
 export interface ProcessInfo {
@@ -93,7 +95,7 @@ export interface EnvEntry {
 
 export interface ServiceEvent {
   service_id: string;
-  kind: "starting" | "started" | "restarting" | "stdout" | "stderr" | "exited" | "error" | "stopped";
+  kind: "starting" | "started" | "restarting" | "stdout" | "stderr" | "url" | "exited" | "error" | "stopped";
   message: string;
   pid: number | null;
   code: number | null;
@@ -109,6 +111,7 @@ export interface ManagedServiceInfo {
   cpu_usage: number;
   memory_mb: number;
   ports: number[];
+  urls: string[];
 }
 
 export interface WorkspaceServiceSpec {

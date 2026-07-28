@@ -13,6 +13,7 @@ interface WorkspaceViewProps {
   onStopAll: (wsId: string) => void;
   onOpenLogs: (srcId: string) => void;
   onOpenWorkspaceLogs: (wsId: string) => void;
+  onOpenUrl: (url: string) => void;
   onDeleteWorkspace: (id: string) => void;
   onUpdateWorkspace: (id: string, patch: { name?: string; color?: string }) => void;
   onRemoveService: (wsId: string, svcId: string) => void;
@@ -34,7 +35,7 @@ const COLOR_OPTIONS = [
 
 export function WorkspaceView({
   workspace: w, onStartSvc, onStopSvc, onRestartSvc, onStartAll, onStopAll,
-  onOpenLogs, onOpenWorkspaceLogs, onDeleteWorkspace, onUpdateWorkspace,
+  onOpenLogs, onOpenWorkspaceLogs, onOpenUrl, onDeleteWorkspace, onUpdateWorkspace,
   onRemoveService, onUpdateService, onAddService,
 }: WorkspaceViewProps) {
 
@@ -218,8 +219,19 @@ export function WorkspaceView({
                   </button>
                 </div>
                 <div className="svc-port">
-                  {s.port ? (
-                    <><Ic.Globe size={12} /><a href="#" onClick={e => e.preventDefault()}>localhost:{s.port}</a></>
+                  {s.url || s.port ? (
+                    <>
+                      <Ic.Globe size={12} />
+                      <a
+                        href={s.url ?? `http://localhost:${s.port!}`}
+                        onClick={event => {
+                          event.preventDefault();
+                          onOpenUrl(s.url ?? `http://localhost:${s.port!}`);
+                        }}
+                      >
+                        {s.url ? s.url.replace(/^https?:\/\//, '') : `localhost:${s.port!}`}
+                      </a>
+                    </>
                   ) : <span style={{ color: 'var(--fg-4)' }}>—</span>}
                 </div>
                 <div className="svc-uptime">{formatUptime(s.uptime)}</div>
