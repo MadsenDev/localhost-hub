@@ -5,7 +5,7 @@ import electron from 'vite-plugin-electron/simple';
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
-    electron({
+    ...(mode === 'electron' ? [electron({
       main: {
         entry: 'electron/main.ts',
         vite: {
@@ -19,14 +19,14 @@ export default defineConfig(({ mode }) => ({
       preload: {
         input: 'electron/preload.ts'
       }
-    })
+    })] : [])
   ],
   server: {
     port: 5173,
     strictPort: true
   },
   build: {
-    outDir: 'dist/renderer',
+    outDir: mode === 'electron' ? 'dist/renderer' : 'dist',
     sourcemap: mode === 'development'
   }
 }));

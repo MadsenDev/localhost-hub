@@ -1,6 +1,6 @@
 {
   "name": "localhost-hub",
-  "version": "0.8.0",
+  "version": "0.9.0-alpha.0",
   "description": "Desktop control center for managing local development projects, scripts, and processes.",
   "main": "dist-electron/main.js",
   "license": "MIT",
@@ -10,18 +10,21 @@
     "email": "chris@madsens.dev"
   },
   "scripts": {
-    "dev": "vite dev",
-    "dev:electron": "vite dev",
-    "build": "vite build",
+    "dev": "vite",
+    "dev:electron": "vite --mode electron",
+    "build": "tsc -p tsconfig.app.json && vite build",
     "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "electron": "electron .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.app.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "generate:icons": "node scripts/generate-icons.cjs",
     "clear:cache": "node scripts/clear-electron-builder-cache.cjs",
     "prebuild:electron": "npm run generate:icons && rimraf dist dist-electron",
-    "build:electron": "npm run prebuild:electron && cross-env VITE_DEV_SERVER_URL= vite build && electron-builder --config build.config.cjs",
+    "build:electron": "npm run prebuild:electron && cross-env VITE_DEV_SERVER_URL= vite build --mode electron && electron-builder --config build.config.cjs",
     "build:linux": "npm run build:electron -- --linux",
     "build:mac": "npm run build:electron -- --mac",
     "build:win": "npm run build:electron -- --win nsis",
@@ -37,6 +40,10 @@
     "react"
   ],
   "dependencies": {
+    "@fontsource-variable/geist": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "@babel/parser": "^7.28.5",
     "@babel/traverse": "^7.28.5",
     "fast-glob": "^3.3.3",
@@ -49,6 +56,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
+    "@tauri-apps/cli": "^2.11.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@types/node": "^24.10.1",

@@ -1,0 +1,175 @@
+# Localhost Hub Implementation Backlog
+
+This backlog captures the current product direction in implementation order. Keep it updated as work lands.
+
+## Phase 1: Foundation
+
+### Real service management
+
+- [x] Add initial Rust-managed process start/stop path for workspace services.
+- [x] Add shell command execution in the repo cwd for npm, pnpm, yarn, bun, cargo, and arbitrary commands.
+- [x] Add initial Tauri service events for started, stdout, stderr, exited, error, and stopped.
+- [x] Stop Unix services by process group so child dev servers are not left behind.
+- [x] Show initial PID and real uptime for managed services.
+- [x] Add fallback stop-by-PID for services detected from process scanning but not started by the manager.
+- [x] Add Rust query command for currently managed services so frontend state can recover after refresh/missed events.
+- [x] Track service lifecycle states: stopped, starting, running, failed, crashed, exited, restarting.
+- [ ] Track cwd, command, memory, CPU, and detected ports per managed service in the UI model.
+- [ ] Implement robust restart and kill behavior.
+- [ ] Reconnect UI state to already-running matching processes where practical.
+- [ ] Add persisted service run history/state as needed.
+
+### Real logs
+
+- [x] Stream stdout/stderr from Rust to frontend.
+- [x] Store per-service logs in frontend state.
+- [ ] Add workspace-combined logs.
+- [ ] Add timestamps, filtering, search, error highlighting, copy/export.
+
+### Persist app preferences
+
+- [x] Persist theme in config.
+- [x] Persist density in config.
+- [x] Persist accent color in config.
+- [x] Persist sidebar width in config.
+- [ ] Add editor path setting.
+- [ ] Add terminal path setting.
+
+### Project detail and metadata
+
+- [ ] Populate `data.projects` from scanned repos.
+- [ ] Make Project Detail work with live scanned data.
+- [ ] Add project tabs: Overview, Scripts, Git, GitHub, Ports, Logs, Health.
+- [ ] Detect README/license files.
+- [ ] Detect Docker/devcontainer files.
+- [ ] Detect languages and dependency manifests.
+
+### Project structure cleanup
+
+- [x] Decide whether `dist/` should be committed or ignored consistently.
+- [x] Stop tracking generated `dist/` and `node_modules/` files while keeping them ignored and present locally.
+- [x] Remove or use unused `is_port_open`.
+- [ ] Audit placeholder views and mark future-only surfaces clearly.
+- [x] Keep generated build artifacts out of normal development diffs where possible.
+
+## Phase 2: Git Foundation
+
+### Repository operations
+
+- [ ] Clone repo by URL.
+- [ ] Clone repo from GitHub search.
+- [ ] Select local clone destination.
+- [ ] Initialize repo.
+- [ ] Open existing repo.
+- [ ] Add remote.
+- [ ] Remove remote.
+- [ ] Rename remote.
+- [ ] Add post-clone actions: install dependencies, create workspace, open editor, run dev script.
+
+### Git status
+
+- [ ] Show clean/dirty state.
+- [ ] Show staged files.
+- [ ] Show unstaged files.
+- [ ] Show untracked files.
+- [ ] Show conflicted files.
+- [ ] Optionally show ignored files.
+- [ ] Show file counts and change type indicators.
+- [ ] Show ahead/behind counts.
+
+### Staging and commits
+
+- [ ] Stage file.
+- [ ] Unstage file.
+- [ ] Stage all.
+- [ ] Unstage all.
+- [ ] Commit with message input.
+- [ ] Amend last commit later.
+- [ ] Signed commits later.
+- [ ] Stage hunks later.
+- [ ] Stage selected lines later.
+
+### Diff viewer
+
+- [ ] Text diff.
+- [ ] Syntax highlighting.
+- [ ] Additions/removals.
+- [ ] File sidebar.
+- [ ] Side-by-side diff later.
+- [ ] Image diff later.
+- [ ] Markdown preview diff later.
+
+### Branches and remotes
+
+- [ ] Show current branch.
+- [ ] Switch branch.
+- [ ] Create branch.
+- [ ] Delete branch.
+- [ ] Search branches.
+- [ ] Show upstream tracking state.
+- [ ] Fetch.
+- [ ] Pull.
+- [ ] Push.
+- [ ] Force push with warning.
+- [ ] Pull with rebase later.
+
+### History
+
+- [ ] Commit history.
+- [ ] Commit details.
+- [ ] Author/date.
+- [ ] Changed files.
+- [ ] Commit search later.
+
+## Phase 3: GitHub Intelligence
+
+- [ ] Fetch repo metadata.
+- [ ] Show GitHub linked state per repo.
+- [ ] Show open PR for current branch.
+- [ ] Show CI/check status.
+- [ ] Show open issues.
+- [ ] Show workflow failures.
+- [ ] Show repo visibility.
+- [ ] Open repo in browser.
+- [ ] Open PR in browser.
+- [ ] Copy repo URL.
+- [ ] Create PR later.
+- [ ] Add GitHub dashboard widgets: assigned PRs, review requests, failing workflows, recent repos.
+- [ ] Add notifications later.
+
+## Phase 4: Repo Health
+
+- [ ] Track last commit age.
+- [ ] Track uncommitted changes age.
+- [ ] Track unpushed commits.
+- [ ] Detect stale branches.
+- [ ] Detect README presence.
+- [ ] Detect license presence.
+- [ ] Detect dependency files.
+- [ ] Detect archived GitHub state.
+- [ ] Classify repos as active, quiet, dirty, unpushed, stale, archived, experimental.
+- [ ] Add health warnings to Home and Repos.
+- [ ] Add optional metrics: commit frequency, contributor count, branch age, PR age, issue age.
+
+## Phase 5: Optional AI Layer
+
+- [ ] Generate commit messages from diffs.
+- [ ] Explain diffs.
+- [ ] Summarize repos.
+- [ ] Summarize branch purpose.
+- [ ] Explain logs/errors.
+- [ ] Generate README summaries.
+- [ ] Generate handoff summaries.
+- [ ] Create Cursor/Codex task briefs.
+- [ ] Answer "What was I working on?"
+- [ ] Answer "What changed recently?"
+- [ ] Design BYOK-compatible provider settings.
+
+## Implementation Principles
+
+- Keep local Git functionality independent from GitHub functionality.
+- Prefer local-first behavior.
+- Use Rust/Tauri for real process, filesystem, Git, and OS integration.
+- Use GitHub APIs only for GitHub metadata and remote intelligence.
+- Avoid overengineering; use `git2` where useful and system `git` where more reliable.
+- Preserve a Linux-native, fast, information-dense workflow.
