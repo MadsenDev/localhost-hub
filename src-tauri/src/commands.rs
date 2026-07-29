@@ -7,9 +7,11 @@ use crate::git::{
     commit as git_commit_changes, create_branch as git_create_branch,
     delete_branch as git_delete_branch, get_git_diff as git_diff,
     get_git_status as git_status, get_repository_info as git_repository_info,
+    fetch_remote as git_fetch_remote, pull_remote as git_pull_remote,
+    push_remote as git_push_remote,
     remove_remote as git_remove_remote, rename_remote as git_rename_remote,
     stage_files as git_stage_files, unstage_files as git_unstage_files, GitCommitResult, GitDiff,
-    GitRepositoryInfo, GitStatus,
+    GitNetworkResult, GitRepositoryInfo, GitStatus,
 };
 use crate::workspace::{
     scan_as_workspace_groups, scan_for_projects, start_workspace as start_workspace_runs,
@@ -218,6 +220,21 @@ pub fn rename_git_remote(
 #[tauri::command]
 pub fn remove_git_remote(path: String, name: String) -> Result<GitRepositoryInfo, String> {
     git_remove_remote(&path, &name)
+}
+
+#[tauri::command]
+pub async fn fetch_git_remote(path: String, remote: String) -> Result<GitNetworkResult, String> {
+    git_fetch_remote(&path, &remote).await
+}
+
+#[tauri::command]
+pub async fn pull_git_remote(path: String, remote: String) -> Result<GitNetworkResult, String> {
+    git_pull_remote(&path, &remote).await
+}
+
+#[tauri::command]
+pub async fn push_git_remote(path: String, remote: String) -> Result<GitNetworkResult, String> {
+    git_push_remote(&path, &remote).await
 }
 
 // ── Workspace / project scanning ──────────────────────────────────────────────

@@ -201,6 +201,14 @@ export interface GitRepositoryInfo {
   history: GitHistoryEntry[];
 }
 
+export interface GitNetworkResult {
+  operation: 'fetch' | 'pull' | 'push';
+  remote: string;
+  branch: string;
+  output: string;
+  status: GitStatus;
+}
+
 export interface StoredService {
   id: string;
   name: string;
