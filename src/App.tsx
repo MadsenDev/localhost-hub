@@ -27,6 +27,11 @@ import {
   EXTERNAL_PROCESS_WORKSPACE,
 } from './project-runtime';
 import { normalizeProjectProfiles, resolveEnvProfile, toServiceEnvironment } from './env-profiles';
+import { deriveExpectedPorts } from './port-preflight';
+import {
+  PortConflictDialog,
+  type PortConflictDecision,
+} from './port-conflict-dialog';
 
 const TWEAK_DEFAULTS = {
   theme: "charcoal",
@@ -52,6 +57,10 @@ interface ManagedRuntime {
   urls: string[];
   cpu: number;
   memoryMb: number;
+}
+interface PortConflictPrompt {
+  conflicts: LivePort[];
+  resolve: (decision: PortConflictDecision) => void;
 }
 type AppearanceKey = "theme" | "accent" | "density" | "sidebar";
 
@@ -145,6 +154,7 @@ function buildHubData(
         run_mode: ss.run_mode ?? 'parallel',
         order: ss.order ?? index,
         env_profile_id: ss.env_profile_id ?? null,
+        expected_port: ss.expected_port ?? null,
       };
     });
     return {
@@ -249,6 +259,7 @@ export default function App() {
   const managedRuntimesRef = React.useRef<Record<string, ManagedRuntime>>({});
   const liveProcessesRef = React.useRef<ProcessInfo[]>([]);
   const livePortsRef = React.useRef<LivePort[]>([]);
+  const portApprovalActiveRef = React.useRef(false);
   const gitStatusesRef = React.useRef<Record<string, GitStatus | null>>({});
   const [view, setView] = React.useState("home");
   const [ws, setWs] = React.useState("");
@@ -261,6 +272,7 @@ export default function App() {
   const [managedServices, setManagedServices] = React.useState<ManagedServiceInfo[]>([]);
   const [liveProcesses, setLiveProcesses] = React.useState<ProcessInfo[]>([]);
   const [livePorts, setLivePorts] = React.useState<LivePort[]>([]);
+  const [portConflictPrompt, setPortConflictPrompt] = React.useState<PortConflictPrompt | null>(null);
 
   const [logs, setLogs] = React.useState<LogLine[]>([]);
   const [sources, setSources] = React.useState<Record<string, boolean>>({});
@@ -582,6 +594,7 @@ export default function App() {
         ...svc,
         run_mode: svc.run_mode ?? 'parallel',
         order: svc.order ?? w.services.length,
+        expected_port: svc.expected_port ?? null,
       }],
     } : w));
   }
@@ -613,7 +626,7 @@ export default function App() {
   function updateWorkspaceService(
     wsId: string,
     svcId: string,
-    patch: Partial<Pick<StoredService, 'run_mode' | 'order' | 'env_profile_id'>>,
+    patch: Partial<Pick<StoredService, 'run_mode' | 'order' | 'env_profile_id' | 'expected_port'>>,
   ) {
     saveWorkspaces(storedWsRef.current.map(w => w.id === wsId ? {
       ...w,
@@ -740,16 +753,64 @@ export default function App() {
     setManagedRuntimes(next);
   }
 
+  async function approveExpectedPorts(expectedPorts: number[]): Promise<boolean | null> {
+    if (expectedPorts.length === 0) return false;
+    if (portApprovalActiveRef.current) return null;
+    portApprovalActiveRef.current = true;
+    try {
+      while (true) {
+        const conflicts = await tauriApi.checkPortConflicts(expectedPorts) ?? [];
+        if (conflicts.length === 0) return false;
+        const decision = await new Promise<PortConflictDecision>((resolve) => {
+          setPortConflictPrompt({ conflicts, resolve });
+        });
+        setPortConflictPrompt(null);
+        if (decision === 'cancel') return null;
+        if (decision === 'force') return true;
+
+        const pids = [...new Set(
+          conflicts.map(conflict => conflict.pid).filter((pid): pid is number => pid != null),
+        )];
+        if (pids.length === 0) continue;
+        try {
+          for (const pid of pids) await tauriApi.killProcess(pid);
+        } catch (error) {
+          toast(`Could not stop the process using the expected port: ${String(error)}`, 'error');
+          return null;
+        }
+      }
+    } catch (error) {
+      toast(`Could not check expected ports: ${String(error)}`, 'error');
+      return null;
+    } finally {
+      portApprovalActiveRef.current = false;
+    }
+  }
+
   async function startService(wsId: string, svcId: string, overrides: EnvVariable[] = []) {
     const svc = data.workspaces.find((w) => w.id === wsId)?.services.find((s) => s.id === svcId);
     if (!svc) return;
+    if (!svc.repo_path) {
+      toast(`Failed to start ${svc.name}: missing repo path`, "error");
+      return;
+    }
+    const profile = resolveEnvProfile(envProfilesRef.current, svc.repo_path, svc.env_profile_id);
+    const environment = toServiceEnvironment(profile, overrides);
+    const expectedPorts = deriveExpectedPorts(svc.cmd, environment, svc.expected_port);
+    const allowPortConflicts = await approveExpectedPorts(expectedPorts);
+    if (allowPortConflicts == null) return;
     setManagedServiceStatus(wsId, svcId, "starting");
     pushLog(svcId, `> ${svc.cmd}`, "info");
     toast(`Starting ${svc.name}`, "info");
     try {
-      if (!svc.repo_path) throw new Error("Missing repo path for service.");
-      const profile = resolveEnvProfile(envProfilesRef.current, svc.repo_path, svc.env_profile_id);
-      await tauriApi.startService(svc.id, svc.repo_path, svc.cmd, toServiceEnvironment(profile, overrides));
+      await tauriApi.startService(
+        svc.id,
+        svc.repo_path,
+        svc.cmd,
+        environment,
+        expectedPorts,
+        allowPortConflicts,
+      );
     } catch (err) {
       setManagedServiceStatus(wsId, svcId, "failed");
       pushLog(svcId, String(err), "error");
@@ -776,16 +837,26 @@ export default function App() {
       return;
     }
     const serviceId = directProjectServiceId(project, script);
+    const profile = resolveEnvProfile(envProfilesRef.current, project.path);
+    const environment = toServiceEnvironment(profile, overrides);
+    const expectedPorts = deriveExpectedPorts(
+      script.cmd,
+      environment,
+      configuredService?.expected_port,
+    );
+    const allowPortConflicts = await approveExpectedPorts(expectedPorts);
+    if (allowPortConflicts == null) return;
     setManagedServiceStatus(DIRECT_PROJECT_WORKSPACE, serviceId, "starting");
     pushLog(serviceId, `> ${script.cmd}`, "info");
     toast(`Starting ${project.name} · ${script.name}`, "info");
     try {
-      const profile = resolveEnvProfile(envProfilesRef.current, project.path);
       const pid = await tauriApi.startService(
         serviceId,
         project.path,
         script.cmd,
-        toServiceEnvironment(profile, overrides),
+        environment,
+        expectedPorts,
+        allowPortConflicts,
       );
       const startedAt = Date.now();
       setManagedServiceStatus(DIRECT_PROJECT_WORKSPACE, serviceId, "running", pid);
@@ -894,6 +965,31 @@ export default function App() {
     const live = data.workspaces.find((workspace) => workspace.id === wsId);
     if (!stored || !live || stored.services.length === 0) return;
 
+    const workspaceServices = stored.services.map((service, index) => {
+      const environment = toServiceEnvironment(resolveEnvProfile(
+        envProfilesRef.current,
+        service.repo_path,
+        service.env_profile_id,
+      ));
+      return {
+        service_id: service.id,
+        cwd: service.repo_path,
+        cmd: service.cmd,
+        run_mode: service.run_mode ?? "parallel" as const,
+        order: service.order ?? index,
+        environment,
+        expected_ports: deriveExpectedPorts(service.cmd, environment, service.expected_port),
+        allow_port_conflicts: false,
+      };
+    });
+    const allowPortConflicts = await approveExpectedPorts(
+      [...new Set(workspaceServices.flatMap(service => service.expected_ports))],
+    );
+    if (allowPortConflicts == null) return;
+    workspaceServices.forEach(service => {
+      service.allow_port_conflicts = allowPortConflicts;
+    });
+
     live.services.forEach((service) => {
       if (service.status !== "running") {
         setManagedServiceStatus(wsId, service.id, "starting");
@@ -904,18 +1000,7 @@ export default function App() {
     try {
       const result = await tauriApi.startWorkspace(
         wsId,
-        stored.services.map((service, index) => ({
-          service_id: service.id,
-          cwd: service.repo_path,
-          cmd: service.cmd,
-          run_mode: service.run_mode ?? "parallel",
-          order: service.order ?? index,
-          environment: toServiceEnvironment(resolveEnvProfile(
-            envProfilesRef.current,
-            service.repo_path,
-            service.env_profile_id,
-          )),
-        })),
+        workspaceServices,
       );
       result.started.forEach((serviceId) => {
         setManagedServiceStatus(wsId, serviceId, "running");
@@ -1241,6 +1326,12 @@ export default function App() {
         onClose={() => setCreateProjectOpen(false)}
         onCreated={handleProjectCreated}
       />
+      {portConflictPrompt && (
+        <PortConflictDialog
+          conflicts={portConflictPrompt.conflicts}
+          onDecide={portConflictPrompt.resolve}
+        />
+      )}
 
       <TweaksPanel title="Tweaks" noDeckControls={true}>
         <TweakSection label="Theme">

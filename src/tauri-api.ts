@@ -115,6 +115,8 @@ export interface WorkspaceServiceSpec {
   run_mode: "parallel" | "sequential";
   order: number;
   environment: ServiceEnvironment;
+  expected_ports: number[];
+  allow_port_conflicts: boolean;
 }
 
 export interface ServiceEnvironment {
@@ -295,12 +297,28 @@ export interface PackageActionResult {
 export const tauriApi = {
   scanPorts: () => invoke<LivePort[]>("scan_ports"),
 
+  checkPortConflicts: (expectedPorts: number[]) =>
+    invoke<LivePort[]>("check_port_conflicts", { expectedPorts }),
+
   getProcesses: () => invoke<ProcessInfo[]>("get_processes"),
 
   killProcess: (pid: number) => invoke<void>("kill_process", { pid }),
 
-  startService: (serviceId: string, cwd: string, cmd: string, environment: ServiceEnvironment) =>
-    invoke<number>("start_service", { serviceId, cwd, cmd, environment }),
+  startService: (
+    serviceId: string,
+    cwd: string,
+    cmd: string,
+    environment: ServiceEnvironment,
+    expectedPorts: number[],
+    allowPortConflicts = false,
+  ) => invoke<number>("start_service", {
+    serviceId,
+    cwd,
+    cmd,
+    environment,
+    expectedPorts,
+    allowPortConflicts,
+  }),
 
   stopManagedService: (serviceId: string) =>
     invoke<void>("stop_service", { serviceId }),

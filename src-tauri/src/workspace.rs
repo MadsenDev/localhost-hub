@@ -78,6 +78,10 @@ pub struct WorkspaceServiceSpec {
     pub order: usize,
     #[serde(default)]
     pub environment: ServiceEnvironment,
+    #[serde(default)]
+    pub expected_ports: Vec<u16>,
+    #[serde(default)]
+    pub allow_port_conflicts: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -277,6 +281,8 @@ fn start_workspace_service(
             service.cwd,
             service.cmd,
             service.environment,
+            service.expected_ports,
+            service.allow_port_conflicts,
         ) {
             Ok(_) => result.started.push(service.service_id),
             Err(error) => result.failed.push(WorkspaceServiceFailure {
@@ -1078,6 +1084,8 @@ mod tests {
             run_mode,
             order,
             environment: ServiceEnvironment::default(),
+            expected_ports: Vec::new(),
+            allow_port_conflicts: false,
         }
     }
 
@@ -1119,6 +1127,8 @@ mod tests {
         .expect("deserialize");
         assert_eq!(service.run_mode, WorkspaceRunMode::Parallel);
         assert_eq!(service.order, 0);
+        assert!(service.expected_ports.is_empty());
+        assert!(!service.allow_port_conflicts);
     }
 
     #[test]

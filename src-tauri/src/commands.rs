@@ -1,6 +1,6 @@
 use tauri::{AppHandle, State};
 
-use crate::ports::{normalize_local_url, scan_live_ports, LivePort};
+use crate::ports::{find_port_conflicts, normalize_local_url, scan_live_ports, LivePort};
 use crate::processes::{get_dev_processes, get_system_stats as sys_stats, ProcessInfo, SystemStats};
 use crate::git::{
     add_remote as git_add_remote, checkout_branch as git_checkout_branch,
@@ -103,6 +103,11 @@ pub fn scan_ports() -> Vec<LivePort> {
     scan_live_ports()
 }
 
+#[tauri::command]
+pub fn check_port_conflicts(expected_ports: Vec<u16>) -> Vec<LivePort> {
+    find_port_conflicts(&expected_ports)
+}
+
 // ── Processes ─────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -123,8 +128,18 @@ pub fn start_service(
     cwd: String,
     cmd: String,
     environment: ServiceEnvironment,
+    expected_ports: Vec<u16>,
+    allow_port_conflicts: bool,
 ) -> Result<u32, String> {
-    services.start(app, service_id, cwd, cmd, environment)
+    services.start(
+        app,
+        service_id,
+        cwd,
+        cmd,
+        environment,
+        expected_ports,
+        allow_port_conflicts,
+    )
 }
 
 #[tauri::command]

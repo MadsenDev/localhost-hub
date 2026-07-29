@@ -78,6 +78,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Detects likely secret keys for masking while keeping imported and exported values out of logs.
   - Runs project or configured workspace scripts once with validated temporary variables layered over their selected/default profile without changing saved configuration.
   - Keeps temporary variables for a managed restart of that run, then removes them when the service is stopped and started normally.
+- Added service-start port conflict protection:
+  - Checks configured ports, `PORT` environment values, and explicit `--port` command arguments before direct or workspace services start.
+  - Enforces the same check in Rust immediately before process creation so frontend callers cannot accidentally bypass it.
+  - Identifies the listening address, process name, and PID when the operating system exposes them.
+  - Lets users cancel, explicitly start anyway, or terminate known port owners and retry.
+  - Adds a persisted expected-port field to workspace services for commands whose port cannot be inferred safely.
 - Added native JavaScript package management to Project Detail:
   - Reads runtime, development, peer, and optional dependencies from `package.json` and compares them with installed top-level package versions.
   - Detects npm, pnpm, Yarn, and Bun from lockfiles or the manifest declaration.

@@ -53,7 +53,7 @@ This backlog captures the current product direction in implementation order. Kee
 - [x] Combine socket inspection with output-detected ports and URLs.
 - [x] Open detected local URLs from workspace rows, the ports view, and command palette.
 - [x] Reject non-local URLs in the backend browser-opening command.
-- [ ] Detect port conflicts before starting a service.
+- [x] Detect port conflicts before starting a service, with owner details and explicit recovery actions.
 - [ ] Add explicit user-managed watched ports.
 
 ### Persist app preferences

@@ -29,6 +29,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::scan_ports,
+            commands::check_port_conflicts,
             commands::get_processes,
             commands::kill_process,
             commands::start_service,

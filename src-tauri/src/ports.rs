@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::process::{Command, Output};
+use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LivePort {
@@ -15,11 +16,51 @@ pub struct LivePort {
 /// desktop platform. Output parsing stays separate because ss, lsof, and
 /// Windows netstat do not share a format.
 pub fn scan_live_ports() -> Vec<LivePort> {
-    let mut ports = scan_platform_ports();
+    let mut ports = scan_all_live_ports();
     ports.retain(|port| port.port >= 1024);
+    ports
+}
+
+pub fn find_port_conflicts(expected_ports: &[u16]) -> Vec<LivePort> {
+    find_conflicts_in(expected_ports, scan_all_live_ports())
+}
+
+fn scan_all_live_ports() -> Vec<LivePort> {
+    let mut ports = scan_platform_ports();
+    enrich_process_names(&mut ports);
     ports.sort_by_key(|port| (port.port, port.pid.is_none()));
     ports.dedup_by_key(|port| port.port);
     ports
+}
+
+fn find_conflicts_in(expected_ports: &[u16], live_ports: Vec<LivePort>) -> Vec<LivePort> {
+    let expected = expected_ports.iter().copied().collect::<std::collections::HashSet<_>>();
+    live_ports
+        .into_iter()
+        .filter(|port| expected.contains(&port.port))
+        .collect()
+}
+
+fn enrich_process_names(ports: &mut [LivePort]) {
+    let missing = ports
+        .iter()
+        .filter(|port| port.pid.is_some() && port.process_name.is_none())
+        .count();
+    if missing == 0 {
+        return;
+    }
+    let mut system = System::new_with_specifics(
+        RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
+    );
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    for port in ports {
+        if port.process_name.is_none() {
+            port.process_name = port
+                .pid
+                .and_then(|pid| system.process(Pid::from_u32(pid)))
+                .map(|process| process.name().to_string_lossy().to_string());
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -317,5 +358,20 @@ mod tests {
         assert_eq!(port_from_local_url("http://127.0.0.1:3000"), Some(3000));
         assert_eq!(port_from_local_url("https://[::1]:8443/app"), Some(8443));
         assert_eq!(port_from_local_url("https://localhost"), None);
+    }
+
+    #[test]
+    fn returns_only_requested_live_port_conflicts() {
+        let conflicts = find_conflicts_in(
+            &[5173, 8080, 5173],
+            vec![
+                live_port("127.0.0.1".to_string(), 5173, Some(42), Some("node".to_string())),
+                live_port("0.0.0.0".to_string(), 3000, Some(43), Some("api".to_string())),
+            ],
+        );
+
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].port, 5173);
+        assert_eq!(conflicts[0].pid, Some(42));
     }
 }
