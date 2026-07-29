@@ -233,6 +233,7 @@ npm run test:watch
 
 - Editable environment profiles per workspace item
 - SSH tunneling + remote project discovery
+- [Localhost Companion](docs/LOCALHOST_COMPANION.md), a focused Android remote after desktop parity
 - Git actions (commit/pull/push) with OAuth device flow
 - Pluggable script types (Docker compose, Make targets, etc.)
 - Telemetry opt-in for better error diagnostics

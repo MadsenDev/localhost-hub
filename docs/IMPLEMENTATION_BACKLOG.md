@@ -202,3 +202,17 @@ This backlog captures the current product direction in implementation order. Kee
 - Use GitHub APIs only for GitHub metadata and remote intelligence.
 - Avoid overengineering; use `git2` where useful and system `git` where more reliable.
 - Preserve a Linux-native, fast, information-dense workflow.
+
+## Post-Parity: Localhost Companion
+
+See [Localhost Companion](LOCALHOST_COMPANION.md).
+
+- [ ] Extract reusable Rust application services beneath Tauri commands.
+- [ ] Define the Companion API threat model.
+- [ ] Add opt-in LAN server lifecycle.
+- [ ] Add QR pairing with revocable device credentials.
+- [ ] Add mDNS discovery via `_localhost-hub._tcp.local`.
+- [ ] Expose read-only project, Git status, port, and log APIs.
+- [ ] Expose permission-scoped service and workspace controls.
+- [ ] Translate verified LAN-reachable development URLs for open-on-phone.
+- [ ] Build the Android/Compose 0.1 client only after desktop core parity.
