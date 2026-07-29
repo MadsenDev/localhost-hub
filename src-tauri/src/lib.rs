@@ -8,6 +8,7 @@ mod github;
 mod services;
 mod scaffold;
 mod health;
+mod packages;
 
 use tauri::Manager;
 
@@ -42,6 +43,8 @@ pub fn run() {
             commands::find_default_workspace_roots,
             commands::create_project,
             commands::analyze_repository_health,
+            commands::get_project_packages,
+            commands::run_package_action,
             commands::get_git_status,
             commands::get_git_diff,
             commands::stage_git_files,

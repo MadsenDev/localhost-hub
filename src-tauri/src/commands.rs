@@ -30,6 +30,10 @@ use crate::scaffold::{
     create_project as scaffold_project, CreateProjectPayload, CreateProjectResult,
 };
 use crate::health::{analyze_repositories, RepositoryHealth};
+use crate::packages::{
+    inspect_project as inspect_project_packages, run_action as execute_package_action,
+    PackageActionPayload, PackageActionResult, ProjectPackages,
+};
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -325,6 +329,20 @@ pub async fn analyze_repository_health(
     tauri::async_runtime::spawn_blocking(move || analyze_repositories(paths))
         .await
         .map_err(|error| format!("Repository health analysis failed: {error}"))
+}
+
+#[tauri::command]
+pub async fn get_project_packages(path: String) -> Result<ProjectPackages, String> {
+    tauri::async_runtime::spawn_blocking(move || inspect_project_packages(path))
+        .await
+        .map_err(|error| format!("Package inspection failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn run_package_action(
+    payload: PackageActionPayload,
+) -> Result<PackageActionResult, String> {
+    execute_package_action(payload).await
 }
 
 // ── Shell integration ─────────────────────────────────────────────────────────

@@ -75,6 +75,17 @@ This backlog captures the current product direction in implementation order. Kee
 - [ ] Detect Docker/devcontainer files.
 - [ ] Detect languages and dependency manifests.
 
+### Package management
+
+- [x] Read JavaScript dependency groups and installed top-level versions in Rust.
+- [x] Detect npm, pnpm, Yarn, and Bun from lockfiles or `packageManager`.
+- [x] Install all dependencies and add runtime/development packages.
+- [x] Update and remove individual packages.
+- [x] Run package audits and outdated checks without misclassifying findings as execution errors.
+- [x] Regenerate package-manager lockfiles.
+- [ ] Add structured, package-manager-independent audit and outdated result parsing.
+- [ ] Add guarded bulk update and audit-fix flows.
+
 ### Project structure cleanup
 
 - [x] Decide whether `dist/` should be committed or ignored consistently.

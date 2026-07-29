@@ -72,6 +72,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Validates environment keys in Rust, extends the inherited system environment, and preserves the same environment snapshot across managed restarts.
   - Keeps profile values out of Hub lifecycle events while documenting that locally stored secret-marked values are masked rather than encrypted.
   - Preserves compatibility with existing configuration files that predate environment profiles.
+- Added native JavaScript package management to Project Detail:
+  - Reads runtime, development, peer, and optional dependencies from `package.json` and compares them with installed top-level package versions.
+  - Detects npm, pnpm, Yarn, and Bun from lockfiles or the manifest declaration.
+  - Installs project dependencies, adds runtime or development packages, updates and removes packages, audits dependencies, checks outdated versions, and regenerates lockfiles.
+  - Runs package managers directly from Rust with typed arguments, input validation, bounded execution time, and capped command output instead of shell interpolation.
+  - Treats audit and outdated non-zero exit codes as valid reports while preserving real mutation failures.
 - Refined the Localhost Companion direction from the supplied design prototype:
   - Fixed the implementation target as a native Kotlin and Jetpack Compose Android app; the HTML prototype remains a design reference only.
   - Captured its pairing, permission, Home, Projects, Logs, Ports, confirmation, and crash-alert flows.
