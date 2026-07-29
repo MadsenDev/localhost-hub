@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Began the `0.9.x` Tauri unification in the canonical `localhost-hub` repository:
+  - Ported the newer Localhost Hub V2 interface to React 19, Vite 7, and the Tauri 2 desktop shell.
+  - Added native Rust modules and Tauri commands for projects, processes, services, ports, workspaces, Git, GitHub, configuration, and project scaffolding.
+- Added recursive workspace and project discovery in Rust:
+  - Detects JavaScript, TypeScript, Rust, Go, Python, Ruby, and PHP projects from their manifests.
+  - Detects frameworks, package managers, runnable scripts, Git roots, and environment files.
+  - Supports configurable workspace roots, scan depth, and ignored directories.
+- Added Rust/Tokio-managed development services:
+  - Start, stop, restart, and terminate real project commands.
+  - Stream stdout, stderr, lifecycle events, detected URLs, and exit state to the interface.
+  - Report PID, CPU, memory, uptime, ports, and URLs for managed services.
+- Added first-class workspace orchestration:
+  - Create named workspaces containing services from multiple repositories.
+  - Start services in parallel or sequential order.
+  - Stop all services, inspect combined runtime state, and filter combined logs.
+- Added unified port and localhost URL detection:
+  - Combines listening-socket inspection with URLs parsed from service output.
+  - Associates detected ports and URLs with managed service processes.
+  - Normalizes and safely opens local HTTP and HTTPS URLs.
+- Added native Git support with `git2`:
+  - Branch, clean/dirty, staged, unstaged, untracked, conflict, ahead/behind, and latest-commit status.
+  - Worktree and staged diffs, file staging and unstaging, and local commits.
+  - Branch creation, checkout, and deletion.
+  - Commit history plus remote listing, add, rename, and removal.
+  - Fetch, fast-forward pull, and push with explicit remote selection and non-interactive authentication behavior.
+- Added the project creation workflow to the V2 interface:
+  - React/Vite, Node HTTP, and minimal starters in JavaScript or TypeScript.
+  - npm, pnpm, yarn, and Bun package-manager support.
+  - Optional Tailwind CSS v4, icon packages, additional dependencies, development dependencies, and custom scripts.
+  - Optional README generation, Git initialization, dependency installation, and automatic project rescan.
+  - Rust-owned input validation and filesystem generation, including path traversal and existing-target protection.
+- Added Localhost Companion product and architecture notes in `docs/LOCALHOST_COMPANION.md`, defining a focused Android remote for services, workspaces, logs, ports, and basic Git state after desktop parity.
+- Added GitHub device-flow and repository-awareness foundations carried forward from the V2 architecture.
+
+### Changed
+
+- Established `MadsenDev/localhost-hub` as the canonical active repository and the original Hub feature set as the behavioral parity reference.
+- Moved operating-system work and long-running process ownership behind Rust service boundaries while keeping React responsible for interface and presentation state.
+- Kept Git and GitHub as separate product domains: local repository operations use `git2`; remote platform information uses the GitHub integration.
+- Reworked the Repos view around detected local projects, runnable scripts, native Git controls, and workspace service creation.
+- Set the migration version line to `0.9.0-alpha`, preserving `0.8.x` as the final Electron-first line and reserving `1.0.0` for the unified production release.
+
+### Security
+
+- Rejects unsafe project names, path traversal, invalid package specifications, and attempts to overwrite existing project paths.
+- Restricts browser opening to normalized local HTTP and HTTPS URLs.
+- Runs package installation without a shell and disables interactive Git credential prompts for background network operations.
+
 ## [0.8.0] - 2025-12-19
 
 ### Added
@@ -158,4 +208,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.2.0]: https://github.com/MadsenDev/localhost-hub/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/MadsenDev/localhost-hub/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/MadsenDev/localhost-hub/releases/tag/v0.1.0
-

@@ -21,6 +21,9 @@ use crate::workspace::{
 use crate::config::{AppConfig, load as load_cfg, save as save_cfg};
 use crate::github::{fetch_repos, request_device_code, poll_token, DeviceCodeResponse, GitHubRepo, GitHubUser};
 use crate::services::{terminate_process_tree, ManagedServiceInfo, ServiceManager};
+use crate::scaffold::{
+    create_project as scaffold_project, CreateProjectPayload, CreateProjectResult,
+};
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -284,6 +287,11 @@ pub fn find_default_workspace_roots() -> Vec<String> {
         .filter(|p| p.is_dir())
         .map(|p| p.to_string_lossy().to_string())
         .collect()
+}
+
+#[tauri::command]
+pub async fn create_project(payload: CreateProjectPayload) -> Result<CreateProjectResult, String> {
+    scaffold_project(payload).await
 }
 
 // ── Shell integration ─────────────────────────────────────────────────────────
