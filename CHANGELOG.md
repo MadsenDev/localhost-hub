@@ -78,6 +78,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Installs project dependencies, adds runtime or development packages, updates and removes packages, audits dependencies, checks outdated versions, and regenerates lockfiles.
   - Runs package managers directly from Rust with typed arguments, input validation, bounded execution time, and capped command output instead of shell interpolation.
   - Treats audit and outdated non-zero exit codes as valid reports while preserving real mutation failures.
+- Expanded the live log viewer:
+  - Filters combined output by service and severity, with bulk source selection and per-level counts.
+  - Searches service names, source identifiers, and messages, including `/` focus and Escape-to-clear shortcuts.
+  - Copies or exports exactly the visible filtered lines with timestamps, severity, and resolved service names.
+  - Uses real millisecond timestamps, keeps a larger bounded in-memory history, and renders untrusted process output as text rather than injected HTML.
 - Refined the Localhost Companion direction from the supplied design prototype:
   - Fixed the implementation target as a native Kotlin and Jetpack Compose Android app; the HTML prototype remains a design reference only.
   - Captured its pairing, permission, Home, Projects, Logs, Ports, confirmation, and crash-alert flows.

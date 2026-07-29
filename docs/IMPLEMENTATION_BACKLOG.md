@@ -26,7 +26,10 @@ This backlog captures the current product direction in implementation order. Kee
 - [x] Stream stdout/stderr from Rust to frontend.
 - [x] Store per-service logs in frontend state.
 - [x] Add workspace-combined logs with workspace-scoped source filtering.
-- [ ] Add timestamps, filtering, search, error highlighting, copy/export.
+- [x] Add millisecond timestamps and severity-based error/warning highlighting.
+- [x] Add source/level filtering and message/service search.
+- [x] Copy and export the currently visible filtered log lines.
+- [ ] Persist bounded log history and service run history across app restarts.
 
 ### Workspace orchestration
 

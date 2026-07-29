@@ -47,6 +47,7 @@
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@babel/parser": "^7.28.5",
     "@babel/traverse": "^7.28.5",
+    "@tauri-apps/plugin-fs": "^2.5.1",
     "fast-glob": "^3.3.3",
     "framer-motion": "^12.23.24",
     "react": "^19.2.0",

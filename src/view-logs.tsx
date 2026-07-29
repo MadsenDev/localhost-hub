@@ -2,12 +2,15 @@ import React from 'react';
 import type { Workspace, Service, LogLine } from './types';
 import { Ic } from './icons';
 
+type LogLevel = LogLine['kind'];
+
 interface LogsViewProps {
   workspaces: Workspace[];
   services: Service[];
   logs: LogLine[];
   sources: Record<string, boolean>;
   toggleSource: (id: string) => void;
+  setAllSources: (enabled: boolean) => void;
   search: string;
   setSearch: (q: string) => void;
   autoscroll: boolean;
@@ -15,8 +18,23 @@ interface LogsViewProps {
   clearLogs: () => void;
 }
 
-export function LogsView({ workspaces, services, logs, sources, toggleSource, search, setSearch, autoscroll, setAutoscroll, clearLogs }: LogsViewProps) {
+const LOG_LEVELS: Array<{ id: LogLevel; label: string }> = [
+  { id: 'error', label: 'Errors' },
+  { id: 'warn', label: 'Warnings' },
+  { id: 'ok', label: 'Success' },
+  { id: 'info', label: 'Info' },
+];
+
+export function LogsView({ workspaces, services, logs, sources, toggleSource, setAllSources, search, setSearch, autoscroll, setAutoscroll, clearLogs }: LogsViewProps) {
   const bodyRef = React.useRef<HTMLDivElement>(null);
+  const searchRef = React.useRef<HTMLInputElement>(null);
+  const [levels, setLevels] = React.useState<Record<LogLevel, boolean>>({
+    error: true,
+    warn: true,
+    ok: true,
+    info: true,
+  });
+  const [actionStatus, setActionStatus] = React.useState('');
   const wsById = Object.fromEntries(workspaces.map((w) => [w.id, w]));
   const svcById = Object.fromEntries(services.map((s) => [s.id, s]));
   const workspaceServiceIds = new Set(workspaces.flatMap(workspace => workspace.services.map(service => service.id)));
@@ -28,11 +46,76 @@ export function LogsView({ workspaces, services, logs, sources, toggleSource, se
     }
   }, [logs.length, autoscroll]);
 
+  React.useEffect(() => {
+    function handleShortcut(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const isTyping = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
+      if (event.key === '/' && !isTyping) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      } else if (event.key === 'Escape' && document.activeElement === searchRef.current) {
+        setSearch('');
+        searchRef.current?.blur();
+      }
+    }
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [setSearch]);
+
   const filtered = logs.filter((l) => {
     if (!sources[l.src]) return false;
+    if (!levels[l.kind]) return false;
     if (!search) return true;
-    return l.msg.toLowerCase().includes(search.toLowerCase());
+    const query = search.toLowerCase();
+    return l.msg.toLowerCase().includes(query)
+      || l.src.toLowerCase().includes(query)
+      || svcById[l.src]?.name.toLowerCase().includes(query);
   });
+  const levelCounts = Object.fromEntries(
+    LOG_LEVELS.map(level => [level.id, logs.filter(line => line.kind === level.id).length]),
+  ) as Record<LogLevel, number>;
+  const visibleText = serializeLogs(filtered, svcById);
+
+  async function copyVisible() {
+    if (!visibleText) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(visibleText);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = visibleText;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand('copy');
+        textarea.remove();
+        if (!copied) throw new Error('clipboard unavailable');
+      }
+      setActionStatus(`Copied ${filtered.length} visible lines`);
+    } catch {
+      setActionStatus('Could not copy logs');
+    }
+  }
+
+  async function exportVisible() {
+    if (!visibleText) return;
+    try {
+      const [{ save }, { writeTextFile }] = await Promise.all([
+        import('@tauri-apps/plugin-dialog'),
+        import('@tauri-apps/plugin-fs'),
+      ]);
+      const path = await save({
+        defaultPath: `localhost-hub-logs-${new Date().toISOString().slice(0, 10)}.log`,
+        filters: [{ name: 'Log file', extensions: ['log', 'txt'] }],
+      });
+      if (!path) return;
+      await writeTextFile(path, `${visibleText}\n`);
+      setActionStatus(`Exported ${filtered.length} visible lines`);
+    } catch {
+      setActionStatus('Could not export logs');
+    }
+  }
 
   return (
     <div className="view"><div className="view-inner" style={{ paddingBottom: 24 }}>
@@ -46,6 +129,8 @@ export function LogsView({ workspaces, services, logs, sources, toggleSource, se
           <div className="tb-search" style={{ width: 280, height: 28 }}>
             <span className="icon"><Ic.Search size={12} /></span>
             <input
+              ref={searchRef}
+              aria-label="Search logs"
               style={{ background: "transparent", border: 0, outline: "none", color: "var(--fg-1)", fontFamily: "var(--font-mono)", fontSize: 11.5, width: "100%" }}
               value={search}
               placeholder="Search logs…"
@@ -53,12 +138,21 @@ export function LogsView({ workspaces, services, logs, sources, toggleSource, se
             />
             <span className="kbd" style={{ marginRight: 4 }}>/</span>
           </div>
+          <button className="btn sm" onClick={() => void copyVisible()} disabled={filtered.length === 0}>Copy visible</button>
+          <button className="btn sm" onClick={() => void exportVisible()} disabled={filtered.length === 0}>Export</button>
           <button className="btn sm" onClick={clearLogs}><Ic.Close size={11} /> Clear</button>
         </div>
       </div>
 
       <div className="logs-shell" style={{ height: "calc(100vh - 220px)" }}>
         <div className="logs-filters">
+          <div className="logs-filter-actions">
+            <span>Sources</span>
+            <span>
+              <button type="button" onClick={() => setAllSources(true)}>All</button>
+              <button type="button" onClick={() => setAllSources(false)}>None</button>
+            </span>
+          </div>
           {workspaces.map((g) => (
             <div key={g.id}>
               <div style={{ padding: "10px 12px 4px", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: "0.12em", display: "flex", alignItems: "center", gap: 6 }}>
@@ -109,8 +203,20 @@ export function LogsView({ workspaces, services, logs, sources, toggleSource, se
               <span>{Object.values(sources).filter(Boolean).length} sources</span>
             </div>
             <div className="right">
+              <div className="log-level-filters" aria-label="Log level filters">
+                {LOG_LEVELS.map(level => (
+                  <button
+                    type="button"
+                    key={level.id}
+                    className={`log-level-filter ${level.id}${levels[level.id] ? ' active' : ''}`}
+                    aria-pressed={levels[level.id]}
+                    onClick={() => setLevels(current => ({ ...current, [level.id]: !current[level.id] }))}
+                  >
+                    {level.label} <span>{levelCounts[level.id]}</span>
+                  </button>
+                ))}
+              </div>
               <button className="btn sm ghost" onClick={() => setAutoscroll(!autoscroll)}>{autoscroll ? <><Ic.Pause size={10} /> Unlock</> : <><Ic.Play size={10} /> Tail</>}</button>
-              <button className="btn sm ghost"><Ic.External size={11} /></button>
             </div>
           </div>
           <div className="logs-body" ref={bodyRef}>
@@ -130,14 +236,14 @@ export function LogsView({ workspaces, services, logs, sources, toggleSource, se
                     <span style={{ width: 6, height: 6, borderRadius: 99, background: wsSwatch }} />
                     {svc ? svc.name : l.src}
                   </span>
-                  <span className="msg" dangerouslySetInnerHTML={{ __html: highlight(l.msg, search) }} />
+                  <span className="msg"><HighlightedMessage message={l.msg} query={search} /></span>
                 </div>
               );
             })}
           </div>
           <div className="logs-foot">
-            <span>Filters · workspace · source · level</span>
-            <span>{autoscroll ? "▼ tailing" : "scroll to top to unlock"}</span>
+            <span>{actionStatus || 'Filters · workspace · source · level'}</span>
+            <span>{autoscroll ? "▼ tailing" : "tail unlocked"}</span>
           </div>
         </div>
       </div>
@@ -145,15 +251,23 @@ export function LogsView({ workspaces, services, logs, sources, toggleSource, se
   );
 }
 
-function highlight(msg: string, q: string): string {
-  let s = msg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  s = s.replace(/(http:\/\/[^\s]+)/g, '<span class="kw">$1</span>');
-  s = s.replace(/(:\d{2,5}\b)/g, '<span class="num">$1</span>');
-  s = s.replace(/\b(\d+(?:\.\d+)?)\s?(ms|MB|GB|s)\b/g, '<span class="num">$1$2</span>');
-  s = s.replace(/('[^']*')/g, '<span class="str">$1</span>');
-  if (q) {
-    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    s = s.replace(new RegExp("(" + escaped + ")", "ig"), '<mark style="background: var(--warm-soft); color: var(--warm); padding: 0 2px; border-radius: 2px;">$1</mark>');
-  }
-  return s;
+function HighlightedMessage({ message, query }: { message: string; query: string }) {
+  if (!query) return <>{message}</>;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = message.split(new RegExp(`(${escaped})`, 'ig'));
+  return (
+    <>
+      {parts.map((part, index) => (
+        part.toLowerCase() === query.toLowerCase()
+          ? <mark className="log-search-match" key={index}>{part}</mark>
+          : <React.Fragment key={index}>{part}</React.Fragment>
+      ))}
+    </>
+  );
+}
+
+export function serializeLogs(logs: LogLine[], services: Record<string, Service>): string {
+  return logs
+    .map(line => `[${line.ts}] [${line.kind.toUpperCase()}] [${services[line.src]?.name ?? line.src}] ${line.msg}`)
+    .join('\n');
 }
