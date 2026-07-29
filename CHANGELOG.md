@@ -72,6 +72,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Validates environment keys in Rust, extends the inherited system environment, and preserves the same environment snapshot across managed restarts.
   - Keeps profile values out of Hub lifecycle events while documenting that locally stored secret-marked values are masked rather than encrypted.
   - Preserves compatibility with existing configuration files that predate environment profiles.
+- Added safe environment-file workflows and temporary run overrides:
+  - Imports bounded `.env`, `.env.*`, and `*.env` files through a Rust parser without shell or variable expansion, preserving real values in a new unsaved profile for review.
+  - Exports reviewed profiles through Rust with escaped values, duplicate-key validation, symbolic-link protection, and owner-only permissions on Unix.
+  - Detects likely secret keys for masking while keeping imported and exported values out of logs.
+  - Runs project or configured workspace scripts once with validated temporary variables layered over their selected/default profile without changing saved configuration.
+  - Keeps temporary variables for a managed restart of that run, then removes them when the service is stopped and started normally.
 - Added native JavaScript package management to Project Detail:
   - Reads runtime, development, peer, and optional dependencies from `package.json` and compares them with installed top-level package versions.
   - Detects npm, pnpm, Yarn, and Bun from lockfiles or the manifest declaration.

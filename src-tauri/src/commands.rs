@@ -34,6 +34,9 @@ use crate::packages::{
     inspect_project as inspect_project_packages, run_action as execute_package_action,
     PackageActionPayload, PackageActionResult, ProjectPackages,
 };
+use crate::env_files::{
+    export_file as write_env_file, import_file as parse_env_file, EnvFileImport, EnvFileVariable,
+};
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -375,37 +378,14 @@ pub fn open_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
-// ── Env file ──────────────────────────────────────────────────────────────────
+// ── Environment files ─────────────────────────────────────────────────────────
 
-#[derive(serde::Serialize)]
-pub struct EnvEntry {
-    pub key: String,
-    pub value: String,
-    pub redacted: bool,
+#[tauri::command]
+pub fn import_env_file(path: String) -> Result<EnvFileImport, String> {
+    parse_env_file(path)
 }
 
 #[tauri::command]
-pub fn read_env_file(path: String) -> Vec<EnvEntry> {
-    let Ok(content) = std::fs::read_to_string(&path) else {
-        return vec![];
-    };
-
-    let secret_hints = ["secret", "key", "token", "password", "pass", "pwd", "auth", "api_key", "private"];
-
-    content
-        .lines()
-        .filter(|l| !l.starts_with('#') && l.contains('='))
-        .filter_map(|l| {
-            let (key, rest) = l.split_once('=')?;
-            let key = key.trim().to_string();
-            let value = rest.trim().trim_matches('"').trim_matches('\'').to_string();
-            let lower = key.to_lowercase();
-            let redacted = secret_hints.iter().any(|h| lower.contains(h));
-            Some(EnvEntry {
-                key,
-                value: if redacted { "•••••••••".to_string() } else { value },
-                redacted,
-            })
-        })
-        .collect()
+pub fn export_env_file(path: String, variables: Vec<EnvFileVariable>) -> Result<(), String> {
+    write_env_file(path, variables)
 }

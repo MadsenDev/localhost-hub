@@ -41,7 +41,9 @@ This backlog captures the current product direction in implementation order. Kee
 - [ ] Add configurable startup delays and readiness/health checks.
 - [ ] Add service dependencies and dependency-aware startup ordering.
 - [x] Add project environment profiles with workspace-service selection and Rust-owned process injection.
-- [ ] Add safe `.env` import/export and per-run temporary overrides.
+- [x] Add bounded Rust-owned `.env` import/export without shell expansion.
+- [x] Add per-run temporary overrides layered over the selected/default profile.
+- [ ] Add optional encrypted-at-rest storage for secret-marked profile values.
 
 ### Ports and local URLs
 

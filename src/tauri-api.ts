@@ -76,10 +76,15 @@ export interface WorkspaceGroup {
   projects: DetectedProject[];
 }
 
-export interface EnvEntry {
+export interface EnvFileVariable {
   key: string;
   value: string;
-  redacted: boolean;
+  is_secret: boolean;
+}
+
+export interface EnvFileImport {
+  path: string;
+  variables: EnvFileVariable[];
 }
 
 export interface ServiceEvent {
@@ -391,7 +396,11 @@ export const tauriApi = {
 
   openUrl: (url: string) => invoke<void>("open_url", { url }),
 
-  readEnvFile: (path: string) => invoke<EnvEntry[]>("read_env_file", { path }),
+  importEnvFile: (path: string) =>
+    invoke<EnvFileImport>("import_env_file", { path }),
+
+  exportEnvFile: (path: string, variables: EnvFileVariable[]) =>
+    invoke<void>("export_env_file", { path, variables }),
 };
 
 export async function listenToServiceEvents(handler: (event: ServiceEvent) => void): Promise<() => void> {

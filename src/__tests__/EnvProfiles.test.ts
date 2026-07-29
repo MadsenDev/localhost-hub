@@ -39,6 +39,20 @@ describe('environment profiles', () => {
     });
   });
 
+  it('applies temporary overrides after the selected profile without mutating it', () => {
+    expect(toServiceEnvironment(profiles[0], [
+      { key: 'API_URL', value: 'http://localhost:9000', is_secret: false },
+      { key: 'TRACE', value: '1', is_secret: false },
+    ])).toEqual({
+      inherit_system: true,
+      vars: [
+        { key: 'API_URL', value: 'http://localhost:9000' },
+        { key: 'TRACE', value: '1' },
+      ],
+    });
+    expect(profiles[0].vars[0].value).toBe('http://localhost:8080');
+  });
+
   it('keeps only one project default and rejects duplicate keys', () => {
     const normalized = normalizeProjectProfiles([], '/code/app', profiles.map(profile => ({
       ...profile,
