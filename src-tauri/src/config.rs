@@ -81,6 +81,8 @@ pub struct StoredService {
     pub order: usize,
     #[serde(default)]
     pub env_profile_id: Option<String>,
+    #[serde(default)]
+    pub expected_port: Option<u16>,
 }
 
 fn default_run_mode() -> String {
@@ -177,5 +179,22 @@ mod tests {
         .expect("deserialize old config");
 
         assert!(config.env_profiles.is_empty());
+    }
+
+    #[test]
+    fn older_workspace_services_default_to_no_expected_port() {
+        let service: StoredService = serde_json::from_str(
+            r#"{
+                "id": "web",
+                "name": "web",
+                "repo_path": "/code/web",
+                "script": "dev",
+                "cmd": "npm run dev"
+            }"#,
+        )
+        .expect("deserialize old service");
+
+        assert_eq!(service.expected_port, None);
+        assert_eq!(service.run_mode, "parallel");
     }
 }

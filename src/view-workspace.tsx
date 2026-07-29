@@ -20,7 +20,12 @@ interface WorkspaceViewProps {
   onUpdateService: (
     wsId: string,
     svcId: string,
-    patch: { run_mode?: 'parallel' | 'sequential'; order?: number; env_profile_id?: string | null },
+    patch: {
+      run_mode?: 'parallel' | 'sequential';
+      order?: number;
+      env_profile_id?: string | null;
+      expected_port?: number | null;
+    },
   ) => void;
   onAddService: () => void;
   repos: Repo[];
@@ -250,7 +255,26 @@ export function WorkspaceView({
                         {s.url ? s.url.replace(/^https?:\/\//, '') : `localhost:${s.port!}`}
                       </a>
                     </>
-                  ) : <span style={{ color: 'var(--fg-4)' }}>—</span>}
+                  ) : (
+                    <input
+                      className="input mono"
+                      aria-label={`${s.name} expected port`}
+                      title="Expected port checked before this service starts"
+                      inputMode="numeric"
+                      placeholder="Expected"
+                      value={s.expected_port ?? ''}
+                      onChange={event => {
+                        const value = event.target.value.trim();
+                        const port = Number(value);
+                        onUpdateService(w.id, s.id, {
+                          expected_port: value && Number.isInteger(port) && port >= 1 && port <= 65535
+                            ? port
+                            : null,
+                        });
+                      }}
+                      style={{ width: 84, height: 26, fontSize: 10.5 }}
+                    />
+                  )}
                 </div>
                 <div className="svc-uptime">{formatUptime(s.uptime)}</div>
                 <div className="svc-actions">

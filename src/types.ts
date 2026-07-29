@@ -18,6 +18,7 @@ export interface Service {
   run_mode?: 'parallel' | 'sequential';
   order?: number;
   env_profile_id?: string | null;
+  expected_port?: number | null;
   _ws?: string;
 }
 
@@ -234,6 +235,7 @@ export interface StoredService {
   run_mode?: 'parallel' | 'sequential';
   order?: number;
   env_profile_id?: string | null;
+  expected_port?: number | null;
 }
 
 export interface StoredWorkspace {

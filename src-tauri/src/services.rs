@@ -1,4 +1,6 @@
-use crate::ports::{extract_local_urls, port_from_local_url, scan_live_ports};
+use crate::ports::{
+    extract_local_urls, find_port_conflicts, port_from_local_url, scan_live_ports, LivePort,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -25,6 +27,8 @@ struct ManagedProcess {
     cwd: String,
     cmd: String,
     environment: ServiceEnvironment,
+    expected_ports: Vec<u16>,
+    allow_port_conflicts: bool,
     pid: u32,
     started_at_ms: u128,
     detected_urls: Arc<Mutex<Vec<String>>>,
@@ -115,6 +119,8 @@ impl ServiceManager {
         cwd: String,
         cmd: String,
         environment: ServiceEnvironment,
+        expected_ports: Vec<u16>,
+        allow_port_conflicts: bool,
     ) -> Result<u32, String> {
         self.start_with_sink(
             Arc::new(TauriEventSink(app)),
@@ -122,12 +128,14 @@ impl ServiceManager {
             cwd,
             cmd,
             environment,
+            expected_ports,
+            allow_port_conflicts,
         )
     }
 
     pub fn restart(&self, app: AppHandle, service_id: String) -> Result<u32, String> {
         let sink: Arc<dyn EventSink> = Arc::new(TauriEventSink(app));
-        let (cwd, cmd, environment, pid) = {
+        let (cwd, cmd, environment, expected_ports, allow_port_conflicts, pid) = {
             let children = self.children.lock().map_err(|e| e.to_string())?;
             let managed = children
                 .get(&service_id)
@@ -136,6 +144,8 @@ impl ServiceManager {
                 managed.cwd.clone(),
                 managed.cmd.clone(),
                 managed.environment.clone(),
+                managed.expected_ports.clone(),
+                managed.allow_port_conflicts,
                 managed.pid,
             )
         };
@@ -148,7 +158,15 @@ impl ServiceManager {
             code: None,
         });
         self.stop_with_sink(sink.clone(), service_id.clone(), false)?;
-        self.start_with_sink(sink, service_id, cwd, cmd, environment)
+        self.start_with_sink(
+            sink,
+            service_id,
+            cwd,
+            cmd,
+            environment,
+            expected_ports,
+            allow_port_conflicts,
+        )
     }
 
     pub fn stop(&self, app: AppHandle, service_id: String) -> Result<(), String> {
@@ -271,6 +289,8 @@ impl ServiceManager {
         cwd: String,
         cmd: String,
         environment: ServiceEnvironment,
+        mut expected_ports: Vec<u16>,
+        allow_port_conflicts: bool,
     ) -> Result<u32, String> {
         if service_id.trim().is_empty() {
             return Err("service id cannot be empty".to_string());
@@ -282,6 +302,9 @@ impl ServiceManager {
             return Err(format!("service directory does not exist: {cwd}"));
         }
         validate_environment(&environment)?;
+        expected_ports.retain(|port| *port > 0);
+        expected_ports.sort_unstable();
+        expected_ports.dedup();
 
         {
             let mut children = self.children.lock().map_err(|e| e.to_string())?;
@@ -297,6 +320,10 @@ impl ServiceManager {
             if stale {
                 children.remove(&service_id);
             }
+        }
+
+        if !allow_port_conflicts {
+            ensure_ports_available(&expected_ports)?;
         }
 
         sink.emit(ServiceEvent {
@@ -341,6 +368,8 @@ impl ServiceManager {
                     cwd,
                     cmd: cmd.clone(),
                     environment,
+                    expected_ports,
+                    allow_port_conflicts,
                     pid,
                     started_at_ms,
                     detected_urls: detected_urls.clone(),
@@ -430,6 +459,8 @@ impl ServiceManager {
             cwd.to_string(),
             cmd.to_string(),
             ServiceEnvironment::default(),
+            Vec::new(),
+            false,
         )
     }
 
@@ -439,7 +470,7 @@ impl ServiceManager {
         sink: Arc<dyn EventSink>,
         service_id: &str,
     ) -> Result<u32, String> {
-        let (cwd, cmd, environment, pid) = {
+        let (cwd, cmd, environment, expected_ports, allow_port_conflicts, pid) = {
             let children = self.children.lock().map_err(|e| e.to_string())?;
             let managed = children
                 .get(service_id)
@@ -448,6 +479,8 @@ impl ServiceManager {
                 managed.cwd.clone(),
                 managed.cmd.clone(),
                 managed.environment.clone(),
+                managed.expected_ports.clone(),
+                managed.allow_port_conflicts,
                 managed.pid,
             )
         };
@@ -459,7 +492,15 @@ impl ServiceManager {
             code: None,
         });
         self.stop_with_sink(sink.clone(), service_id.to_string(), false)?;
-        self.start_with_sink(sink, service_id.to_string(), cwd, cmd, environment)
+        self.start_with_sink(
+            sink,
+            service_id.to_string(),
+            cwd,
+            cmd,
+            environment,
+            expected_ports,
+            allow_port_conflicts,
+        )
     }
 
     #[cfg(test)]
@@ -470,6 +511,34 @@ impl ServiceManager {
     ) -> Result<(), String> {
         self.stop_with_sink(sink, service_id.to_string(), true)
     }
+}
+
+fn ensure_ports_available(expected_ports: &[u16]) -> Result<(), String> {
+    let conflicts = find_port_conflicts(expected_ports);
+    if conflicts.is_empty() {
+        return Ok(());
+    }
+    Err(format_port_conflicts(&conflicts))
+}
+
+fn format_port_conflicts(conflicts: &[LivePort]) -> String {
+    let details = conflicts
+        .iter()
+        .map(|conflict| {
+            let owner = match (&conflict.process_name, conflict.pid) {
+                (Some(name), Some(pid)) => format!("{name} (PID {pid})"),
+                (Some(name), None) => name.clone(),
+                (None, Some(pid)) => format!("PID {pid}"),
+                (None, None) => "an unknown process".to_string(),
+            };
+            format!(
+                "{} is already used by {} on {}",
+                conflict.port, owner, conflict.bind_address
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    format!("Port conflict: {details}. Stop the owning process or explicitly start anyway.")
 }
 
 fn validate_environment(environment: &ServiceEnvironment) -> Result<(), String> {
@@ -943,6 +1012,8 @@ mod tests {
                 "/tmp".to_string(),
                 "printf '%s\\n' \"$LOCALHOST_HUB_ENV_TEST\"; sleep 10".to_string(),
                 environment,
+                Vec::new(),
+                false,
             )
             .expect("start");
 
@@ -964,6 +1035,22 @@ mod tests {
         manager
             .stop_for_test(sink, "environment")
             .expect("cleanup");
+    }
+
+    #[test]
+    fn describes_port_conflicts_with_available_owner_details() {
+        let message = format_port_conflicts(&[LivePort {
+            port: 5173,
+            pid: Some(21842),
+            process_name: Some("node".to_string()),
+            protocol: "tcp".to_string(),
+            bind_address: "127.0.0.1".to_string(),
+            url: "http://localhost:5173".to_string(),
+        }]);
+
+        assert!(message.contains("5173"));
+        assert!(message.contains("node (PID 21842)"));
+        assert!(message.contains("explicitly start anyway"));
     }
 
     #[test]
