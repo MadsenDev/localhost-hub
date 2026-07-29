@@ -1,5 +1,5 @@
 import React from 'react';
-import type { HubDataShape, Service, Session, LogLine, Workspace, Port, ServiceStatus, Repo, Script, StoredWorkspace, StoredService, GitStatus } from './types';
+import type { EnvProfile, HubDataShape, Service, Session, LogLine, Workspace, Port, ServiceStatus, Repo, Script, StoredWorkspace, StoredService, GitStatus } from './types';
 import { useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakColor, TweakButton } from './tweaks-panel';
 import { TitleBar } from './chrome';
 import { Sidebar } from './sidebar';
@@ -26,6 +26,7 @@ import {
   DIRECT_PROJECT_WORKSPACE,
   EXTERNAL_PROCESS_WORKSPACE,
 } from './project-runtime';
+import { normalizeProjectProfiles, resolveEnvProfile, toServiceEnvironment } from './env-profiles';
 
 const TWEAK_DEFAULTS = {
   theme: "charcoal",
@@ -143,6 +144,7 @@ function buildHubData(
         framework: '',
         run_mode: ss.run_mode ?? 'parallel',
         order: ss.order ?? index,
+        env_profile_id: ss.env_profile_id ?? null,
       };
     });
     return {
@@ -240,8 +242,10 @@ export default function App() {
   const [data, setData] = React.useState<HubDataShape>(EMPTY_HUB);
   const [repos, setRepos] = React.useState<Repo[]>([]);
   const [storedWorkspaces, setStoredWorkspaces] = React.useState<StoredWorkspace[]>([]);
+  const [envProfiles, setEnvProfiles] = React.useState<EnvProfile[]>([]);
   const liveGroupsRef = React.useRef<WorkspaceGroup[]>([]);
   const storedWsRef = React.useRef<StoredWorkspace[]>([]);
+  const envProfilesRef = React.useRef<EnvProfile[]>([]);
   const managedRuntimesRef = React.useRef<Record<string, ManagedRuntime>>({});
   const liveProcessesRef = React.useRef<ProcessInfo[]>([]);
   const livePortsRef = React.useRef<LivePort[]>([]);
@@ -280,6 +284,9 @@ export default function App() {
       if (!cancelled) {
         storedWsRef.current = userWs;
         setStoredWorkspaces(userWs);
+        const profiles = cfg?.env_profiles ?? [];
+        envProfilesRef.current = profiles;
+        setEnvProfiles(profiles);
         if (userWs.length > 0 && !ws) setWs(userWs[0].id);
       }
 
@@ -512,6 +519,17 @@ export default function App() {
     if (cfg) await githubAuth.saveConfig({ ...cfg, user_workspaces: next }).catch(() => {});
   }
 
+  async function saveProjectEnvProfiles(projectPath: string, profiles: EnvProfile[]) {
+    const next = normalizeProjectProfiles(envProfilesRef.current, projectPath, profiles);
+    const cfg = await githubAuth.loadConfig().catch(() => null);
+    if (cfg) {
+      await githubAuth.saveConfig({ ...cfg, env_profiles: next });
+    }
+    envProfilesRef.current = next;
+    setEnvProfiles(next);
+    toast(`Saved environment profiles`, "ok");
+  }
+
   function createWorkspace() {
     const idx = storedWsRef.current.length;
     const newWs: StoredWorkspace = {
@@ -594,7 +612,7 @@ export default function App() {
   function updateWorkspaceService(
     wsId: string,
     svcId: string,
-    patch: Partial<Pick<StoredService, 'run_mode' | 'order'>>,
+    patch: Partial<Pick<StoredService, 'run_mode' | 'order' | 'env_profile_id'>>,
   ) {
     saveWorkspaces(storedWsRef.current.map(w => w.id === wsId ? {
       ...w,
@@ -729,7 +747,8 @@ export default function App() {
     toast(`Starting ${svc.name}`, "info");
     try {
       if (!svc.repo_path) throw new Error("Missing repo path for service.");
-      await tauriApi.startService(svc.id, svc.repo_path, svc.cmd);
+      const profile = resolveEnvProfile(envProfilesRef.current, svc.repo_path, svc.env_profile_id);
+      await tauriApi.startService(svc.id, svc.repo_path, svc.cmd, toServiceEnvironment(profile));
     } catch (err) {
       setManagedServiceStatus(wsId, svcId, "failed");
       pushLog(svcId, String(err), "error");
@@ -755,7 +774,13 @@ export default function App() {
     pushLog(serviceId, `> ${script.cmd}`, "info");
     toast(`Starting ${project.name} · ${script.name}`, "info");
     try {
-      const pid = await tauriApi.startService(serviceId, project.path, script.cmd);
+      const profile = resolveEnvProfile(envProfilesRef.current, project.path);
+      const pid = await tauriApi.startService(
+        serviceId,
+        project.path,
+        script.cmd,
+        toServiceEnvironment(profile),
+      );
       const startedAt = Date.now();
       setManagedServiceStatus(DIRECT_PROJECT_WORKSPACE, serviceId, "running", pid);
       setManagedServices(current => [
@@ -879,6 +904,11 @@ export default function App() {
           cmd: service.cmd,
           run_mode: service.run_mode ?? "parallel",
           order: service.order ?? index,
+          environment: toServiceEnvironment(resolveEnvProfile(
+            envProfilesRef.current,
+            service.repo_path,
+            service.env_profile_id,
+          )),
         })),
       );
       result.started.forEach((serviceId) => {
@@ -1025,6 +1055,7 @@ export default function App() {
         onUpdateService={updateWorkspaceService}
         onAddService={() => setView("repos")}
         repos={repos}
+        envProfiles={envProfiles}
         onAddToWorkspace={addServiceToWorkspace}
       />
     );
@@ -1045,6 +1076,7 @@ export default function App() {
         onUpdateService={updateWorkspaceService}
         onAddService={() => setView("repos")}
         repos={repos}
+        envProfiles={envProfiles}
         onAddToWorkspace={addServiceToWorkspace}
       />
     );
@@ -1098,6 +1130,8 @@ export default function App() {
           onOpenEditor={openProjectInEditor}
           onConfigureScripts={() => setView("repos")}
           onManageGit={() => setView("repos")}
+          envProfiles={envProfiles.filter(profile => profile.project_path === proj.path)}
+          onSaveEnvProfiles={saveProjectEnvProfiles}
         />
       );
     }

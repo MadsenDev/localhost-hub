@@ -40,6 +40,7 @@ const defaultConfig = (): AppConfig => ({
   github_user: null,
   workspace_roots: [],
   user_workspaces: [],
+  env_profiles: [],
   appearance: {
     theme: 'charcoal',
     accent: '#4a78c4',

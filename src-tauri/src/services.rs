@@ -1,5 +1,5 @@
 use crate::ports::{extract_local_urls, port_from_local_url, scan_live_ports};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     io::{BufRead, BufReader},
@@ -24,9 +24,37 @@ struct ManagedProcess {
     child: Arc<Mutex<Child>>,
     cwd: String,
     cmd: String,
+    environment: ServiceEnvironment,
     pid: u32,
     started_at_ms: u128,
     detected_urls: Arc<Mutex<Vec<String>>>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ServiceEnvironmentVariable {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ServiceEnvironment {
+    #[serde(default = "default_true")]
+    pub inherit_system: bool,
+    #[serde(default)]
+    pub vars: Vec<ServiceEnvironmentVariable>,
+}
+
+impl Default for ServiceEnvironment {
+    fn default() -> Self {
+        Self {
+            inherit_system: true,
+            vars: Vec::new(),
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -86,18 +114,30 @@ impl ServiceManager {
         service_id: String,
         cwd: String,
         cmd: String,
+        environment: ServiceEnvironment,
     ) -> Result<u32, String> {
-        self.start_with_sink(Arc::new(TauriEventSink(app)), service_id, cwd, cmd)
+        self.start_with_sink(
+            Arc::new(TauriEventSink(app)),
+            service_id,
+            cwd,
+            cmd,
+            environment,
+        )
     }
 
     pub fn restart(&self, app: AppHandle, service_id: String) -> Result<u32, String> {
         let sink: Arc<dyn EventSink> = Arc::new(TauriEventSink(app));
-        let (cwd, cmd, pid) = {
+        let (cwd, cmd, environment, pid) = {
             let children = self.children.lock().map_err(|e| e.to_string())?;
             let managed = children
                 .get(&service_id)
                 .ok_or_else(|| "service is not managed by Localhost Hub".to_string())?;
-            (managed.cwd.clone(), managed.cmd.clone(), managed.pid)
+            (
+                managed.cwd.clone(),
+                managed.cmd.clone(),
+                managed.environment.clone(),
+                managed.pid,
+            )
         };
 
         sink.emit(ServiceEvent {
@@ -108,7 +148,7 @@ impl ServiceManager {
             code: None,
         });
         self.stop_with_sink(sink.clone(), service_id.clone(), false)?;
-        self.start_with_sink(sink, service_id, cwd, cmd)
+        self.start_with_sink(sink, service_id, cwd, cmd, environment)
     }
 
     pub fn stop(&self, app: AppHandle, service_id: String) -> Result<(), String> {
@@ -230,6 +270,7 @@ impl ServiceManager {
         service_id: String,
         cwd: String,
         cmd: String,
+        environment: ServiceEnvironment,
     ) -> Result<u32, String> {
         if service_id.trim().is_empty() {
             return Err("service id cannot be empty".to_string());
@@ -240,6 +281,7 @@ impl ServiceManager {
         if !std::path::Path::new(&cwd).is_dir() {
             return Err(format!("service directory does not exist: {cwd}"));
         }
+        validate_environment(&environment)?;
 
         {
             let mut children = self.children.lock().map_err(|e| e.to_string())?;
@@ -266,6 +308,12 @@ impl ServiceManager {
         });
 
         let mut command = shell_command(&cmd);
+        if !environment.inherit_system {
+            command.env_clear();
+        }
+        for variable in &environment.vars {
+            command.env(&variable.key, &variable.value);
+        }
         command
             .current_dir(&cwd)
             .stdout(Stdio::piped())
@@ -292,6 +340,7 @@ impl ServiceManager {
                     child: child.clone(),
                     cwd,
                     cmd: cmd.clone(),
+                    environment,
                     pid,
                     started_at_ms,
                     detected_urls: detected_urls.clone(),
@@ -380,6 +429,7 @@ impl ServiceManager {
             service_id.to_string(),
             cwd.to_string(),
             cmd.to_string(),
+            ServiceEnvironment::default(),
         )
     }
 
@@ -389,12 +439,17 @@ impl ServiceManager {
         sink: Arc<dyn EventSink>,
         service_id: &str,
     ) -> Result<u32, String> {
-        let (cwd, cmd, pid) = {
+        let (cwd, cmd, environment, pid) = {
             let children = self.children.lock().map_err(|e| e.to_string())?;
             let managed = children
                 .get(service_id)
                 .ok_or_else(|| "service is not managed by Localhost Hub".to_string())?;
-            (managed.cwd.clone(), managed.cmd.clone(), managed.pid)
+            (
+                managed.cwd.clone(),
+                managed.cmd.clone(),
+                managed.environment.clone(),
+                managed.pid,
+            )
         };
         sink.emit(ServiceEvent {
             service_id: service_id.to_string(),
@@ -404,7 +459,7 @@ impl ServiceManager {
             code: None,
         });
         self.stop_with_sink(sink.clone(), service_id.to_string(), false)?;
-        self.start_with_sink(sink, service_id.to_string(), cwd, cmd)
+        self.start_with_sink(sink, service_id.to_string(), cwd, cmd, environment)
     }
 
     #[cfg(test)]
@@ -415,6 +470,34 @@ impl ServiceManager {
     ) -> Result<(), String> {
         self.stop_with_sink(sink, service_id.to_string(), true)
     }
+}
+
+fn validate_environment(environment: &ServiceEnvironment) -> Result<(), String> {
+    let mut seen = HashSet::new();
+    for variable in &environment.vars {
+        if variable.key.is_empty() {
+            return Err("environment variable key cannot be empty".to_string());
+        }
+        if variable.key.contains('=') || variable.key.contains('\0') {
+            return Err(format!(
+                "environment variable key contains an invalid character: {}",
+                variable.key
+            ));
+        }
+        if variable.value.contains('\0') {
+            return Err(format!(
+                "environment variable value contains a null byte: {}",
+                variable.key
+            ));
+        }
+        if !seen.insert(variable.key.clone()) {
+            return Err(format!(
+                "environment variable key is duplicated: {}",
+                variable.key
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -840,5 +923,73 @@ mod tests {
         manager
             .stop_for_test(sink, "restart")
             .expect("cleanup");
+    }
+
+    #[test]
+    fn applies_environment_and_retains_it_across_restart() {
+        let manager = ServiceManager::default();
+        let sink = Arc::new(TestSink::default());
+        let environment = ServiceEnvironment {
+            inherit_system: true,
+            vars: vec![ServiceEnvironmentVariable {
+                key: "LOCALHOST_HUB_ENV_TEST".to_string(),
+                value: "profile-value".to_string(),
+            }],
+        };
+        manager
+            .start_with_sink(
+                sink.clone(),
+                "environment".to_string(),
+                "/tmp".to_string(),
+                "printf '%s\\n' \"$LOCALHOST_HUB_ENV_TEST\"; sleep 10".to_string(),
+                environment,
+            )
+            .expect("start");
+
+        wait_until(|| {
+            sink.messages(ServiceEventKind::Stdout)
+                .iter()
+                .any(|message| message == "profile-value")
+        });
+        manager
+            .restart_for_test(sink.clone(), "environment")
+            .expect("restart");
+        wait_until(|| {
+            sink.messages(ServiceEventKind::Stdout)
+                .iter()
+                .filter(|message| *message == "profile-value")
+                .count()
+                >= 2
+        });
+        manager
+            .stop_for_test(sink, "environment")
+            .expect("cleanup");
+    }
+
+    #[test]
+    fn rejects_invalid_or_duplicate_environment_keys() {
+        let invalid = ServiceEnvironment {
+            inherit_system: true,
+            vars: vec![ServiceEnvironmentVariable {
+                key: "NOT=VALID".to_string(),
+                value: "value".to_string(),
+            }],
+        };
+        assert!(validate_environment(&invalid).unwrap_err().contains("invalid"));
+
+        let duplicate = ServiceEnvironment {
+            inherit_system: true,
+            vars: vec![
+                ServiceEnvironmentVariable {
+                    key: "PORT".to_string(),
+                    value: "3000".to_string(),
+                },
+                ServiceEnvironmentVariable {
+                    key: "PORT".to_string(),
+                    value: "3001".to_string(),
+                },
+            ],
+        };
+        assert!(validate_environment(&duplicate).unwrap_err().contains("duplicated"));
     }
 }

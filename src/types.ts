@@ -17,6 +17,7 @@ export interface Service {
   framework: string;
   run_mode?: 'parallel' | 'sequential';
   order?: number;
+  env_profile_id?: string | null;
   _ws?: string;
 }
 
@@ -39,6 +40,21 @@ export interface GitInfo {
   behind: number;
   changed: number;
   last: string;
+}
+
+export interface EnvVariable {
+  key: string;
+  value: string;
+  is_secret: boolean;
+}
+
+export interface EnvProfile {
+  id: string;
+  project_path: string;
+  name: string;
+  description: string;
+  is_default: boolean;
+  vars: EnvVariable[];
 }
 
 export interface EnvVar {
@@ -217,6 +233,7 @@ export interface StoredService {
   cmd: string;
   run_mode?: 'parallel' | 'sequential';
   order?: number;
+  env_profile_id?: string | null;
 }
 
 export interface StoredWorkspace {

@@ -109,6 +109,12 @@ export interface WorkspaceServiceSpec {
   cmd: string;
   run_mode: "parallel" | "sequential";
   order: number;
+  environment: ServiceEnvironment;
+}
+
+export interface ServiceEnvironment {
+  inherit_system: boolean;
+  vars: Array<{ key: string; value: string }>;
 }
 
 export interface WorkspaceStopSpec {
@@ -254,8 +260,8 @@ export const tauriApi = {
 
   killProcess: (pid: number) => invoke<void>("kill_process", { pid }),
 
-  startService: (serviceId: string, cwd: string, cmd: string) =>
-    invoke<number>("start_service", { serviceId, cwd, cmd }),
+  startService: (serviceId: string, cwd: string, cmd: string, environment: ServiceEnvironment) =>
+    invoke<number>("start_service", { serviceId, cwd, cmd, environment }),
 
   stopManagedService: (serviceId: string) =>
     invoke<void>("stop_service", { serviceId }),

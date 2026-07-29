@@ -1,4 +1,4 @@
-use crate::services::{terminate_process_tree, ServiceManager};
+use crate::services::{terminate_process_tree, ServiceEnvironment, ServiceManager};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
@@ -76,6 +76,8 @@ pub struct WorkspaceServiceSpec {
     pub run_mode: WorkspaceRunMode,
     #[serde(default)]
     pub order: usize,
+    #[serde(default)]
+    pub environment: ServiceEnvironment,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -274,6 +276,7 @@ fn start_workspace_service(
             service.service_id.clone(),
             service.cwd,
             service.cmd,
+            service.environment,
         ) {
             Ok(_) => result.started.push(service.service_id),
             Err(error) => result.failed.push(WorkspaceServiceFailure {
@@ -1074,6 +1077,7 @@ mod tests {
             cmd: "sleep 10".to_string(),
             run_mode,
             order,
+            environment: ServiceEnvironment::default(),
         }
     }
 

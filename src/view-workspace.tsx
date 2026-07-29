@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Workspace, Repo, StoredService } from './types';
+import type { EnvProfile, Workspace, Repo, StoredService } from './types';
 import { Ic } from './icons';
 import { StatusDot } from './shared';
 import { formatUptime } from './utils';
@@ -20,10 +20,11 @@ interface WorkspaceViewProps {
   onUpdateService: (
     wsId: string,
     svcId: string,
-    patch: { run_mode?: 'parallel' | 'sequential'; order?: number },
+    patch: { run_mode?: 'parallel' | 'sequential'; order?: number; env_profile_id?: string | null },
   ) => void;
   onAddService: () => void;
   repos: Repo[];
+  envProfiles: EnvProfile[];
   onAddToWorkspace: (wsId: string, svc: StoredService) => void;
 }
 
@@ -37,6 +38,7 @@ export function WorkspaceView({
   workspace: w, onStartSvc, onStopSvc, onRestartSvc, onStartAll, onStopAll,
   onOpenLogs, onOpenWorkspaceLogs, onOpenUrl, onDeleteWorkspace, onUpdateWorkspace,
   onRemoveService, onUpdateService, onAddService,
+  envProfiles,
 }: WorkspaceViewProps) {
 
   const [editingName, setEditingName] = React.useState(false);
@@ -207,16 +209,32 @@ export function WorkspaceView({
                 </div>
                 <div className="svc-cmd">
                   <div>{s.cmd}</div>
-                  <button
-                    className="btn sm ghost"
-                    style={{ marginTop: 4, paddingInline: 6 }}
-                    title="Toggle workspace startup mode"
-                    onClick={() => onUpdateService(w.id, s.id, {
-                      run_mode: s.run_mode === 'sequential' ? 'parallel' : 'sequential',
-                    })}
-                  >
-                    {s.run_mode === 'sequential' ? `Sequential ${(s.order ?? 0) + 1}` : 'Parallel'}
-                  </button>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
+                    <button
+                      className="btn sm ghost"
+                      style={{ paddingInline: 6 }}
+                      title="Toggle workspace startup mode"
+                      onClick={() => onUpdateService(w.id, s.id, {
+                        run_mode: s.run_mode === 'sequential' ? 'parallel' : 'sequential',
+                      })}
+                    >
+                      {s.run_mode === 'sequential' ? `Sequential ${(s.order ?? 0) + 1}` : 'Parallel'}
+                    </button>
+                    <select
+                      aria-label={`${s.name} environment profile`}
+                      className="input"
+                      style={{ height: 26, maxWidth: 150, fontSize: 10.5 }}
+                      value={s.env_profile_id ?? ''}
+                      onChange={event => onUpdateService(w.id, s.id, {
+                        env_profile_id: event.target.value || null,
+                      })}
+                    >
+                      <option value="">Project default env</option>
+                      {envProfiles
+                        .filter(profile => profile.project_path === s.repo_path)
+                        .map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div className="svc-port">
                   {s.url || s.port ? (

@@ -2158,3 +2158,23 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
   outline: 2px solid var(--fg-1);
   outline-offset: 2px;
 }
+
+.input {
+  min-width: 0;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-1);
+  outline: none;
+  background: var(--bg-inset);
+  color: var(--fg-1);
+  font: inherit;
+  font-size: 12px;
+}
+.input:focus {
+  border-color: var(--blue-edge);
+  box-shadow: 0 0 0 2px var(--blue-soft);
+}
+.input::placeholder {
+  color: var(--fg-4);
+}

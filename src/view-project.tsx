@@ -1,5 +1,5 @@
 import React from 'react';
-import type { LogLine, Port, Repo, Script, Service } from './types';
+import type { EnvProfile, LogLine, Port, Repo, Script, Service } from './types';
 import { Ic } from './icons';
 import { StatusDot } from './shared';
 import { GitHubProjectPanel } from './github-project-panel';
@@ -9,8 +9,9 @@ import {
   DIRECT_PROJECT_WORKSPACE,
   EXTERNAL_PROCESS_WORKSPACE,
 } from './project-runtime';
+import { EnvProfilesPanel } from './env-profiles-panel';
 
-type ProjectTab = 'overview' | 'scripts' | 'logs' | 'ports' | 'git' | 'github' | 'health';
+type ProjectTab = 'overview' | 'scripts' | 'logs' | 'ports' | 'environment' | 'git' | 'github' | 'health';
 
 interface ProjectViewProps {
   project: Repo;
@@ -26,6 +27,8 @@ interface ProjectViewProps {
   onOpenEditor: (path: string) => void;
   onConfigureScripts: () => void;
   onManageGit: () => void;
+  envProfiles: EnvProfile[];
+  onSaveEnvProfiles: (projectPath: string, profiles: EnvProfile[]) => Promise<void>;
 }
 
 function belongsToProject(service: Service, project: Repo) {
@@ -53,6 +56,8 @@ export function ProjectView({
   onOpenEditor,
   onConfigureScripts,
   onManageGit,
+  envProfiles,
+  onSaveEnvProfiles,
 }: ProjectViewProps) {
   const [tab, setTab] = React.useState<ProjectTab>('overview');
   const projectServices = services.filter(service => belongsToProject(service, project));
@@ -119,6 +124,7 @@ export function ProjectView({
           ['scripts', 'Scripts', <Ic.Play size={11} />, project.scripts.length],
           ['logs', 'Logs', <Ic.Logs size={11} />, projectLogs.length],
           ['ports', 'Ports', <Ic.Ports size={11} />, projectPorts.length],
+          ['environment', 'Environment', <Ic.Activity size={11} />, envProfiles.length],
           ['git', 'Git', <Ic.Branch size={11} />, git?.changed],
           ['github', 'GitHub', <Ic.Globe size={11} />],
           ['health', 'Health', <Ic.Activity size={11} />],
@@ -147,6 +153,13 @@ export function ProjectView({
       )}
       {tab === 'ports' && (
         <PortsTab ports={projectPorts} fallbackPort={project.running_port} onOpenUrl={onOpenUrl} />
+      )}
+      {tab === 'environment' && (
+        <EnvProfilesPanel
+          projectPath={project.path}
+          profiles={envProfiles}
+          onSave={profiles => onSaveEnvProfiles(project.path, profiles)}
+        />
       )}
       {tab === 'git' && (
         <GitTab project={project} onManageGit={onManageGit} />

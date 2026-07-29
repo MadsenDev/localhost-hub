@@ -23,7 +23,9 @@ use crate::github::{
     fetch_project_context, fetch_repos, open_github_url as open_github_link, poll_token,
     request_device_code, DeviceCodeResponse, GitHubProjectContext, GitHubRepo, GitHubUser,
 };
-use crate::services::{terminate_process_tree, ManagedServiceInfo, ServiceManager};
+use crate::services::{
+    terminate_process_tree, ManagedServiceInfo, ServiceEnvironment, ServiceManager,
+};
 use crate::scaffold::{
     create_project as scaffold_project, CreateProjectPayload, CreateProjectResult,
 };
@@ -113,8 +115,9 @@ pub fn start_service(
     service_id: String,
     cwd: String,
     cmd: String,
+    environment: ServiceEnvironment,
 ) -> Result<u32, String> {
-    services.start(app, service_id, cwd, cmd)
+    services.start(app, service_id, cwd, cmd, environment)
 }
 
 #[tauri::command]

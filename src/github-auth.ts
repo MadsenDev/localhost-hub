@@ -23,6 +23,22 @@ export interface StoredService {
   cmd: string;
   run_mode?: 'parallel' | 'sequential';
   order?: number;
+  env_profile_id?: string | null;
+}
+
+export interface EnvVariable {
+  key: string;
+  value: string;
+  is_secret: boolean;
+}
+
+export interface EnvProfile {
+  id: string;
+  project_path: string;
+  name: string;
+  description: string;
+  is_default: boolean;
+  vars: EnvVariable[];
 }
 
 export interface StoredWorkspace {
@@ -38,6 +54,7 @@ export interface AppConfig {
   github_user: GitHubUser | null;
   workspace_roots: string[];
   user_workspaces: StoredWorkspace[];
+  env_profiles: EnvProfile[];
   appearance: {
     theme: string;
     accent: string;
