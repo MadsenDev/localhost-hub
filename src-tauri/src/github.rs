@@ -271,17 +271,13 @@ pub async fn fetch_project_context(
     let identity = resolve_local_github_identity(path)?;
     let client = reqwest::Client::new();
     let api_root = format!("https://api.github.com/repos/{}", identity.full_name);
+    let pulls_url =
+        format!("{api_root}/pulls?state=open&sort=updated&direction=desc&per_page=10");
+    let issues_url =
+        format!("{api_root}/issues?state=open&sort=updated&direction=desc&per_page=10");
     let repository_request = github_get::<GitHubProjectRepository>(&client, token, &api_root);
-    let pulls_request = github_get::<Vec<ApiPullRequest>>(
-        &client,
-        token,
-        &format!("{api_root}/pulls?state=open&sort=updated&direction=desc&per_page=10"),
-    );
-    let issues_request = github_get::<Vec<ApiIssue>>(
-        &client,
-        token,
-        &format!("{api_root}/issues?state=open&sort=updated&direction=desc&per_page=10"),
-    );
+    let pulls_request = github_get::<Vec<ApiPullRequest>>(&client, token, &pulls_url);
+    let issues_request = github_get::<Vec<ApiIssue>>(&client, token, &issues_url);
     let checks_request = async {
         match identity.head_sha.as_deref() {
             Some(head_sha) => github_get::<ApiCheckRuns>(
