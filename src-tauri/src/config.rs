@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn older_config_without_environment_profiles_still_loads() {
         let config: AppConfig = serde_json::from_str(
-            r#"{
+            r##"{
                 "onboarding_complete": true,
                 "github_token": null,
                 "github_user": null,
@@ -172,7 +172,7 @@ mod tests {
                     "density": "balanced",
                     "sidebar": "labeled"
                 }
-            }"#,
+            }"##,
         )
         .expect("deserialize old config");
 
