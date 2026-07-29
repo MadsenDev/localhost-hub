@@ -17,7 +17,8 @@ This backlog captures the current product direction in implementation order. Kee
 - [x] Track cwd, command, memory, CPU, uptime, and detected ports per managed service.
 - [x] Implement backend-owned restart and bounded process-tree termination.
 - [x] Add Linux lifecycle tests for start, streamed output, duplicate protection, stop, and restart.
-- [ ] Reconnect UI state to already-running matching processes where practical.
+- [x] Reconnect UI state to directly managed and port-owning external processes where practical.
+- [x] Run scanned project scripts directly without requiring workspace configuration.
 - [ ] Add persisted service run history/state as needed.
 
 ### Real logs

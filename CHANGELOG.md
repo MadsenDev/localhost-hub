@@ -59,6 +59,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Shows real overview, scripts, managed services, streamed logs, detected ports, Git status, GitHub context, and repository-health signals.
   - Starts, stops, and restarts workspace services from detected scripts, while routing unconfigured scripts through explicit workspace setup.
   - Removed fabricated run history, build timing, environment values, port history, and placeholder project panels.
+- Added direct project script execution and runtime reconciliation:
+  - Runs scanned scripts through the Rust service manager without requiring or silently creating a workspace.
+  - Exposes direct Run actions from Project Detail, repository cards, and the command palette.
+  - Rehydrates directly managed services from the Rust service registry after frontend refreshes.
+  - Detects matching development processes started outside Hub, preferring the process that owns the listening port.
+  - Labels externally owned processes separately and permits explicit termination without offering an unsafe synthetic restart.
+  - Includes direct and external services in global runtime counts, logs, ports, and project views.
 - Refined the Localhost Companion direction from the supplied design prototype:
   - Fixed the implementation target as a native Kotlin and Jetpack Compose Android app; the HTML prototype remains a design reference only.
   - Captured its pairing, permission, Home, Projects, Logs, Ports, confirmation, and crash-alert flows.

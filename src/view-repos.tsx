@@ -13,9 +13,10 @@ interface ReposViewProps {
   onCreateProject: () => void;
   onGitChanged: (path: string) => Promise<void>;
   onOpenProject: (id: string) => void;
+  onRunScript: (repo: Repo, script: Repo['scripts'][number]) => void;
 }
 
-export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspace, onCreateProject, onGitChanged, onOpenProject }: ReposViewProps) {
+export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspace, onCreateProject, onGitChanged, onOpenProject, onRunScript }: ReposViewProps) {
   const [search, setSearch] = React.useState('');
   const [picker, setPicker] = React.useState<{ repoId: string; script: string; cmd: string } | null>(null);
   const [pickerWs, setPickerWs] = React.useState('');
@@ -91,6 +92,7 @@ export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspa
               onAddScript={(script, cmd) => openPicker(repo.id, script, cmd, repo.name)}
               onGitChanged={onGitChanged}
               onOpen={() => onOpenProject(repo.id)}
+              onRunScript={(script) => onRunScript(repo, script)}
             />
           ))}
         </div>
@@ -158,11 +160,13 @@ function RepoCard({
   onAddScript,
   onGitChanged,
   onOpen,
+  onRunScript,
 }: {
   repo: Repo;
   onAddScript: (script: string, cmd: string) => void;
   onGitChanged: (path: string) => Promise<void>;
   onOpen: () => void;
+  onRunScript: (script: Repo['scripts'][number]) => void;
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const [gitExpanded, setGitExpanded] = React.useState(false);
@@ -409,6 +413,9 @@ function RepoCard({
                 <span style={{ color: 'var(--fg-1)', fontWeight: 500 }}>{s.name}</span>
                 <span style={{ color: 'var(--fg-4)' }}> — {s.cmd}</span>
               </span>
+              <button className="btn sm primary" style={{ flexShrink: 0, fontSize: 11 }} onClick={() => onRunScript(s)}>
+                <Ic.Play size={10} /> Run
+              </button>
               <button className="btn sm ghost" style={{ flexShrink: 0, fontSize: 11 }} onClick={() => onAddScript(s.name, s.cmd)}>
                 <Ic.Plus size={10} /> Add
               </button>

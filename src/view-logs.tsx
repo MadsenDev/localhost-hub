@@ -19,6 +19,8 @@ export function LogsView({ workspaces, services, logs, sources, toggleSource, se
   const bodyRef = React.useRef<HTMLDivElement>(null);
   const wsById = Object.fromEntries(workspaces.map((w) => [w.id, w]));
   const svcById = Object.fromEntries(services.map((s) => [s.id, s]));
+  const workspaceServiceIds = new Set(workspaces.flatMap(workspace => workspace.services.map(service => service.id)));
+  const standaloneServices = services.filter(service => !workspaceServiceIds.has(service.id));
 
   React.useEffect(() => {
     if (autoscroll && bodyRef.current) {
@@ -76,6 +78,25 @@ export function LogsView({ workspaces, services, logs, sources, toggleSource, se
               })}
             </div>
           ))}
+          {standaloneServices.length > 0 && (
+            <div>
+              <div style={{ padding: "10px 12px 4px", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: "0.12em", display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--blue)" }} />
+                Direct & external
+              </div>
+              {standaloneServices.map((service) => {
+                const active = !!sources[service.id];
+                const count = logs.filter(line => line.src === service.id).length;
+                return (
+                  <div key={service.id} className={"logs-filter-row" + (active ? " active" : " muted")} onClick={() => toggleSource(service.id)}>
+                    <span className="ck">{active ? <Ic.Check size={12} /> : <Ic.Dot size={6} />}</span>
+                    <span><span className="name mono" style={{ fontSize: 12 }}>{service.name}</span></span>
+                    <span className="count">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="logs-stream">

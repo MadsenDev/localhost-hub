@@ -18,13 +18,14 @@ interface CommandPaletteProps {
   data: HubDataShape;
   projects: Repo[];
   onRunScript: (wsId: string, svcId: string) => void;
+  onRunProjectScript: (project: Repo, script: Repo['scripts'][number]) => void;
   onSwitchWs: (id: string) => void;
   onOpenView: (v: string) => void;
   onOpenProject: (id: string) => void;
   onOpenUrl: (url: string) => void;
 }
 
-export function CommandPalette({ open, onClose, data, projects, onRunScript, onSwitchWs, onOpenView, onOpenProject, onOpenUrl }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, data, projects, onRunScript, onRunProjectScript, onSwitchWs, onOpenView, onOpenProject, onOpenUrl }: CommandPaletteProps) {
   const [q, setQ] = React.useState("");
   const [tab, setTab] = React.useState("all");
   const [idx, setIdx] = React.useState(0);
@@ -52,6 +53,19 @@ export function CommandPalette({ open, onClose, data, projects, onRunScript, onS
       out.push({ id: "ws-" + w.id, label: `Switch to ${w.name}`, sub: w.path, kind: "ws", icon: <span style={{ width: 10, height: 10, borderRadius: 2, background: w.swatch, display: "inline-block" }} />, run: () => onSwitchWs(w.id) });
     });
 
+    projects.forEach((project) => {
+      project.scripts.forEach((script) => {
+        out.push({
+          id: `project-script-${project.id}-${script.name}`,
+          label: `Run ${script.name} · ${project.name}`,
+          sub: script.cmd,
+          kind: "script",
+          icon: <Ic.Play size={13} />,
+          run: () => onRunProjectScript(project, script),
+        });
+      });
+    });
+
     data.workspaces.forEach((w) => {
       w.services.forEach((s) => {
         out.push({ id: "script-" + s.id, label: `Run ${s.name} · ${s.cmd}`, sub: `${w.name} · ${s.project}`, kind: "script", icon: <Ic.Play size={13} />, shortcut: s.status === "running" ? "running" : "", run: () => onRunScript(w.id, s.id) });
@@ -72,7 +86,7 @@ export function CommandPalette({ open, onClose, data, projects, onRunScript, onS
     });
 
     return out;
-  }, [data, projects, onOpenProject, onOpenUrl, onOpenView, onRunScript, onSwitchWs]);
+  }, [data, projects, onOpenProject, onOpenUrl, onOpenView, onRunProjectScript, onRunScript, onSwitchWs]);
 
   const filtered = items.filter((i) => {
     if (tab !== "all" && i.kind !== tab) return false;
