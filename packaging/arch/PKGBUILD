@@ -1,0 +1,31 @@
+# Maintainer: Chris Madsen <chris@madsens.dev>
+
+pkgname=localhost-hub
+pkgver=0.9.0_alpha.0
+pkgrel=1
+pkgdesc="A local-first desktop control center for development projects"
+arch=('x86_64')
+url="https://github.com/MadsenDev/localhost-hub"
+license=('MIT')
+depends=(
+  'cairo'
+  'desktop-file-utils'
+  'gdk-pixbuf2'
+  'glib2'
+  'gtk3'
+  'hicolor-icon-theme'
+  'libsoup'
+  'pango'
+  'webkit2gtk-4.1'
+)
+options=('!strip' '!emptydirs')
+install=localhost-hub.install
+source=('localhost-hub.deb')
+noextract=('localhost-hub.deb')
+sha256sums=('SKIP')
+
+package() {
+  cd "${srcdir}"
+  bsdtar -xf localhost-hub.deb
+  bsdtar -xf "$(find . -maxdepth 1 -name 'data.tar.*' -print -quit)" -C "${pkgdir}"
+}

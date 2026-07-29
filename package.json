@@ -13,6 +13,7 @@
     "dev": "vite",
     "dev:electron": "vite --mode electron",
     "build": "tsc -p tsconfig.app.json && vite build",
+    "check:version": "node scripts/check-version-sync.cjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

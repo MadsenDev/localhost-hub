@@ -9,3 +9,5 @@ npm-debug.log*
 /release
 /plugins
 /src-tauri/target
+/packaging/arch/localhost-hub.deb
+/dist-arch
