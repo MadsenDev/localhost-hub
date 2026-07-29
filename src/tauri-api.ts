@@ -138,6 +138,53 @@ export interface GitHubRepo {
   language: string | null;
 }
 
+export interface GitHubProjectContext {
+  repository: {
+    name: string;
+    full_name: string;
+    html_url: string;
+    private: boolean;
+    archived: boolean;
+    fork: boolean;
+    description: string | null;
+    default_branch: string;
+    open_issues_count: number;
+    updated_at: string;
+  };
+  remote_name: string;
+  remote_url: string;
+  current_branch: string | null;
+  head_sha: string | null;
+  pull_requests: Array<{
+    number: number;
+    title: string;
+    html_url: string;
+    draft: boolean;
+    head_ref: string;
+    base_ref: string;
+    author: string;
+    updated_at: string;
+  }>;
+  issues: Array<{
+    number: number;
+    title: string;
+    html_url: string;
+    author: string;
+    labels: Array<{ name: string; color: string }>;
+    updated_at: string;
+  }>;
+  checks: Array<{
+    name: string;
+    status: string;
+    conclusion: string | null;
+    html_url: string | null;
+    app_name: string | null;
+    started_at: string | null;
+    completed_at: string | null;
+  }>;
+  warnings: string[];
+}
+
 export type ProjectTemplate = "empty" | "node-http" | "react-vite";
 export type ProjectLanguage = "javascript" | "typescript";
 export type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
@@ -242,6 +289,12 @@ export const tauriApi = {
     invoke<GitNetworkResult>("push_git_remote", { path, remote }),
 
   listGitHubRepos: () => invoke<GitHubRepo[]>("github_list_repos"),
+
+  getGitHubProjectContext: (path: string) =>
+    invoke<GitHubProjectContext>("github_get_project_context", { path }),
+
+  openGitHubUrl: (url: string) =>
+    invoke<void>("open_github_url", { url }),
 
   scanWorkspaces: (root: string, maxDepth?: number, ignorePatterns?: string[]) =>
     invoke<DetectedProject[]>("scan_workspaces", { root, maxDepth, ignorePatterns }),

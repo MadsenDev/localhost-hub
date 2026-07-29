@@ -19,7 +19,10 @@ use crate::workspace::{
     WorkspaceServiceSpec, WorkspaceStopSpec,
 };
 use crate::config::{AppConfig, load as load_cfg, save as save_cfg};
-use crate::github::{fetch_repos, request_device_code, poll_token, DeviceCodeResponse, GitHubRepo, GitHubUser};
+use crate::github::{
+    fetch_project_context, fetch_repos, open_github_url as open_github_link, poll_token,
+    request_device_code, DeviceCodeResponse, GitHubProjectContext, GitHubRepo, GitHubUser,
+};
 use crate::services::{terminate_process_tree, ManagedServiceInfo, ServiceManager};
 use crate::scaffold::{
     create_project as scaffold_project, CreateProjectPayload, CreateProjectResult,
@@ -47,7 +50,7 @@ pub async fn github_request_device_code() -> Result<DeviceCodeResponse, String> 
 #[tauri::command]
 pub async fn github_poll_token(app: AppHandle, device_code: String) -> Result<GitHubUser, String> {
     let (token, user) = poll_token(&device_code).await?;
-    // Save token + user to config atomically — token never reaches the frontend
+    // Save token + user in the Rust-owned config — the token never reaches the frontend.
     let mut cfg = load_cfg(&app)?.unwrap_or_default();
     cfg.github_token = Some(token);
     cfg.github_user = Some(crate::config::GitHubUser {
@@ -64,6 +67,23 @@ pub async fn github_list_repos(app: AppHandle) -> Result<Vec<GitHubRepo>, String
     let cfg = load_cfg(&app)?.ok_or_else(|| "GitHub is not connected.".to_string())?;
     let token = cfg.github_token.ok_or_else(|| "GitHub is not connected.".to_string())?;
     fetch_repos(&token).await
+}
+
+#[tauri::command]
+pub async fn github_get_project_context(
+    app: AppHandle,
+    path: String,
+) -> Result<GitHubProjectContext, String> {
+    let cfg = load_cfg(&app)?.ok_or_else(|| "GitHub is not connected.".to_string())?;
+    let token = cfg
+        .github_token
+        .ok_or_else(|| "GitHub is not connected.".to_string())?;
+    fetch_project_context(&token, &path).await
+}
+
+#[tauri::command]
+pub fn open_github_url(url: String) -> Result<(), String> {
+    open_github_link(&url)
 }
 
 // ── Ports ─────────────────────────────────────────────────────────────────────

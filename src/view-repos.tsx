@@ -3,6 +3,7 @@ import type { GitDiff, GitRepositoryInfo, Repo, StoredWorkspace, StoredService }
 import { Ic } from './icons';
 import { StatusDot } from './shared';
 import { tauriApi } from './tauri-api';
+import { GitHubProjectPanel } from './github-project-panel';
 
 interface ReposViewProps {
   repos: Repo[];
@@ -161,6 +162,7 @@ function RepoCard({
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const [gitExpanded, setGitExpanded] = React.useState(false);
+  const [githubExpanded, setGithubExpanded] = React.useState(false);
   const [pendingGitAction, setPendingGitAction] = React.useState<string | null>(null);
   const [commitMessage, setCommitMessage] = React.useState('');
   const [gitNotice, setGitNotice] = React.useState<{ text: string; error: boolean } | null>(null);
@@ -265,9 +267,14 @@ function RepoCard({
                 </div>
               )}
             </div>
-            <button className="btn sm ghost" style={{ flexShrink: 0, fontSize: 10.5 }} onClick={() => setGitExpanded(value => !value)}>
-              {gitExpanded ? 'Close Git' : 'Open Git'}
-            </button>
+            <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+              <button className="btn sm ghost" style={{ fontSize: 10.5 }} onClick={() => setGithubExpanded(value => !value)}>
+                <Ic.Branch size={10} /> {githubExpanded ? 'Close GitHub' : 'GitHub'}
+              </button>
+              <button className="btn sm ghost" style={{ fontSize: 10.5 }} onClick={() => setGitExpanded(value => !value)}>
+                {gitExpanded ? 'Close Git' : 'Open Git'}
+              </button>
+            </div>
           </div>
 
           {gitExpanded && git.files.length > 0 && (
@@ -385,6 +392,7 @@ function RepoCard({
               onStatusChanged={() => onGitChanged(gitPath)}
             />
           )}
+          {githubExpanded && <GitHubProjectPanel path={gitPath} />}
         </div>
       )}
 

@@ -42,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Rust-owned input validation and filesystem generation, including path traversal and existing-target protection.
 - Added Localhost Companion product and architecture notes in `docs/LOCALHOST_COMPANION.md`, defining a focused Android remote for services, workspaces, logs, ports, and basic Git state after desktop parity.
 - Added GitHub device-flow and repository-awareness foundations carried forward from the V2 architecture.
+- Connected local projects to their GitHub repository context:
+  - Resolves HTTPS and SSH `github.com` remotes in Rust, preferring `origin`.
+  - Shows the pull request associated with the current local branch.
+  - Shows open pull requests, open issues, and check runs for the local HEAD commit on demand.
+  - Keeps incomplete API permissions non-fatal by displaying available repository data with scoped warnings.
+  - Opens only validated HTTPS links hosted on `github.com`.
+  - Writes the Rust-owned configuration with owner-only permissions on Unix so the stored OAuth token is not left world-readable.
 
 ### Changed
 

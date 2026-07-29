@@ -89,7 +89,7 @@ export function GitHubReposView() {
                 <span className="tag" style={{ fontSize: 10 }}>{repo.private ? 'private' : 'public'}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button className="btn sm ghost" onClick={() => tauriApi.openUrl(repo.html_url)}>
+                <button className="btn sm ghost" onClick={() => tauriApi.openGitHubUrl(repo.html_url)}>
                   <Ic.External size={11} /> Open
                 </button>
               </div>
