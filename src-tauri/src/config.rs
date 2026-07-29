@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::path::PathBuf;
 use tauri::Manager;
 
@@ -82,6 +83,52 @@ pub fn save(app: &tauri::AppHandle, cfg: &AppConfig) -> Result<(), String> {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let text = serde_json::to_string_pretty(cfg).map_err(|e| e.to_string())?;
-    std::fs::write(&path, text).map_err(|e| e.to_string())?;
+    write_private_config(&path, text.as_bytes())?;
     Ok(())
+}
+
+fn write_private_config(path: &std::path::Path, content: &[u8]) -> Result<(), String> {
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).write(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        options.mode(0o600);
+        if path.exists() {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    let mut file = options.open(path).map_err(|error| error.to_string())?;
+    file.write_all(content).map_err(|error| error.to_string())?;
+    file.sync_all().map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn private_config_write_truncates_existing_content() {
+        let path = std::env::temp_dir().join(format!(
+            "localhost-hub-config-{}-{}.json",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, b"content that is much longer than the replacement").unwrap();
+
+        write_private_config(&path, b"short").unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), b"short");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        std::fs::remove_file(path).unwrap();
+    }
 }
