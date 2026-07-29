@@ -4,6 +4,7 @@
  * In a browser (vite dev without tauri), all calls return empty/null
  * so the app works in both environments.
  */
+import type { GitStatus } from "./types";
 
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -46,18 +47,6 @@ export interface SystemStats {
   memory_used_mb: number;
   memory_total_mb: number;
   load_avg: [number, number, number];
-}
-
-export interface GitStatus {
-  branch: string;
-  ahead: number;
-  behind: number;
-  changed: number;
-  staged: number;
-  untracked: number;
-  clean: boolean;
-  last_commit_message: string | null;
-  last_commit_hash: string | null;
 }
 
 export interface DetectedProject {

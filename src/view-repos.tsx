@@ -142,9 +142,11 @@ export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspa
 
 function RepoCard({ repo, onAddScript }: { repo: Repo; onAddScript: (script: string, cmd: string) => void }) {
   const [expanded, setExpanded] = React.useState(false);
+  const [gitExpanded, setGitExpanded] = React.useState(false);
   const devScripts = repo.scripts.filter(s => ['dev', 'start', 'run', 'serve', 'watch'].includes(s.name));
   const otherScripts = repo.scripts.filter(s => !['dev', 'start', 'run', 'serve', 'watch'].includes(s.name));
   const visibleScripts = expanded ? repo.scripts : devScripts.length > 0 ? devScripts : repo.scripts.slice(0, 3);
+  const git = repo.git_status;
 
   return (
     <div className="panel" style={{ padding: 0, display: 'flex', flexDirection: 'column' }}>
@@ -157,7 +159,22 @@ function RepoCard({ repo, onAddScript }: { repo: Repo; onAddScript: (script: str
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, color: 'var(--fg-3)', fontFamily: 'var(--font-mono)', background: 'var(--bg-2)', padding: '1px 6px', borderRadius: 4 }}>{repo.framework || 'Project'}</span>
             {repo.package_manager && <span style={{ fontSize: 11, color: 'var(--fg-4)', fontFamily: 'var(--font-mono)' }}>{repo.package_manager}</span>}
-            {repo.has_git && <span style={{ fontSize: 11, color: 'var(--fg-4)', display: 'inline-flex', alignItems: 'center', gap: 3 }}><Ic.Branch size={10} /> Git</span>}
+            {git ? (
+              <>
+                <span style={{ fontSize: 11, color: 'var(--fg-3)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                  <Ic.Branch size={10} /> {git.branch}
+                </span>
+                <span className={`tag ${git.clean ? 'ok' : 'warn'}`}>
+                  {git.clean ? 'clean' : `${git.changed} changed`}
+                </span>
+                {git.ahead > 0 && <span style={{ fontSize: 10.5, color: 'var(--ok)' }}>↑{git.ahead}</span>}
+                {git.behind > 0 && <span style={{ fontSize: 10.5, color: 'var(--warn)' }}>↓{git.behind}</span>}
+              </>
+            ) : repo.has_git ? (
+              <span style={{ fontSize: 11, color: 'var(--fg-4)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                <Ic.Branch size={10} /> Git status unavailable
+              </span>
+            ) : null}
             {repo.running_port && <span style={{ fontSize: 11, color: 'var(--ok)', fontFamily: 'var(--font-mono)' }}>:{repo.running_port}</span>}
           </div>
           <div style={{ fontSize: 11, color: 'var(--fg-4)', fontFamily: 'var(--font-mono)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={repo.path}>
@@ -165,6 +182,52 @@ function RepoCard({ repo, onAddScript }: { repo: Repo; onAddScript: (script: str
           </div>
         </div>
       </div>
+
+      {git && (
+        <div style={{ padding: '9px 14px', borderBottom: repo.scripts.length > 0 ? '1px solid var(--line-0)' : 'none', background: 'var(--bg-1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11, color: 'var(--fg-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {git.last_commit_hash && <span className="mono" style={{ color: 'var(--blue)', marginRight: 6 }}>{git.last_commit_hash}</span>}
+                {git.last_commit_message ?? 'No commits yet'}
+              </div>
+              {!git.clean && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 4, color: 'var(--fg-4)', fontSize: 10.5 }}>
+                  {git.staged > 0 && <span>{git.staged} staged</span>}
+                  {git.unstaged > 0 && <span>{git.unstaged} unstaged</span>}
+                  {git.untracked > 0 && <span>{git.untracked} untracked</span>}
+                  {git.conflicted > 0 && <span style={{ color: 'var(--bad)' }}>{git.conflicted} conflicted</span>}
+                </div>
+              )}
+            </div>
+            {git.files.length > 0 && (
+              <button className="btn sm ghost" style={{ flexShrink: 0, fontSize: 10.5 }} onClick={() => setGitExpanded(value => !value)}>
+                {gitExpanded ? 'Hide files' : 'View files'}
+              </button>
+            )}
+          </div>
+
+          {gitExpanded && git.files.length > 0 && (
+            <div style={{ marginTop: 8, borderTop: '1px solid var(--line-0)', paddingTop: 5 }}>
+              {git.files.slice(0, 12).map(file => (
+                <div key={file.path} style={{ display: 'flex', alignItems: 'center', gap: 7, minHeight: 21, fontSize: 10.5 }}>
+                  <span style={{ display: 'inline-flex', gap: 3, width: 38, flexShrink: 0 }}>
+                    {file.index_status && <span className="tag ok" title={`Index: ${file.index_status}`}>S</span>}
+                    {file.worktree_status && <span className="tag warn" title={`Worktree: ${file.worktree_status}`}>{file.worktree_status === 'untracked' ? '?' : 'U'}</span>}
+                    {file.conflicted && <span className="tag" style={{ color: 'var(--bad)' }} title="Conflicted">!</span>}
+                  </span>
+                  <span className="mono" title={file.path} style={{ color: 'var(--fg-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {file.path}
+                  </span>
+                </div>
+              ))}
+              {git.files.length > 12 && (
+                <div style={{ color: 'var(--fg-4)', fontSize: 10.5, marginTop: 4 }}>+{git.files.length - 12} more files</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {visibleScripts.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column' }}>

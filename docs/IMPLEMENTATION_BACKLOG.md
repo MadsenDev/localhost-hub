@@ -97,14 +97,14 @@ This backlog captures the current product direction in implementation order. Kee
 
 ### Git status
 
-- [ ] Show clean/dirty state.
-- [ ] Show staged files.
-- [ ] Show unstaged files.
-- [ ] Show untracked files.
-- [ ] Show conflicted files.
+- [x] Show clean/dirty state.
+- [x] Show staged files.
+- [x] Show unstaged files.
+- [x] Show untracked files.
+- [x] Show conflicted files.
 - [ ] Optionally show ignored files.
-- [ ] Show file counts and change type indicators.
-- [ ] Show ahead/behind counts.
+- [x] Show file counts and change type indicators.
+- [x] Show ahead/behind counts.
 
 ### Staging and commits
 

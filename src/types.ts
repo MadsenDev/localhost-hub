@@ -122,11 +122,36 @@ export interface Repo {
   has_git: boolean;
   git_root: string | null;
   manifests: string[];
+  git_status: GitStatus | null;
   // live-derived
   is_running: boolean;
   running_port: number | null;
   cpu: number;
   mem: number;
+}
+
+export interface GitFileStatus {
+  path: string;
+  index_status: string | null;
+  worktree_status: string | null;
+  conflicted: boolean;
+}
+
+export interface GitStatus {
+  branch: string;
+  ahead: number;
+  behind: number;
+  changed: number;
+  staged: number;
+  unstaged: number;
+  untracked: number;
+  conflicted: number;
+  clean: boolean;
+  files: GitFileStatus[];
+  last_commit_message: string | null;
+  last_commit_hash: string | null;
+  last_commit_author: string | null;
+  last_commit_timestamp: number | null;
 }
 
 export interface StoredService {

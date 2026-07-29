@@ -1,5 +1,5 @@
 import React from 'react';
-import type { HubDataShape, Service, Session, LogLine, Workspace, Port, ServiceStatus, Repo, StoredWorkspace, StoredService } from './types';
+import type { HubDataShape, Service, Session, LogLine, Workspace, Port, ServiceStatus, Repo, StoredWorkspace, StoredService, GitStatus } from './types';
 import { useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakColor, TweakButton } from './tweaks-panel';
 import { TitleBar } from './chrome';
 import { Sidebar } from './sidebar';
@@ -64,7 +64,12 @@ function guessPortGroup(port: number): string {
 }
 
 /** Derive Repo[] from scan results + live data */
-function buildRepos(groups: WorkspaceGroup[], processes: ProcessInfo[], ports: LivePort[]): Repo[] {
+function buildRepos(
+  groups: WorkspaceGroup[],
+  processes: ProcessInfo[],
+  ports: LivePort[],
+  gitStatuses: Record<string, GitStatus | null>,
+): Repo[] {
   const pidToPort: Record<number, number> = {};
   for (const p of ports) {
     if (p.pid && !(p.pid in pidToPort)) pidToPort[p.pid] = p.port;
@@ -83,6 +88,7 @@ function buildRepos(groups: WorkspaceGroup[], processes: ProcessInfo[], ports: L
       has_git: proj.has_git,
       git_root: proj.git_root,
       manifests: proj.manifests,
+      git_status: gitStatuses[proj.git_root ?? proj.path] ?? null,
       is_running: !!proc,
       running_port: port,
       cpu: proc?.cpu_usage ?? 0,
@@ -229,6 +235,9 @@ export default function App() {
   const liveGroupsRef = React.useRef<WorkspaceGroup[]>([]);
   const storedWsRef = React.useRef<StoredWorkspace[]>([]);
   const managedRuntimesRef = React.useRef<Record<string, ManagedRuntime>>({});
+  const liveProcessesRef = React.useRef<ProcessInfo[]>([]);
+  const livePortsRef = React.useRef<LivePort[]>([]);
+  const gitStatusesRef = React.useRef<Record<string, GitStatus | null>>({});
   const [view, setView] = React.useState("home");
   const [ws, setWs] = React.useState("");
   const [project, setProject] = React.useState("");
@@ -266,6 +275,30 @@ export default function App() {
       const groups = await tauriApi.scanWorkspaceGroups(roots).catch(() => [] as WorkspaceGroup[]);
       if (cancelled) return;
       liveGroupsRef.current = groups;
+      await refreshGitStatuses();
+    }
+
+    async function refreshGitStatuses() {
+      const paths = [...new Set(
+        liveGroupsRef.current
+          .flatMap(group => group.projects)
+          .filter(project => project.has_git)
+          .map(project => project.git_root ?? project.path)
+      )];
+      const entries = await Promise.all(
+        paths.map(async path => [
+          path,
+          await tauriApi.getGitStatus(path).catch(() => null),
+        ] as const)
+      );
+      if (cancelled) return;
+      gitStatusesRef.current = Object.fromEntries(entries);
+      setRepos(buildRepos(
+        liveGroupsRef.current,
+        liveProcessesRef.current,
+        livePortsRef.current,
+        gitStatusesRef.current,
+      ));
     }
 
     async function refreshLive() {
@@ -275,14 +308,21 @@ export default function App() {
         tauriApi.listManagedServices().catch(() => [] as ManagedServiceInfo[]),
       ]);
       if (cancelled) return;
+      liveProcessesRef.current = processes;
+      livePortsRef.current = ports;
       syncManagedServiceRuntimes(managed);
-      setRepos(buildRepos(liveGroupsRef.current, processes, ports));
+      setRepos(buildRepos(liveGroupsRef.current, processes, ports, gitStatusesRef.current));
       setData(buildHubData(storedWsRef.current, processes, ports, managedRuntimesRef.current));
     }
 
     loadGroups().then(refreshLive);
-    const id = setInterval(refreshLive, 5000);
-    return () => { cancelled = true; clearInterval(id); };
+    const liveId = setInterval(refreshLive, 5000);
+    const gitId = setInterval(refreshGitStatuses, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(liveId);
+      clearInterval(gitId);
+    };
   }, [onboarding, workspaceRefreshKey]);
 
   const allServices = React.useMemo(
