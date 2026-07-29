@@ -1029,6 +1029,28 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
   padding: 8px 6px;
   height: fit-content;
 }
+.logs-filter-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 10px 7px;
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-4);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.logs-filter-actions span:last-child { display: inline-flex; gap: 8px; }
+.logs-filter-actions button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--fg-3);
+  font: inherit;
+  cursor: pointer;
+}
+.logs-filter-actions button:hover { color: var(--blue); }
 .logs-filter-row {
   display: grid;
   grid-template-columns: 18px 1fr auto;
@@ -1064,6 +1086,28 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
 }
 .logs-head .left { display: inline-flex; gap: 14px; align-items: center; }
 .logs-head .right { display: inline-flex; gap: 6px; align-items: center; }
+.log-level-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 4px;
+}
+.log-level-filter {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-2);
+  padding: 4px 7px;
+  background: transparent;
+  color: var(--fg-4);
+  font: inherit;
+  cursor: pointer;
+  opacity: 0.55;
+}
+.log-level-filter.active { opacity: 1; background: var(--bg-2); }
+.log-level-filter.error.active { color: var(--danger); border-color: color-mix(in oklch, var(--danger) 35%, var(--line-soft)); }
+.log-level-filter.warn.active { color: var(--warn); border-color: color-mix(in oklch, var(--warn) 35%, var(--line-soft)); }
+.log-level-filter.ok.active { color: var(--ok); border-color: color-mix(in oklch, var(--ok) 35%, var(--line-soft)); }
+.log-level-filter.info.active { color: var(--blue); border-color: color-mix(in oklch, var(--blue) 35%, var(--line-soft)); }
+.log-level-filter span { color: var(--fg-4); }
 
 .logs-body {
   overflow-y: auto;
@@ -1093,6 +1137,12 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
 .log-line .msg .num { color: var(--warm); }
 .log-line .msg .str { color: var(--ok); }
 .log-line .msg .kw  { color: var(--blue); }
+.log-search-match {
+  background: var(--warm-soft);
+  color: var(--warm);
+  padding: 0 2px;
+  border-radius: 2px;
+}
 
 .logs-foot {
   display: flex; align-items: center; justify-content: space-between;

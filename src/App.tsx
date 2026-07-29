@@ -464,11 +464,12 @@ export default function App() {
   }
 
   function pushLog(srcId: string, text: string, kind: string) {
-    const ts = new Date().toLocaleTimeString("en-GB", { hour12: false }).slice(0, 8) + "." + String(Math.floor(Math.random() * 999)).padStart(3, "0");
+    const now = new Date();
+    const ts = now.toLocaleTimeString("en-GB", { hour12: false }).slice(0, 8) + "." + String(now.getMilliseconds()).padStart(3, "0");
     const safeKind = (kind || "info") as LogLine["kind"];
     setLogs((l) => {
       const next = l.concat({ ts, src: srcId, msg: text, kind: safeKind });
-      return next.length > 600 ? next.slice(-600) : next;
+      return next.length > 5000 ? next.slice(-5000) : next;
     });
   }
 
@@ -1096,6 +1097,7 @@ export default function App() {
         logs={logs}
         sources={sources}
         toggleSource={(id) => setSources((s) => ({ ...s, [id]: !s[id] }))}
+        setAllSources={(enabled) => setSources(Object.fromEntries(allServices.map(service => [service.id, enabled])))}
         search={logSearch}
         setSearch={setLogSearch}
         autoscroll={autoscroll}
