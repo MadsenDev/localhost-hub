@@ -1,11 +1,12 @@
 import React from 'react';
-import type { HubDataShape, Session, Workspace } from './types';
+import type { HubDataShape, Repo, Session, Workspace } from './types';
 import { Ic } from './icons';
 import { StatusDot, Sparkline, SectionHeader } from './shared';
 import { tauriApi, type SystemStats } from './tauri-api';
 
 interface HomeViewProps {
   data: HubDataShape;
+  projects: Repo[];
   onOpenWs: (id: string) => void;
   onOpenProject: (id: string) => void;
   onResumeSession: (s: Session) => void;
@@ -13,7 +14,7 @@ interface HomeViewProps {
   stopWs: (id: string) => void;
 }
 
-export function HomeView({ data, onOpenWs, onOpenProject, onResumeSession, startWs, stopWs }: HomeViewProps) {
+export function HomeView({ data, projects, onOpenWs, onOpenProject, onResumeSession, startWs, stopWs }: HomeViewProps) {
   const allServices = data.workspaces.flatMap((w) => w.services);
   const running = allServices.filter((s) => s.status === "running").length;
   const failed = allServices.filter((s) => s.status === "failed").length;
@@ -128,7 +129,7 @@ export function HomeView({ data, onOpenWs, onOpenProject, onResumeSession, start
 
           <SectionHeader title="Projects" />
           <div className="panel" style={{ padding: 0 }}>
-            {Object.values(data.projects).slice(0, 8).map((proj) => (
+            {projects.slice(0, 8).map((proj) => (
               <div key={proj.id} className="activity-item" style={{ gridTemplateColumns: "18px 1fr auto" }} onClick={() => onOpenProject(proj.id)}>
                 <span style={{ color: "var(--blue)" }}><Ic.Folder size={12} /></span>
                 <span>
@@ -138,7 +139,7 @@ export function HomeView({ data, onOpenWs, onOpenProject, onResumeSession, start
                 <span className="mono" style={{ color: "var(--fg-3)" }}><Ic.Chevron size={12} /></span>
               </div>
             ))}
-            {Object.keys(data.projects).length === 0 && (
+            {projects.length === 0 && (
               <div style={{ padding: '20px 16px', fontSize: 12, color: 'var(--fg-4)', textAlign: 'center' }}>
                 Projects will appear here once workspaces are configured.
               </div>

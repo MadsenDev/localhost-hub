@@ -54,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Scores local repositories from activity, working-tree age, unpushed commits, inactive branches, README and license presence, dependency manifests, and common CI configuration.
   - Surfaces healthy, needs-attention, and at-risk summaries with expandable signal details.
   - Runs filesystem and Git inspection in Rust while keeping presentation and refresh state in React.
+- Added a live Project Detail experience backed by scanned repositories:
+  - Opens projects from Home, Repos, and the command palette without relying on the legacy synthetic project fixture.
+  - Shows real overview, scripts, managed services, streamed logs, detected ports, Git status, GitHub context, and repository-health signals.
+  - Starts, stops, and restarts workspace services from detected scripts, while routing unconfigured scripts through explicit workspace setup.
+  - Removed fabricated run history, build timing, environment values, port history, and placeholder project panels.
 - Refined the Localhost Companion direction from the supplied design prototype:
   - Fixed the implementation target as a native Kotlin and Jetpack Compose Android app; the HTML prototype remains a design reference only.
   - Captured its pairing, permission, Home, Projects, Logs, Ports, confirmation, and crash-alert flows.

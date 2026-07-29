@@ -1,5 +1,5 @@
 import React from 'react';
-import type { HubDataShape } from './types';
+import type { HubDataShape, Repo } from './types';
 import { Ic } from './icons';
 
 interface PaletteItem {
@@ -16,6 +16,7 @@ interface CommandPaletteProps {
   open: boolean;
   onClose: () => void;
   data: HubDataShape;
+  projects: Repo[];
   onRunScript: (wsId: string, svcId: string) => void;
   onSwitchWs: (id: string) => void;
   onOpenView: (v: string) => void;
@@ -23,7 +24,7 @@ interface CommandPaletteProps {
   onOpenUrl: (url: string) => void;
 }
 
-export function CommandPalette({ open, onClose, data, onRunScript, onSwitchWs, onOpenView, onOpenProject, onOpenUrl }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, data, projects, onRunScript, onSwitchWs, onOpenView, onOpenProject, onOpenUrl }: CommandPaletteProps) {
   const [q, setQ] = React.useState("");
   const [tab, setTab] = React.useState("all");
   const [idx, setIdx] = React.useState(0);
@@ -62,7 +63,7 @@ export function CommandPalette({ open, onClose, data, onRunScript, onSwitchWs, o
       out.push({ id: "open-" + p.port, label: `Open ${url.replace(/^https?:\/\//, '')}`, sub: "in browser", kind: "open", icon: <Ic.Globe size={13} />, run: () => onOpenUrl(url) });
     });
 
-    Object.values(data.projects).forEach((p) => {
+    projects.forEach((p) => {
       out.push({ id: "proj-" + p.id, label: p.name, sub: p.path, kind: "project", icon: <Ic.Folder size={13} />, run: () => onOpenProject(p.id) });
     });
 
@@ -71,7 +72,7 @@ export function CommandPalette({ open, onClose, data, onRunScript, onSwitchWs, o
     });
 
     return out;
-  }, [data]);
+  }, [data, projects, onOpenProject, onOpenUrl, onOpenView, onRunScript, onSwitchWs]);
 
   const filtered = items.filter((i) => {
     if (tab !== "all" && i.kind !== tab) return false;

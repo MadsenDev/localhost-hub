@@ -66,9 +66,9 @@ This backlog captures the current product direction in implementation order. Kee
 - [x] Return directly runnable package scripts with raw command and runner metadata.
 - [x] Detect Git ownership for nested projects.
 - [x] Detect JavaScript, Rust, Go, Python, Ruby, and PHP project foundations.
-- [ ] Populate `data.projects` from scanned repos.
-- [ ] Make Project Detail work with live scanned data.
-- [ ] Add project tabs: Overview, Scripts, Git, GitHub, Ports, Logs, Health.
+- [x] Use scanned `Repo[]` data as the canonical project source across Home, Repos, the command palette, and Project Detail.
+- [x] Make Project Detail work with live scanned data.
+- [x] Add project tabs: Overview, Scripts, Git, GitHub, Ports, Logs, Health.
 - [ ] Detect README/license files.
 - [ ] Detect Docker/devcontainer files.
 - [ ] Detect languages and dependency manifests.
@@ -166,15 +166,15 @@ This backlog captures the current product direction in implementation order. Kee
 
 ## Phase 3: GitHub Intelligence
 
-- [ ] Fetch repo metadata.
-- [ ] Show GitHub linked state per repo.
-- [ ] Show open PR for current branch.
-- [ ] Show CI/check status.
-- [ ] Show open issues.
+- [x] Fetch repo metadata.
+- [x] Show GitHub linked state per repo.
+- [x] Show open PR for current branch.
+- [x] Show CI/check status.
+- [x] Show open issues.
 - [ ] Show workflow failures.
-- [ ] Show repo visibility.
-- [ ] Open repo in browser.
-- [ ] Open PR in browser.
+- [x] Show repo visibility.
+- [x] Open repo in browser.
+- [x] Open PR in browser.
 - [ ] Copy repo URL.
 - [ ] Create PR later.
 - [ ] Add GitHub dashboard widgets: assigned PRs, review requests, failing workflows, recent repos.
