@@ -84,6 +84,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Identifies the listening address, process name, and PID when the operating system exposes them.
   - Lets users cancel, explicitly start anyway, or terminate known port owners and retry.
   - Adds a persisted expected-port field to workspace services for commands whose port cannot be inferred safely.
+- Added configurable sequential workspace readiness:
+  - Replaces the fixed startup pause with an optional per-service delay of up to two minutes.
+  - Optionally waits up to five minutes for every expected TCP port to be genuinely owned by the managed process tree before starting the next sequential service.
+  - Keeps stdout URL detection separate from readiness so printing a URL cannot falsely mark a service ready.
+  - Reports early exits and readiness timeouts as warnings while preserving the real running state and continuing the workspace plan.
+  - Preserves zero-delay, no-readiness behavior for existing workspace configuration.
 - Added native JavaScript package management to Project Detail:
   - Reads runtime, development, peer, and optional dependencies from `package.json` and compares them with installed top-level package versions.
   - Detects npm, pnpm, Yarn, and Bun from lockfiles or the manifest declaration.

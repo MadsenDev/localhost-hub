@@ -25,6 +25,8 @@ interface WorkspaceViewProps {
       order?: number;
       env_profile_id?: string | null;
       expected_port?: number | null;
+      startup_delay_ms?: number;
+      readiness_timeout_ms?: number;
     },
   ) => void;
   onAddService: () => void;
@@ -239,6 +241,54 @@ export function WorkspaceView({
                         .filter(profile => profile.project_path === s.repo_path)
                         .map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
                     </select>
+                    {s.run_mode === 'sequential' && (
+                      <>
+                        <label
+                          title="Wait before launching this service"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--fg-4)', fontSize: 10 }}
+                        >
+                          Delay
+                          <input
+                            className="input mono"
+                            aria-label={`${s.name} startup delay seconds`}
+                            inputMode="numeric"
+                            value={Math.round((s.startup_delay_ms ?? 0) / 1000)}
+                            onChange={event => {
+                              const seconds = Number(event.target.value);
+                              onUpdateService(w.id, s.id, {
+                                startup_delay_ms: Number.isInteger(seconds) && seconds >= 0 && seconds <= 120
+                                  ? seconds * 1000
+                                  : 0,
+                              });
+                            }}
+                            style={{ width: 45, height: 26, fontSize: 10.5 }}
+                          />
+                          s
+                        </label>
+                        <label
+                          title="Wait for all expected ports before starting the next sequential service; zero disables readiness waiting"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--fg-4)', fontSize: 10 }}
+                        >
+                          Ready
+                          <input
+                            className="input mono"
+                            aria-label={`${s.name} readiness timeout seconds`}
+                            inputMode="numeric"
+                            value={Math.round((s.readiness_timeout_ms ?? 0) / 1000)}
+                            onChange={event => {
+                              const seconds = Number(event.target.value);
+                              onUpdateService(w.id, s.id, {
+                                readiness_timeout_ms: Number.isInteger(seconds) && seconds >= 0 && seconds <= 300
+                                  ? seconds * 1000
+                                  : 0,
+                              });
+                            }}
+                            style={{ width: 45, height: 26, fontSize: 10.5 }}
+                          />
+                          s
+                        </label>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="svc-port">

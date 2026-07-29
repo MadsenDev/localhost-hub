@@ -25,7 +25,7 @@ pub fn find_port_conflicts(expected_ports: &[u16]) -> Vec<LivePort> {
     find_conflicts_in(expected_ports, scan_all_live_ports())
 }
 
-fn scan_all_live_ports() -> Vec<LivePort> {
+pub(crate) fn scan_all_live_ports() -> Vec<LivePort> {
     let mut ports = scan_platform_ports();
     enrich_process_names(&mut ports);
     ports.sort_by_key(|port| (port.port, port.pid.is_none()));

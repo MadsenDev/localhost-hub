@@ -117,6 +117,8 @@ export interface WorkspaceServiceSpec {
   environment: ServiceEnvironment;
   expected_ports: number[];
   allow_port_conflicts: boolean;
+  startup_delay_ms: number;
+  readiness_timeout_ms: number;
 }
 
 export interface ServiceEnvironment {
@@ -136,6 +138,7 @@ export interface WorkspaceRunResult {
   stopped: string[];
   not_running: string[];
   failed: Array<{ service_id: string; error: string }>;
+  warnings: Array<{ service_id: string; warning: string }>;
 }
 
 export interface GitHubRepo {

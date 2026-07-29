@@ -38,7 +38,8 @@ This backlog captures the current product direction in implementation order. Kee
 - [x] Continue workspace startup after individual service failures and report partial results.
 - [x] Stop managed process trees and externally detected matching services from one workspace command.
 - [x] Stop workspace services before deleting a workspace.
-- [ ] Add configurable startup delays and readiness/health checks.
+- [x] Add configurable sequential startup delays and expected-port readiness checks.
+- [ ] Add richer HTTP/process health checks beyond TCP listener readiness.
 - [ ] Add service dependencies and dependency-aware startup ordering.
 - [x] Add project environment profiles with workspace-service selection and Rust-owned process injection.
 - [x] Add bounded Rust-owned `.env` import/export without shell expansion.
