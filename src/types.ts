@@ -167,6 +167,40 @@ export interface GitCommitResult {
   message: string;
 }
 
+export interface GitBranch {
+  name: string;
+  current: boolean;
+  remote: boolean;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+}
+
+export interface GitRemote {
+  name: string;
+  url: string | null;
+  push_url: string | null;
+}
+
+export interface GitHistoryEntry {
+  hash: string;
+  full_hash: string;
+  message: string;
+  author: string;
+  author_email: string | null;
+  timestamp: number;
+  parent_count: number;
+  files_changed: number;
+  additions: number;
+  deletions: number;
+}
+
+export interface GitRepositoryInfo {
+  branches: GitBranch[];
+  remotes: GitRemote[];
+  history: GitHistoryEntry[];
+}
+
 export interface StoredService {
   id: string;
   name: string;
