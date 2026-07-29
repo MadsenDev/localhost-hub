@@ -12,6 +12,15 @@ const cargoVersion = toml.parse(
 ).package.version;
 const archPkgbuild = fs.readFileSync(path.join(root, "packaging", "arch", "PKGBUILD"), "utf8");
 const archVersion = archPkgbuild.match(/^pkgver=(.+)$/m)?.[1]?.replaceAll("_", "-");
+const windowsConfig = JSON.parse(
+  fs.readFileSync(path.join(root, "src-tauri", "tauri.windows.conf.json"), "utf8"),
+);
+const windowsMsiVersion = windowsConfig.bundle?.windows?.wix?.version;
+const [coreVersion, prerelease = "0"] = packageVersion.split("-", 2);
+const prereleaseBuild = prerelease.split(".").at(-1);
+const expectedWindowsMsiVersion = `${coreVersion}.${
+  prereleaseBuild && /^\d+$/.test(prereleaseBuild) ? prereleaseBuild : "0"
+}`;
 
 const versions = {
   "package.json": packageVersion,
@@ -26,6 +35,13 @@ if (mismatches.length > 0) {
   for (const [file, version] of Object.entries(versions)) {
     console.error(`  ${file}: ${version}`);
   }
+  process.exit(1);
+}
+
+if (windowsMsiVersion !== expectedWindowsMsiVersion) {
+  console.error(
+    `Windows MSI version ${windowsMsiVersion} does not match ${expectedWindowsMsiVersion} derived from ${packageVersion}.`,
+  );
   process.exit(1);
 }
 

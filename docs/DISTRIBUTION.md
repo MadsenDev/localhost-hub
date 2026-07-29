@@ -56,6 +56,11 @@ packaging/arch/PKGBUILD      0.9.0_alpha.0
 Git tag                      v0.9.0-alpha.0
 ```
 
+WiX/MSI does not accept textual SemVer prerelease identifiers. Its
+platform-specific Tauri configuration therefore uses the numeric MSI version
+`0.9.0.0`. The synchronization check derives and validates this mapping; it
+does not change the public application version.
+
 Tag builds create or update a **draft** GitHub release. This leaves room for
 release notes, signing checks, and manual smoke testing before publication.
 
