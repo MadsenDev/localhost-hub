@@ -1,16 +1,18 @@
 import React from 'react';
-import type { Repo, StoredWorkspace, StoredService } from './types';
+import type { GitDiff, Repo, StoredWorkspace, StoredService } from './types';
 import { Ic } from './icons';
 import { StatusDot } from './shared';
+import { tauriApi } from './tauri-api';
 
 interface ReposViewProps {
   repos: Repo[];
   workspaces: StoredWorkspace[];
   onAddToWorkspace: (wsId: string, svc: StoredService) => void;
   onCreateWorkspace: () => void;
+  onGitChanged: (path: string) => Promise<void>;
 }
 
-export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspace }: ReposViewProps) {
+export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspace, onGitChanged }: ReposViewProps) {
   const [search, setSearch] = React.useState('');
   const [picker, setPicker] = React.useState<{ repoId: string; script: string; cmd: string } | null>(null);
   const [pickerWs, setPickerWs] = React.useState('');
@@ -78,6 +80,7 @@ export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspa
               key={repo.id}
               repo={repo}
               onAddScript={(script, cmd) => openPicker(repo.id, script, cmd, repo.name)}
+              onGitChanged={onGitChanged}
             />
           ))}
         </div>
@@ -140,13 +143,68 @@ export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspa
   );
 }
 
-function RepoCard({ repo, onAddScript }: { repo: Repo; onAddScript: (script: string, cmd: string) => void }) {
+function RepoCard({
+  repo,
+  onAddScript,
+  onGitChanged,
+}: {
+  repo: Repo;
+  onAddScript: (script: string, cmd: string) => void;
+  onGitChanged: (path: string) => Promise<void>;
+}) {
   const [expanded, setExpanded] = React.useState(false);
   const [gitExpanded, setGitExpanded] = React.useState(false);
+  const [pendingGitAction, setPendingGitAction] = React.useState<string | null>(null);
+  const [commitMessage, setCommitMessage] = React.useState('');
+  const [gitNotice, setGitNotice] = React.useState<{ text: string; error: boolean } | null>(null);
+  const [diff, setDiff] = React.useState<{ path: string; staged: boolean; data: GitDiff } | null>(null);
   const devScripts = repo.scripts.filter(s => ['dev', 'start', 'run', 'serve', 'watch'].includes(s.name));
   const otherScripts = repo.scripts.filter(s => !['dev', 'start', 'run', 'serve', 'watch'].includes(s.name));
   const visibleScripts = expanded ? repo.scripts : devScripts.length > 0 ? devScripts : repo.scripts.slice(0, 3);
   const git = repo.git_status;
+  const gitPath = repo.git_root ?? repo.path;
+
+  async function runGitAction(label: string, action: () => Promise<unknown>) {
+    setPendingGitAction(label);
+    setGitNotice(null);
+    try {
+      await action();
+      await onGitChanged(gitPath);
+      setDiff(null);
+      setGitNotice({ text: `${label} complete.`, error: false });
+    } catch (error) {
+      setGitNotice({ text: error instanceof Error ? error.message : String(error), error: true });
+    } finally {
+      setPendingGitAction(null);
+    }
+  }
+
+  async function showDiff(path: string, staged: boolean) {
+    const label = staged ? 'Loading staged diff' : 'Loading worktree diff';
+    setPendingGitAction(label);
+    setGitNotice(null);
+    try {
+      const data = await tauriApi.getGitDiff(gitPath, path, staged);
+      setDiff({ path, staged, data });
+    } catch (error) {
+      setGitNotice({ text: error instanceof Error ? error.message : String(error), error: true });
+    } finally {
+      setPendingGitAction(null);
+    }
+  }
+
+  async function createCommit() {
+    const message = commitMessage.trim();
+    if (!message) {
+      setGitNotice({ text: 'Enter a commit message first.', error: true });
+      return;
+    }
+    await runGitAction('Commit', async () => {
+      const result = await tauriApi.commitGitChanges(gitPath, message);
+      setCommitMessage('');
+      setGitNotice({ text: `Committed ${result.hash}.`, error: false });
+    });
+  }
 
   return (
     <div className="panel" style={{ padding: 0, display: 'flex', flexDirection: 'column' }}>
@@ -209,6 +267,29 @@ function RepoCard({ repo, onAddScript }: { repo: Repo; onAddScript: (script: str
 
           {gitExpanded && git.files.length > 0 && (
             <div style={{ marginTop: 8, borderTop: '1px solid var(--line-0)', paddingTop: 5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                <button
+                  className="btn sm ghost"
+                  disabled={pendingGitAction !== null || !git.files.some(file => file.worktree_status)}
+                  onClick={() => runGitAction(
+                    'Stage all',
+                    () => tauriApi.stageGitFiles(gitPath, git.files.filter(file => file.worktree_status).map(file => file.path)),
+                  )}
+                >
+                  Stage all
+                </button>
+                <button
+                  className="btn sm ghost"
+                  disabled={pendingGitAction !== null || !git.files.some(file => file.index_status)}
+                  onClick={() => runGitAction(
+                    'Unstage all',
+                    () => tauriApi.unstageGitFiles(gitPath, git.files.filter(file => file.index_status).map(file => file.path)),
+                  )}
+                >
+                  Unstage all
+                </button>
+                {pendingGitAction && <span style={{ color: 'var(--fg-4)', fontSize: 10.5 }}>{pendingGitAction}…</span>}
+              </div>
               {git.files.slice(0, 12).map(file => (
                 <div key={file.path} style={{ display: 'flex', alignItems: 'center', gap: 7, minHeight: 21, fontSize: 10.5 }}>
                   <span style={{ display: 'inline-flex', gap: 3, width: 38, flexShrink: 0 }}>
@@ -219,10 +300,75 @@ function RepoCard({ repo, onAddScript }: { repo: Repo; onAddScript: (script: str
                   <span className="mono" title={file.path} style={{ color: 'var(--fg-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {file.path}
                   </span>
+                  <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, flexShrink: 0 }}>
+                    {file.index_status && (
+                      <>
+                        <button className="btn sm ghost" disabled={pendingGitAction !== null} onClick={() => showDiff(file.path, true)}>Diff S</button>
+                        <button
+                          className="btn sm ghost"
+                          disabled={pendingGitAction !== null}
+                          onClick={() => runGitAction('Unstage', () => tauriApi.unstageGitFiles(gitPath, [file.path]))}
+                        >
+                          Unstage
+                        </button>
+                      </>
+                    )}
+                    {file.worktree_status && (
+                      <>
+                        <button className="btn sm ghost" disabled={pendingGitAction !== null} onClick={() => showDiff(file.path, false)}>Diff U</button>
+                        <button
+                          className="btn sm ghost"
+                          disabled={pendingGitAction !== null}
+                          onClick={() => runGitAction('Stage', () => tauriApi.stageGitFiles(gitPath, [file.path]))}
+                        >
+                          Stage
+                        </button>
+                      </>
+                    )}
+                  </span>
                 </div>
               ))}
               {git.files.length > 12 && (
                 <div style={{ color: 'var(--fg-4)', fontSize: 10.5, marginTop: 4 }}>+{git.files.length - 12} more files</div>
+              )}
+              {diff && (
+                <div style={{ marginTop: 8, border: '1px solid var(--line-1)', borderRadius: 'var(--r-1)', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', background: 'var(--bg-2)', fontSize: 10.5 }}>
+                    <span className="mono" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {diff.staged ? 'staged' : 'worktree'} · {diff.path}
+                    </span>
+                    <span style={{ color: 'var(--ok)' }}>+{diff.data.additions}</span>
+                    <span style={{ color: 'var(--bad)' }}>−{diff.data.deletions}</span>
+                    <button className="btn sm ghost" onClick={() => setDiff(null)}>Close</button>
+                  </div>
+                  <pre style={{ margin: 0, padding: 10, maxHeight: 280, overflow: 'auto', background: 'var(--bg-0)', color: 'var(--fg-2)', fontSize: 10.5, lineHeight: 1.5, whiteSpace: 'pre' }}>
+                    {diff.data.patch || 'No textual diff available.'}
+                  </pre>
+                </div>
+              )}
+              {git.staged > 0 && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--line-0)' }}>
+                  <input
+                    value={commitMessage}
+                    onChange={event => setCommitMessage(event.target.value)}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        createCommit();
+                      }
+                    }}
+                    placeholder={`Commit ${git.staged} staged file${git.staged === 1 ? '' : 's'}…`}
+                    style={{ flex: 1, minWidth: 0, background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-1)', padding: '5px 8px', fontSize: 11, color: 'var(--fg-1)', outline: 'none' }}
+                  />
+                  <button className="btn sm primary" disabled={pendingGitAction !== null || !commitMessage.trim()} onClick={createCommit}>
+                    Commit
+                  </button>
+                </div>
+              )}
+              {gitNotice && (
+                <div style={{ marginTop: 6, color: gitNotice.error ? 'var(--bad)' : 'var(--ok)', fontSize: 10.5 }}>
+                  {gitNotice.text}
+                </div>
               )}
             </div>
           )}

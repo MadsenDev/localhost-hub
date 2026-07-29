@@ -4,7 +4,7 @@
  * In a browser (vite dev without tauri), all calls return empty/null
  * so the app works in both environments.
  */
-import type { GitStatus } from "./types";
+import type { GitCommitResult, GitDiff, GitStatus } from "./types";
 
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -168,6 +168,18 @@ export const tauriApi = {
   getSystemStats: () => invoke<SystemStats>("get_system_stats"),
 
   getGitStatus: (path: string) => invoke<GitStatus | null>("get_git_status", { path }),
+
+  getGitDiff: (path: string, filePath: string | null, staged: boolean) =>
+    invoke<GitDiff>("get_git_diff", { path, filePath, staged }),
+
+  stageGitFiles: (path: string, files: string[]) =>
+    invoke<GitStatus>("stage_git_files", { path, files }),
+
+  unstageGitFiles: (path: string, files: string[]) =>
+    invoke<GitStatus>("unstage_git_files", { path, files }),
+
+  commitGitChanges: (path: string, message: string) =>
+    invoke<GitCommitResult>("commit_git_changes", { path, message }),
 
   listGitHubRepos: () => invoke<GitHubRepo[]>("github_list_repos"),
 

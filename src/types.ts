@@ -154,6 +154,19 @@ export interface GitStatus {
   last_commit_timestamp: number | null;
 }
 
+export interface GitDiff {
+  patch: string;
+  files_changed: number;
+  additions: number;
+  deletions: number;
+  truncated: boolean;
+}
+
+export interface GitCommitResult {
+  hash: string;
+  message: string;
+}
+
 export interface StoredService {
   id: string;
   name: string;
