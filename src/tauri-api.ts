@@ -138,6 +138,36 @@ export interface GitHubRepo {
   language: string | null;
 }
 
+export type ProjectTemplate = "empty" | "node-http" | "react-vite";
+export type ProjectLanguage = "javascript" | "typescript";
+export type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
+
+export interface CreateProjectPayload {
+  name: string;
+  directory: string;
+  description: string;
+  template: ProjectTemplate;
+  language: ProjectLanguage;
+  package_manager: PackageManager;
+  dependencies: string[];
+  dev_dependencies: string[];
+  scripts: Record<string, string>;
+  styling: "none" | "tailwind-v4";
+  icon_packs: string[];
+  include_readme: boolean;
+  readme_notes: string;
+  initialize_git: boolean;
+  install_dependencies: boolean;
+}
+
+export interface CreateProjectResult {
+  path: string;
+  files: string[];
+  git_initialized: boolean;
+  dependencies_installed: boolean;
+  warnings: string[];
+}
+
 // ── Commands ──────────────────────────────────────────────────────────────────
 
 export const tauriApi = {
@@ -221,6 +251,9 @@ export const tauriApi = {
 
   findDefaultWorkspaceRoots: () =>
     invoke<string[]>("find_default_workspace_roots"),
+
+  createProject: (payload: CreateProjectPayload) =>
+    invoke<CreateProjectResult>("create_project", { payload }),
 
   openInEditor: (path: string) => invoke<void>("open_in_editor", { path }),
 

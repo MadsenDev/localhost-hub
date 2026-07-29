@@ -18,6 +18,7 @@ import { githubAuth, type GitHubUser } from './github-auth';
 import { listenToServiceEvents, tauriApi, type WorkspaceGroup, type ProcessInfo, type LivePort, type ManagedServiceInfo } from './tauri-api';
 import { Ic } from './icons';
 import { formatDuration } from './utils';
+import { CreateProjectDialog } from './create-project-dialog';
 
 const TWEAK_DEFAULTS = {
   theme: "charcoal",
@@ -242,6 +243,7 @@ export default function App() {
   const [ws, setWs] = React.useState("");
   const [project, setProject] = React.useState("");
   const [paletteOpen, setPaletteOpen] = React.useState(false);
+  const [createProjectOpen, setCreateProjectOpen] = React.useState(false);
   const [toasts, setToasts] = React.useState<Toast[]>([]);
   const [workspaceRefreshKey, setWorkspaceRefreshKey] = React.useState(0);
   const [, setManagedRuntimes] = React.useState<Record<string, ManagedRuntime>>({});
@@ -395,6 +397,26 @@ export default function App() {
       livePortsRef.current,
       gitStatusesRef.current,
     ));
+  }
+
+  async function handleProjectCreated(
+    result: import('./tauri-api').CreateProjectResult,
+    parentDirectory: string,
+  ) {
+    const cfg = await githubAuth.loadConfig().catch(() => null);
+    if (cfg && !cfg.workspace_roots.includes(parentDirectory)) {
+      await githubAuth.saveConfig({
+        ...cfg,
+        workspace_roots: [...cfg.workspace_roots, parentDirectory],
+      });
+    }
+    setWorkspaceRefreshKey(key => key + 1);
+    setView('repos');
+    if (result.warnings.length > 0) {
+      result.warnings.forEach(warning => toast(warning, 'warn'));
+    } else {
+      toast(`Created ${result.path}`, 'ok');
+    }
   }
 
   function updateAppearance(key: AppearanceKey, value: string) {
@@ -868,6 +890,7 @@ export default function App() {
         workspaces={storedWorkspaces}
         onAddToWorkspace={addServiceToWorkspace}
         onCreateWorkspace={createWorkspace}
+        onCreateProject={() => setCreateProjectOpen(true)}
         onGitChanged={refreshRepoGitStatus}
       />
     );
@@ -1053,6 +1076,11 @@ export default function App() {
         onOpenView={(v) => setView(v)}
         onOpenProject={(id) => { setProject(id); setView("project"); }}
         onOpenUrl={openLocalUrl}
+      />
+      <CreateProjectDialog
+        open={createProjectOpen}
+        onClose={() => setCreateProjectOpen(false)}
+        onCreated={handleProjectCreated}
       />
 
       <TweaksPanel title="Tweaks" noDeckControls={true}>

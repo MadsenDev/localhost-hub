@@ -9,10 +9,11 @@ interface ReposViewProps {
   workspaces: StoredWorkspace[];
   onAddToWorkspace: (wsId: string, svc: StoredService) => void;
   onCreateWorkspace: () => void;
+  onCreateProject: () => void;
   onGitChanged: (path: string) => Promise<void>;
 }
 
-export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspace, onGitChanged }: ReposViewProps) {
+export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspace, onCreateProject, onGitChanged }: ReposViewProps) {
   const [search, setSearch] = React.useState('');
   const [picker, setPicker] = React.useState<{ repoId: string; script: string; cmd: string } | null>(null);
   const [pickerWs, setPickerWs] = React.useState('');
@@ -49,10 +50,13 @@ export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspa
           <div className="eyebrow" style={{ marginBottom: 4 }}>Detected</div>
           <h1 className="h1">Repos</h1>
           <div style={{ color: 'var(--fg-3)', fontSize: 12.5, marginTop: 4 }}>
-            All git repositories found in your configured folders.
+            Local projects found in your configured folders.
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="btn primary sm" onClick={onCreateProject}>
+            <Ic.Plus size={10} /> Create project
+          </button>
           <div style={{ position: 'relative' }}>
             <Ic.Search size={11} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--fg-4)' }} />
             <input
@@ -72,6 +76,9 @@ export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspa
           <div style={{ color: 'var(--fg-4)', fontSize: 12, marginTop: 6 }}>
             Check your workspace folders in Settings.
           </div>
+          <button className="btn primary sm" style={{ marginTop: 14 }} onClick={onCreateProject}>
+            Create a project
+          </button>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
