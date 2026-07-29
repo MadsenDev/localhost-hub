@@ -81,6 +81,20 @@ This backlog captures the current product direction in implementation order. Kee
 - [ ] Audit placeholder views and mark future-only surfaces clearly.
 - [x] Keep generated build artifacts out of normal development diffs where possible.
 
+### Desktop distribution
+
+- [x] Build Tauri packages on Linux, macOS, and Windows in GitHub Actions.
+- [x] Produce AppImage, DEB, and RPM packages for broad Linux distribution coverage.
+- [x] Produce an Arch `.pkg.tar.zst` package installable with `pacman -U`.
+- [x] Produce a universal macOS build for Intel and Apple Silicon.
+- [x] Produce MSI and NSIS installers for Windows.
+- [x] Retain packages as downloadable workflow artifacts.
+- [x] Create draft GitHub releases from synchronized version tags.
+- [ ] Configure macOS signing and notarization.
+- [ ] Configure Windows Authenticode signing.
+- [ ] Publish the maintained Arch recipe to AUR when maintainer credentials are available.
+- [ ] Add maintained Flatpak or Snap channels only when demand justifies them.
+
 ## Phase 2: Git Foundation
 
 ### Repository operations

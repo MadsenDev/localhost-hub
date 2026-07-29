@@ -140,7 +140,7 @@ Backend scaffolding handles:
 ├── scripts/             # Build helpers (icon generation, cache clearing)
 ├── public/              # Icons, wordmarks
 ├── buildResources/      # Packaged app icons, entitlements
-└── release/             # Generated installers (gitignored)
+└── .github/workflows/   # CI and cross-platform Tauri packaging
 ```
 
 Key tech:
@@ -155,28 +155,28 @@ Key tech:
 
 ## Build, Package & Release
 
-### Renderer/Main bundles
+### Frontend bundle
 ```bash
 npm run build
 ```
-Outputs:
-- `dist/renderer` (Vite build)
-- `dist-electron/{main,preload}.js`
+This writes the Vite production bundle to `dist/`.
 
-### Platform packages
-| Command | Output |
-| --- | --- |
-| `npm run build:linux` | `.AppImage` + `.deb` in `release/` |
-| `npm run build:mac` | `.dmg` (requires macOS + signing cert for distribution) |
-| `npm run build:win` | NSIS installer (signed when `WIN_SIGN=true`) |
-| `npm run build:win:unsigned` | Unsigned `.zip` (no Wine required on Linux) |
-| `npm run build:all` | mac + linux + signed Windows |
-| `npm run build:all:unsigned` | mac + linux + unsigned Windows |
+### Tauri desktop package
 
-Behind the scenes:
-- `npm run prebuild:electron` regenerates icons and clears `dist*` folders.
-- `electron-builder` reads `build.config.cjs` (not `package.json`’s legacy `build` block) for multi-platform targets.
-- Icons generated via `scripts/generate-icons.cjs` (includes Linux multi-size directory).
+```bash
+npm run tauri:build
+```
+
+GitHub Actions builds and retains:
+
+- Linux AppImage, DEB, RPM, and Arch `.pkg.tar.zst` packages
+- A universal macOS DMG/app for Intel and Apple Silicon
+- Windows MSI and NSIS installers
+
+Pull requests exercise the native package matrix. Manual workflow runs produce
+downloadable artifacts, while matching `v*` tags create a draft GitHub release.
+See [Desktop Distribution](docs/DISTRIBUTION.md) for distro coverage, versioning,
+and current signing limitations.
 
 ---
 
@@ -206,14 +206,11 @@ npm run test:watch
 
 ## Troubleshooting
 
-### Windows symlink / signing issues
-1. `npm run clear:cache`
-2. Enable **Developer Mode** (`Settings → Update & Security → For Developers`)
-3. Or run the build terminal as Administrator
+### Unsigned Windows and macOS packages
 
-### `wine is required` when building Windows artifacts on Linux
-- Install Wine/Mono packages per [electron.build guide](https://www.electron.build/multi-platform-build#linux).
-- Alternatively run Windows builds on a Windows machine/VM.
+Development artifacts are currently unsigned. Windows SmartScreen and macOS
+Gatekeeper may therefore require explicit approval. Production signing and
+macOS notarization will be added once the release credentials are available.
 
 ### Vite chunk size warning
 - Vite warns when a chunk exceeds 500 kB minified. Consider future code-splitting of rarely used panels if it becomes a perf problem; not currently blocking.

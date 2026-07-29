@@ -1,0 +1,133 @@
+name: Desktop builds
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/desktop-builds.yml"
+      - "buildResources/**"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/check-version-sync.cjs"
+      - "src/**"
+      - "src-tauri/**"
+      - "vite.config.*"
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux · AppImage, DEB, RPM
+            runner: ubuntu-22.04
+            rust_targets: ""
+            args: "--bundles appimage,deb,rpm"
+          - name: macOS · Universal
+            runner: macos-latest
+            rust_targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+            args: "--target universal-apple-darwin --bundles app,dmg"
+          - name: Windows · MSI, NSIS
+            runner: windows-latest
+            rust_targets: ""
+            args: "--bundles msi,nsis"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: desktop-${{ matrix.runner }}
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            rpm \
+            xdg-utils
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Verify synchronized release version
+        run: npm run check:version
+
+      - name: Build desktop packages
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: ${{ matrix.args }}
+          retryAttempts: 1
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: "localhost-hub-[version]-[platform]-[arch]-[bundle]"
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Localhost Hub {0}', github.ref_name) || '' }}
+          releaseBody: "Cross-platform Localhost Hub desktop packages. See CHANGELOG.md for this version's changes."
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generateReleaseNotes: true
+          releaseAssetNamePattern: "localhost-hub-[version]-[platform]-[arch]-[bundle][setup][ext]"
+
+      - name: Prepare Arch package input
+        if: runner.os == 'Linux'
+        run: cp src-tauri/target/release/bundle/deb/*.deb packaging/arch/localhost-hub.deb
+
+      - name: Build Arch package
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist-arch
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            archlinux:base-devel \
+            bash -lc '
+              pacman -Syu --noconfirm
+              useradd --create-home builder
+              cp -R /workspace/packaging/arch /tmp/localhost-hub-arch
+              chown -R builder:builder /tmp/localhost-hub-arch
+              su builder -c "cd /tmp/localhost-hub-arch && makepkg --nodeps --noconfirm"
+              cp /tmp/localhost-hub-arch/*.pkg.tar.zst /workspace/dist-arch/
+            '
+
+      - name: Upload Arch workflow artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: localhost-hub-${{ github.sha }}-arch-x86_64
+          path: dist-arch/*.pkg.tar.zst
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attach Arch package to tagged release
+        if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist-arch/*.pkg.tar.zst --clobber

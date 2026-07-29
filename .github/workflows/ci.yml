@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify synchronized release version
+        run: npm run check:version
+
       - name: Build frontend
         run: npm run build
 

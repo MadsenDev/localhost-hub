@@ -57,6 +57,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed the implementation target as a native Kotlin and Jetpack Compose Android app; the HTML prototype remains a design reference only.
   - Captured its pairing, permission, Home, Projects, Logs, Ports, confirmation, and crash-alert flows.
   - Preserved the focused remote-control boundary with no shell, filesystem, or Git-write access.
+- Added cross-platform Tauri packaging through GitHub Actions:
+  - Builds AppImage, DEB, RPM, and Arch `.pkg.tar.zst` packages for broad Linux distribution coverage.
+  - Builds a universal macOS DMG/app for Intel and Apple Silicon.
+  - Builds MSI and NSIS installers for Windows.
+  - Retains packages as workflow artifacts and creates draft releases from matching version tags.
+  - Rejects releases when the npm, Tauri, Cargo, and Git tag versions disagree.
 
 ### Changed
 
