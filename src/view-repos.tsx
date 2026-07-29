@@ -12,9 +12,10 @@ interface ReposViewProps {
   onCreateWorkspace: () => void;
   onCreateProject: () => void;
   onGitChanged: (path: string) => Promise<void>;
+  onOpenProject: (id: string) => void;
 }
 
-export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspace, onCreateProject, onGitChanged }: ReposViewProps) {
+export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspace, onCreateProject, onGitChanged, onOpenProject }: ReposViewProps) {
   const [search, setSearch] = React.useState('');
   const [picker, setPicker] = React.useState<{ repoId: string; script: string; cmd: string } | null>(null);
   const [pickerWs, setPickerWs] = React.useState('');
@@ -89,6 +90,7 @@ export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspa
               repo={repo}
               onAddScript={(script, cmd) => openPicker(repo.id, script, cmd, repo.name)}
               onGitChanged={onGitChanged}
+              onOpen={() => onOpenProject(repo.id)}
             />
           ))}
         </div>
@@ -155,10 +157,12 @@ function RepoCard({
   repo,
   onAddScript,
   onGitChanged,
+  onOpen,
 }: {
   repo: Repo;
   onAddScript: (script: string, cmd: string) => void;
   onGitChanged: (path: string) => Promise<void>;
+  onOpen: () => void;
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const [gitExpanded, setGitExpanded] = React.useState(false);
@@ -220,7 +224,7 @@ function RepoCard({
       <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 10, borderBottom: repo.scripts.length > 0 ? '1px solid var(--line-0)' : 'none' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg-1)' }}>{repo.name}</span>
+            <button type="button" onClick={onOpen} style={{ padding: 0, border: 0, background: 'transparent', fontSize: 13, fontWeight: 600, color: 'var(--fg-1)', cursor: 'pointer' }}>{repo.name}</button>
             {repo.is_running && <StatusDot s="running" />}
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -248,6 +252,7 @@ function RepoCard({
             {repo.path.replace(/^\/home\/[^/]+/, '~')}
           </div>
         </div>
+        <button className="btn sm ghost" onClick={onOpen}><Ic.Chevron size={11} /> Details</button>
       </div>
 
       {git && (

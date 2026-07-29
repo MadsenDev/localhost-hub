@@ -852,6 +852,15 @@ export default function App() {
     }
   }
 
+  async function openProjectInEditor(path: string) {
+    try {
+      await tauriApi.openInEditor(path);
+    } catch (error) {
+      pushLog("system", String(error), "error");
+      toast("Could not open the project in your editor", "error");
+    }
+  }
+
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -878,6 +887,7 @@ export default function App() {
     if (view === "home") return (
       <HomeView
         data={data}
+        projects={repos}
         onOpenWs={onOpenWs}
         onOpenProject={(id) => { setProject(id); setView("project"); }}
         onResumeSession={(s: Session) => { setWs(s.ws); setView("workspace"); startAll(s.ws); }}
@@ -893,6 +903,7 @@ export default function App() {
         onCreateWorkspace={createWorkspace}
         onCreateProject={() => setCreateProjectOpen(true)}
         onGitChanged={refreshRepoGitStatus}
+        onOpenProject={(id) => { setProject(id); setView("project"); }}
       />
     );
     if (view === "github-repos") return <GitHubReposView />;
@@ -970,20 +981,23 @@ export default function App() {
       />
     );
     if (view === "project") {
-      const proj = data.projects[project] ?? data.projects[Object.keys(data.projects)[0]];
+      const proj = repos.find((repo) => repo.id === project) ?? repos[0];
       if (!proj) return null;
       return (
         <ProjectView
           project={proj}
-          workspaces={data.workspaces}
           services={allServices}
+          ports={data.ports}
           logs={logs}
-          onBack={() => setView("workspace")}
-          onRun={() => {
-            const svc = allServices.find((s) => s.project === proj.id);
-            if (svc) startService(svc._ws, svc.id);
-          }}
-          onOpenLogs={() => setView("logs")}
+          onBack={() => setView("repos")}
+          onStartService={startService}
+          onStopService={stopService}
+          onRestartService={restartService}
+          onOpenLogs={openLogsForSources}
+          onOpenUrl={openLocalUrl}
+          onOpenEditor={openProjectInEditor}
+          onConfigureScripts={() => setView("repos")}
+          onManageGit={() => setView("repos")}
         />
       );
     }
@@ -1073,6 +1087,7 @@ export default function App() {
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         data={data}
+        projects={repos}
         onRunScript={(wsId, svcId) => startService(wsId, svcId)}
         onSwitchWs={(id) => { setWs(id); setView("workspace"); }}
         onOpenView={(v) => setView(v)}

@@ -1,265 +1,417 @@
 import React from 'react';
-import type { Project, Workspace, Service, LogLine } from './types';
+import type { LogLine, Port, Repo, Service } from './types';
 import { Ic } from './icons';
-import { StatusBadge } from './shared';
+import { StatusDot } from './shared';
+import { GitHubProjectPanel } from './github-project-panel';
+import { tauriApi, type RepositoryHealth } from './tauri-api';
+
+type ProjectTab = 'overview' | 'scripts' | 'logs' | 'ports' | 'git' | 'github' | 'health';
 
 interface ProjectViewProps {
-  project: Project;
-  workspaces: Workspace[];
+  project: Repo;
   services: Service[];
+  ports: Port[];
   logs: LogLine[];
   onBack: () => void;
-  onRun: () => void;
-  onOpenLogs: () => void;
+  onStartService: (workspaceId: string, serviceId: string) => void;
+  onStopService: (workspaceId: string, serviceId: string) => void;
+  onRestartService: (workspaceId: string, serviceId: string) => void;
+  onOpenLogs: (serviceIds: string[]) => void;
+  onOpenUrl: (url: string) => void;
+  onOpenEditor: (path: string) => void;
+  onConfigureScripts: () => void;
+  onManageGit: () => void;
 }
 
-export function ProjectView({ project, workspaces, services, onBack, onRun }: ProjectViewProps) {
-  const [tab, setTab] = React.useState("scripts");
-  const ws = workspaces.find((w) => w.services.some((s) => s.project === project.id));
-  const svc = services.find((s) => s.project === project.id);
+function belongsToProject(service: Service, project: Repo) {
+  const servicePath = service.repo_path;
+  if (!servicePath) return service.project === project.id;
+  const roots = [project.path, project.git_root].filter(Boolean) as string[];
+  return roots.some(root =>
+    servicePath === root
+    || servicePath.startsWith(`${root}/`)
+    || root.startsWith(`${servicePath}/`)
+  );
+}
+
+export function ProjectView({
+  project,
+  services,
+  ports,
+  logs,
+  onBack,
+  onStartService,
+  onStopService,
+  onRestartService,
+  onOpenLogs,
+  onOpenUrl,
+  onOpenEditor,
+  onConfigureScripts,
+  onManageGit,
+}: ProjectViewProps) {
+  const [tab, setTab] = React.useState<ProjectTab>('overview');
+  const projectServices = services.filter(service => belongsToProject(service, project));
+  const serviceIds = new Set(projectServices.map(service => service.id));
+  const projectLogs = logs.filter(line => serviceIds.has(line.src));
+  const projectPorts = ports.filter(port =>
+    serviceIds.has(port.svc)
+    || projectServices.some(service => service.port === port.port)
+    || project.running_port === port.port
+  );
+  const runningService = projectServices.find(service => service.status === 'running');
+  const primaryUrl = runningService?.url
+    ?? projectPorts.find(port => port.status === 'running')?.url
+    ?? (project.running_port ? `http://localhost:${project.running_port}` : null);
+  const git = project.git_status;
 
   return (
     <div className="view"><div className="view-inner">
       <button className="btn sm ghost" onClick={onBack} style={{ marginBottom: 14 }}>
-        <Ic.Chevron size={10} style={{ transform: "rotate(180deg)" }} /> Back to {ws ? ws.name : "workspace"}
+        <Ic.Chevron size={10} style={{ transform: 'rotate(180deg)' }} /> Back to projects
       </button>
 
       <div className="proj-head">
-        <div className="proj-icon" style={{ background: `linear-gradient(135deg, ${ws ? ws.swatch : "var(--bg-2)"} 0%, var(--bg-3) 100%)`, color: "var(--fg-1)" }}>{project.icon}</div>
-        <div>
+        <div
+          className="proj-icon"
+          style={{ background: 'linear-gradient(135deg, var(--blue) 0%, var(--bg-3) 100%)', color: 'var(--fg-1)' }}
+        >
+          {project.name.slice(0, 2).toUpperCase()}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <h1 className="proj-title">{project.name}</h1>
           <div className="proj-sub">
             <span><Ic.Folder size={11} /> {project.path}</span>
-            <span className="sep">·</span>
-            <span><Ic.Branch size={11} /> {project.git.branch}</span>
-            <span className="sep">·</span>
-            <span style={{ color: project.git.clean ? "var(--ok)" : "var(--warn)" }}>{project.git.clean ? "clean" : project.git.changed + " changes"}</span>
-            <span className="sep">·</span>
-            <span>↑{project.git.ahead} ↓{project.git.behind}</span>
+            {git && <>
+              <span className="sep">·</span>
+              <span><Ic.Branch size={11} /> {git.branch}</span>
+              <span className="sep">·</span>
+              <span style={{ color: git.clean ? 'var(--ok)' : 'var(--warn)' }}>
+                {git.clean ? 'clean' : `${git.changed} changes`}
+              </span>
+              <span className="sep">·</span>
+              <span>↑{git.ahead} ↓{git.behind}</span>
+            </>}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {svc && svc.status === "running"
-            ? <button className="btn sm primary"><Ic.External size={11} /> localhost:{svc.port}</button>
-            : <button className="btn sm primary" onClick={onRun}><Ic.Play size={11} /> Run dev</button>}
-          <button className="btn sm ghost"><Ic.External size={11} /> Open in editor</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {primaryUrl && (
+            <button className="btn sm primary" onClick={() => onOpenUrl(primaryUrl)}>
+              <Ic.External size={11} /> Open dev site
+            </button>
+          )}
+          <button className="btn sm ghost" onClick={() => onOpenEditor(project.path)}>
+            <Ic.External size={11} /> Open in editor
+          </button>
         </div>
       </div>
 
       <div className="proj-tabs">
-        {[
-          { id: "scripts", label: "Scripts",  icon: <Ic.Play size={11} /> },
-          { id: "env",     label: "Env",      icon: <Ic.Settings size={11} />, badge: project.env.length },
-          { id: "ports",   label: "Ports",    icon: <Ic.Ports size={11} />,   badge: project.ports.length },
-          { id: "deps",    label: "Packages", icon: <Ic.Stack size={11} />,   badge: project.deps },
-          { id: "git",     label: "Git",      icon: <Ic.Branch size={11} /> },
-          { id: "logs",    label: "Logs",     icon: <Ic.Logs size={11} /> }
-        ].map((t) => (
-          <div key={t.id} className={"proj-tab" + (tab === t.id ? " active" : "")} onClick={() => setTab(t.id)}>
-            {t.icon} {t.label}{t.badge != null ? <span className="badge">{t.badge}</span> : null}
-          </div>
+        {([
+          ['overview', 'Overview', <Ic.Activity size={11} />],
+          ['scripts', 'Scripts', <Ic.Play size={11} />, project.scripts.length],
+          ['logs', 'Logs', <Ic.Logs size={11} />, projectLogs.length],
+          ['ports', 'Ports', <Ic.Ports size={11} />, projectPorts.length],
+          ['git', 'Git', <Ic.Branch size={11} />, git?.changed],
+          ['github', 'GitHub', <Ic.Globe size={11} />],
+          ['health', 'Health', <Ic.Activity size={11} />],
+        ] as Array<[ProjectTab, string, React.ReactNode, number?]>).map(([id, label, icon, badge]) => (
+          <button key={id} type="button" className={`proj-tab${tab === id ? ' active' : ''}`} onClick={() => setTab(id)}>
+            {icon} {label}{badge ? <span className="badge">{badge}</span> : null}
+          </button>
         ))}
       </div>
 
-      {tab === "scripts" ? (
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 18 }}>
-          <div>
-            <div className="panel" style={{ marginBottom: 16 }}>
-              <div className="panel-head">
-                <div className="panel-title"><span className="dot" /> Recent runs</div>
-                <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-4)" }}>last 24h</span>
-              </div>
-              <div className="run-strip">
-                {recentRuns().map((r, i) => (
-                  <div key={i} className={"run-cell run-" + r.kind}>
-                    <span className="run-bar" style={{ height: (20 + r.height * 40) + "px" }} />
-                    <span className="run-tip">
-                      <span className="run-tip-script">{r.script}</span>
-                      <span className="run-tip-when mono">{r.when}</span>
-                      <span className="run-tip-detail mono">{r.detail}</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="run-strip-foot">
-                <div><span className="run-legend run-ok" /> success <span className="num" style={{ color: "var(--fg-1)" }}>34</span></div>
-                <div><span className="run-legend run-warn" /> slow <span className="num" style={{ color: "var(--fg-1)" }}>6</span></div>
-                <div><span className="run-legend run-error" /> failed <span className="num" style={{ color: "var(--fg-1)" }}>2</span></div>
-                <div style={{ marginLeft: "auto" }}>avg <span className="num" style={{ color: "var(--fg-1)" }}>482ms</span></div>
-                <div>p95 <span className="num" style={{ color: "var(--fg-1)" }}>1.2s</span></div>
-              </div>
-            </div>
-
-            <div className="panel">
-              <div className="panel-head">
-                <div className="panel-title"><span className="dot" /> Scripts</div>
-                <button className="btn sm ghost"><Ic.Plus size={11} /> Add script</button>
-              </div>
-              {project.scripts.map((s) => (
-                <div key={s.name} className="script-row">
-                  <span className="name">{s.name}{s.hot ? <span className="tag ok" style={{ marginLeft: 8 }}>hot</span> : null}</span>
-                  <span className="cmd">{s.cmd}</span>
-                  <span style={{ display: "inline-flex", gap: 6 }}>
-                    <button className="btn sm ghost" onClick={onRun}><Ic.Play size={11} /> Run</button>
-                    <button className="btn sm ghost"><Ic.External size={11} /></button>
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ height: 16 }} />
-            <div className="panel">
-              <div className="panel-head">
-                <div className="panel-title"><span className="dot" /> Port history</div>
-                <span className="mono" style={{ fontSize: 10.5, color: "var(--fg-4)" }}>last 7 days</span>
-              </div>
-              <div style={{ padding: 14 }}>
-                {project.ports.map((p) => <PortHistoryRow key={p} port={p} />)}
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div className="panel">
-              <div className="panel-head"><div className="panel-title"><span className="dot" /> Overview</div></div>
-              <div className="kv-grid" style={{ border: 0, borderRadius: 0 }}>
-                <div className="kv"><span className="k">Framework</span><span className="v">{project.framework}</span></div>
-                <div className="kv"><span className="k">Language</span><span className="v">{project.language}</span></div>
-                <div className="kv"><span className="k">Package mgr</span><span className="v">{project.pkg}</span></div>
-                <div className="kv"><span className="k">Node</span><span className="v">{project.node}</span></div>
-                <div className="kv"><span className="k">Deps</span><span className="v">{project.deps} <span style={{ color: "var(--fg-4)" }}>+{project.dev} dev</span></span></div>
-                <div className="kv"><span className="k">Ports</span><span className="v">{project.ports.join(", ")}</span></div>
-              </div>
-            </div>
-
-            <div style={{ height: 16 }} />
-
-            <div className="panel">
-              <div className="panel-head"><div className="panel-title"><span className="dot" /> Git</div></div>
-              <div style={{ padding: 14 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <Ic.Branch size={13} />
-                  <span className="mono" style={{ color: "var(--fg-1)", fontWeight: 600 }}>{project.git.branch}</span>
-                  <span className="tag warn">{project.git.changed} changes</span>
-                </div>
-                <div className="mono" style={{ fontSize: 12, color: "var(--fg-2)", lineHeight: 1.5 }}>{project.git.last}</div>
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                  <button className="btn sm ghost"><Ic.Branch size={11} /> Diff</button>
-                  <button className="btn sm ghost"><Ic.External size={11} /> Open</button>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ height: 16 }} />
-
-            <div className="panel">
-              <div className="panel-head"><div className="panel-title"><span className="dot" /> Build times</div></div>
-              <div style={{ padding: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                <BuildStat label="Avg" value="482ms" />
-                <BuildStat label="p95" value="1.2s" />
-                <BuildStat label="Cold" value="8.4s" tone="warn" />
-                <BuildStat label="HMR" value="42ms" tone="ok" />
-              </div>
-            </div>
-          </div>
+      {tab === 'overview' && (
+        <OverviewTab project={project} services={projectServices} ports={projectPorts} />
+      )}
+      {tab === 'scripts' && (
+        <ScriptsTab
+          project={project}
+          services={projectServices}
+          onStart={onStartService}
+          onStop={onStopService}
+          onRestart={onRestartService}
+          onConfigure={onConfigureScripts}
+        />
+      )}
+      {tab === 'logs' && (
+        <LogsTab logs={projectLogs} serviceIds={[...serviceIds]} onOpenLogs={onOpenLogs} />
+      )}
+      {tab === 'ports' && (
+        <PortsTab ports={projectPorts} fallbackPort={project.running_port} onOpenUrl={onOpenUrl} />
+      )}
+      {tab === 'git' && (
+        <GitTab project={project} onManageGit={onManageGit} />
+      )}
+      {tab === 'github' && (
+        <div className="panel" style={{ padding: 14 }}>
+          {project.has_git
+            ? <GitHubProjectPanel path={project.git_root ?? project.path} />
+            : <Empty icon={<Ic.Globe size={28} />} title="This project is not a Git repository." />}
         </div>
-      ) : null}
-
-      {tab === "env" ? (
-        <div className="panel">
-          <div className="panel-head">
-            <div className="panel-title"><span className="dot" /> Environment variables</div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <button className="btn sm ghost"><Ic.Plus size={11} /> Add</button>
-              <button className="btn sm ghost"><Ic.External size={11} /> .env file</button>
-            </div>
-          </div>
-          {project.env.map((e) => (
-            <div key={e.k} style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--line-soft)", alignItems: "center", fontSize: 12 }}>
-              <span className="mono" style={{ color: "var(--fg-1)" }}>{e.k}</span>
-              <span className="mono" style={{ color: "var(--fg-3)" }}>{e.v}</span>
-              <button className="btn sm ghost"><Ic.External size={11} /></button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      {tab === "ports" ? (
-        <div className="panel">
-          <div className="panel-head"><div className="panel-title"><span className="dot" /> Detected ports</div></div>
-          <div style={{ padding: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            {project.ports.map((p) => (
-              <div key={p} className="ws-card" style={{ padding: 12 }}>
-                <div className="ws-head">
-                  <span className="mono" style={{ fontSize: 16, fontWeight: 600 }}>:{p}</span>
-                  <StatusBadge s="running" />
-                </div>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--blue)" }}>http://localhost:{p}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {(tab === "deps" || tab === "git" || tab === "logs") ? (
-        <div className="empty">
-          <Ic.Logs size={28} />
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, marginTop: 8 }}>{tab} panel</div>
-          <div style={{ color: "var(--fg-4)", marginTop: 6 }}>Real data plumbs in via Tauri commands in v2.</div>
-        </div>
-      ) : null}
+      )}
+      {tab === 'health' && <ProjectHealth project={project} />}
     </div></div>
   );
 }
 
-interface RunData { kind: string; height: number; script: string; when: string; duration: string; detail: string; }
-
-function recentRuns(): RunData[] {
-  const scripts = ["dev", "build", "test", "lint", "test:e2e", "format"];
-  return new Array(48).fill(0).map((_, i) => {
-    const r = ((i * 7919) % 100) / 100;
-    const ok = r > 0.16;
-    const slow = ok && r > 0.86;
-    const failed = !ok;
-    const kind = failed ? "error" : slow ? "warn" : "ok";
-    const height = failed ? 0.95 : slow ? 0.85 : 0.20 + ((i * 31) % 60) / 100;
-    const script = scripts[i % scripts.length];
-    const hoursAgo = Math.floor((48 - i) * 0.5);
-    return { kind, height, script, when: hoursAgo === 0 ? "just now" : `${hoursAgo}h ago`, duration: failed ? "exit 1" : `${Math.round(200 + height * 1800)}ms`, detail: failed ? "exit 1 · last line: TypeError…" : `${Math.round(200 + height * 1800)}ms · 0 errors` };
-  });
-}
-
-function PortHistoryRow({ port }: { port: number }) {
-  const cells = 84;
-  const data = new Array(cells).fill(0).map((_, i) => {
-    const day = Math.floor(i / 12);
-    const hour = i % 12;
-    const idle = hour > 9 || (day === 2 && hour > 6);
-    return idle ? 0 : 0.35 + ((i * 53) % 70) / 100;
-  });
+function OverviewTab({ project, services, ports }: { project: Repo; services: Service[]; ports: Port[] }) {
+  const running = services.filter(service => service.status === 'running');
+  const cpu = services.reduce((total, service) => total + service.cpu, 0);
+  const memory = services.reduce((total, service) => total + service.mem, 0);
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "90px 1fr 70px", gap: 12, alignItems: "center", padding: "6px 0" }}>
-      <span className="mono" style={{ color: "var(--fg-1)", fontSize: 13, fontWeight: 600 }}>:{port}</span>
-      <div style={{ display: "flex", gap: 1, height: 26, alignItems: "flex-end" }}>
-        {data.map((v, i) => (
-          <span key={i} style={{ flex: 1, height: (v === 0 ? 2 : 4 + v * 22) + "px", background: v === 0 ? "oklch(0.30 0.005 248 / 0.4)" : `oklch(0.66 0.115 252 / ${0.25 + v * 0.65})`, borderRadius: 1 }} />
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(250px, 1fr)', gap: 16 }}>
+      <div className="panel">
+        <div className="panel-head"><div className="panel-title"><span className="dot" /> Services</div></div>
+        {services.length === 0 ? (
+          <Empty icon={<Ic.Play size={26} />} title="No workspace services are configured for this project." />
+        ) : services.map(service => (
+          <div key={service.id} className="script-row">
+            <span className="name" style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+              <StatusDot s={service.status} /> {service.name}
+            </span>
+            <span className="cmd">{service.cmd}</span>
+            <span className="mono" style={{ color: 'var(--fg-3)', fontSize: 11 }}>
+              {service.pid ? `PID ${service.pid}` : service.status}
+              {service.port ? ` · :${service.port}` : ''}
+            </span>
+          </div>
         ))}
       </div>
-      <div className="mono" style={{ fontSize: 11, color: "var(--ok)", textAlign: "right" }}>
-        {Math.round(data.filter((v) => v > 0).length / data.length * 100)}% up
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="panel">
+          <div className="panel-head"><div className="panel-title"><span className="dot" /> Project</div></div>
+          <div className="kv-grid" style={{ border: 0, borderRadius: 0 }}>
+            <Detail label="Framework" value={project.framework || 'Unknown'} />
+            <Detail label="Package manager" value={project.package_manager || 'Unknown'} />
+            <Detail label="Scripts" value={`${project.scripts.length}`} />
+            <Detail label="Manifests" value={`${project.manifests.length}`} />
+            <Detail label="Environment" value={project.has_env ? 'Detected' : 'None detected'} />
+            <Detail label="Git" value={project.has_git ? 'Repository' : 'Not detected'} />
+          </div>
+        </div>
+        <div className="panel">
+          <div className="panel-head"><div className="panel-title"><span className="dot" /> Runtime</div></div>
+          <div className="kv-grid" style={{ border: 0, borderRadius: 0 }}>
+            <Detail label="Running" value={`${running.length} / ${services.length}`} />
+            <Detail label="Ports" value={`${ports.length}`} />
+            <Detail label="CPU" value={`${cpu.toFixed(1)}%`} />
+            <Detail label="Memory" value={`${memory.toFixed(0)} MB`} />
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-interface BuildStatProps { label: string; value: string; tone?: string; }
-
-function BuildStat({ label, value, tone = "muted" }: BuildStatProps) {
-  const color = ({ ok: "var(--ok)", warn: "var(--warn)", danger: "var(--danger)", muted: "var(--fg-1)" } as Record<string, string>)[tone];
+function ScriptsTab({
+  project,
+  services,
+  onStart,
+  onStop,
+  onRestart,
+  onConfigure,
+}: {
+  project: Repo;
+  services: Service[];
+  onStart: (workspaceId: string, serviceId: string) => void;
+  onStop: (workspaceId: string, serviceId: string) => void;
+  onRestart: (workspaceId: string, serviceId: string) => void;
+  onConfigure: () => void;
+}) {
+  if (project.scripts.length === 0) {
+    return <div className="panel"><Empty icon={<Ic.Play size={28} />} title="No runnable scripts were detected." /></div>;
+  }
   return (
-    <div>
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--fg-4)", textTransform: "uppercase", letterSpacing: "0.12em" }}>{label}</div>
-      <div style={{ fontFamily: "var(--font-mono)", fontSize: 18, color, fontWeight: 600, marginTop: 4 }}>{value}</div>
+    <div className="panel">
+      <div className="panel-head">
+        <div className="panel-title"><span className="dot" /> Detected scripts</div>
+        <button className="btn sm ghost" onClick={onConfigure}>Configure services</button>
+      </div>
+      {project.scripts.map(script => {
+        const service = services.find(item => item.cmd === script.cmd || item.name === script.name);
+        const workspaceId = service?._ws;
+        const live = service && service.status !== 'stopped' && service.status !== 'failed' && service.status !== 'exited';
+        return (
+          <div key={`${script.name}:${script.cmd}`} className="script-row">
+            <span className="name">{script.name}</span>
+            <span className="cmd">{script.cmd}</span>
+            <span style={{ display: 'inline-flex', gap: 6 }}>
+              {service && workspaceId ? live ? <>
+                <button className="btn sm ghost" onClick={() => onRestart(workspaceId, service.id)}><Ic.Reload size={11} /> Restart</button>
+                <button className="btn sm danger" onClick={() => onStop(workspaceId, service.id)}><Ic.Stop size={11} /> Stop</button>
+              </> : (
+                <button className="btn sm primary" onClick={() => onStart(workspaceId, service.id)}><Ic.Play size={11} /> Run</button>
+              ) : (
+                <button className="btn sm ghost" onClick={onConfigure}><Ic.Plus size={11} /> Add to workspace</button>
+              )}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function LogsTab({ logs, serviceIds, onOpenLogs }: { logs: LogLine[]; serviceIds: string[]; onOpenLogs: (ids: string[]) => void }) {
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <div className="panel-title"><span className="dot" /> Live process output</div>
+        <button className="btn sm ghost" onClick={() => onOpenLogs(serviceIds)} disabled={serviceIds.length === 0}>
+          <Ic.External size={11} /> Full log viewer
+        </button>
+      </div>
+      {logs.length === 0 ? (
+        <Empty icon={<Ic.Logs size={28} />} title="No logs have been captured for this project yet." />
+      ) : (
+        <div style={{ maxHeight: 480, overflow: 'auto', padding: '8px 14px', background: 'var(--bg-0)' }}>
+          {logs.slice(-250).map((line, index) => (
+            <div key={`${line.ts}:${index}`} className="mono" style={{ display: 'grid', gridTemplateColumns: '70px 110px 1fr', gap: 9, padding: '3px 0', fontSize: 11.5 }}>
+              <span style={{ color: 'var(--fg-4)' }}>{line.ts}</span>
+              <span style={{ color: 'var(--blue)' }}>{line.src}</span>
+              <span style={{ color: line.kind === 'error' ? 'var(--danger)' : line.kind === 'warn' ? 'var(--warn)' : 'var(--fg-2)', whiteSpace: 'pre-wrap' }}>{line.msg}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PortsTab({ ports, fallbackPort, onOpenUrl }: { ports: Port[]; fallbackPort: number | null; onOpenUrl: (url: string) => void }) {
+  const visible = ports.length > 0
+    ? ports
+    : fallbackPort
+      ? [{ id: `project-${fallbackPort}`, port: fallbackPort, host: 'localhost', url: `http://localhost:${fallbackPort}`, status: 'running' as const, svc: '', ws: '', group: '' }]
+      : [];
+  return (
+    <div className="panel">
+      <div className="panel-head"><div className="panel-title"><span className="dot" /> Detected listeners</div></div>
+      {visible.length === 0 ? (
+        <Empty icon={<Ic.Ports size={28} />} title="No listening ports are associated with this project." />
+      ) : (
+        <div style={{ padding: 14, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 10 }}>
+          {visible.map(port => {
+            const url = port.url ?? `http://localhost:${port.port}`;
+            return (
+              <div key={port.id} className="ws-card" style={{ padding: 12 }}>
+                <div className="ws-head">
+                  <span className="mono" style={{ fontSize: 16, fontWeight: 600 }}>:{port.port}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><StatusDot s={port.status} /> {port.status}</span>
+                </div>
+                <button className="btn sm ghost" onClick={() => onOpenUrl(url)}><Ic.External size={11} /> {url}</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GitTab({ project, onManageGit }: { project: Repo; onManageGit: () => void }) {
+  const git = project.git_status;
+  if (!project.has_git) return <div className="panel"><Empty icon={<Ic.Branch size={28} />} title="Git is not initialized for this project." /></div>;
+  if (!git) return <div className="panel"><Empty icon={<Ic.Branch size={28} />} title="Git status is currently unavailable." /></div>;
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <div className="panel-title"><span className="dot" /> {git.branch}</div>
+        <button className="btn sm ghost" onClick={onManageGit}><Ic.External size={11} /> Manage Git</button>
+      </div>
+      <div className="kv-grid" style={{ border: 0, borderRadius: 0 }}>
+        <Detail label="State" value={git.clean ? 'Clean' : `${git.changed} changed`} />
+        <Detail label="Staged" value={`${git.staged}`} />
+        <Detail label="Unstaged" value={`${git.unstaged}`} />
+        <Detail label="Untracked" value={`${git.untracked}`} />
+        <Detail label="Ahead" value={`${git.ahead}`} />
+        <Detail label="Behind" value={`${git.behind}`} />
+      </div>
+      <div style={{ padding: '12px 14px', borderTop: '1px solid var(--line-soft)' }}>
+        <div style={{ color: 'var(--fg-4)', fontSize: 10.5, marginBottom: 5 }}>LAST COMMIT</div>
+        <div style={{ color: 'var(--fg-2)', fontSize: 12 }}>
+          {git.last_commit_hash && <span className="mono" style={{ color: 'var(--blue)', marginRight: 7 }}>{git.last_commit_hash}</span>}
+          {git.last_commit_message ?? 'No commits yet'}
+        </div>
+      </div>
+      {git.files.length > 0 && (
+        <div style={{ borderTop: '1px solid var(--line-soft)' }}>
+          {git.files.slice(0, 100).map(file => (
+            <div key={file.path} className="script-row">
+              <span className="mono" style={{ color: file.conflicted ? 'var(--danger)' : 'var(--warn)' }}>
+                {file.conflicted ? 'CONFLICT' : file.index_status ?? file.worktree_status ?? 'changed'}
+              </span>
+              <span className="cmd">{file.path}</span>
+              <span />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProjectHealth({ project }: { project: Repo }) {
+  const path = project.git_root ?? project.path;
+  const [result, setResult] = React.useState<RepositoryHealth | null>(null);
+  const [error, setError] = React.useState('');
+  const [loading, setLoading] = React.useState(true);
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      setResult((await tauriApi.analyzeRepositoryHealth([path]))[0] ?? null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setLoading(false);
+    }
+  }, [path]);
+  React.useEffect(() => { void load(); }, [load]);
+
+  if (loading && !result) return <div className="panel"><Empty icon={<Ic.Activity size={28} />} title="Analyzing repository health…" /></div>;
+  if (error || !result) return (
+    <div className="panel">
+      <Empty icon={<Ic.Activity size={28} />} title={error || 'Health analysis is unavailable.'} />
+      <div style={{ textAlign: 'center', paddingBottom: 16 }}><button className="btn sm ghost" onClick={() => void load()}>Retry</button></div>
+    </div>
+  );
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <div className="panel-title"><span className="dot" /> Repository health</div>
+        <button className="btn sm ghost" onClick={() => void load()} disabled={loading}><Ic.Reload size={11} /> Refresh</button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 16, padding: 16 }}>
+        <div>
+          <div className="mono" style={{ fontSize: 34, color: result.status === 'healthy' ? 'var(--ok)' : result.status === 'attention' ? 'var(--warn)' : 'var(--danger)' }}>
+            {result.score}<span style={{ fontSize: 12, color: 'var(--fg-4)' }}>/100</span>
+          </div>
+          <div className={`tag ${result.status === 'healthy' ? 'ok' : 'warn'}`}>{result.status}</div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 8 }}>
+          {result.signals.map(signal => (
+            <div key={signal.id} style={{ padding: 10, background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-1)' }}>
+              <div style={{ fontSize: 11, color: signal.state === 'bad' ? 'var(--danger)' : signal.state === 'warn' ? 'var(--warn)' : 'var(--fg-2)', fontWeight: 650 }}>{signal.label}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--fg-3)', marginTop: 4 }}>{signal.detail}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return <div className="kv"><span className="k">{label}</span><span className="v">{value}</span></div>;
+}
+
+function Empty({ icon, title }: { icon: React.ReactNode; title: string }) {
+  return (
+    <div className="empty" style={{ padding: 28 }}>
+      {icon}
+      <div style={{ color: 'var(--fg-3)', marginTop: 9, fontSize: 12 }}>{title}</div>
     </div>
   );
 }
