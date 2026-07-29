@@ -10,8 +10,9 @@ import {
   EXTERNAL_PROCESS_WORKSPACE,
 } from './project-runtime';
 import { EnvProfilesPanel } from './env-profiles-panel';
+import { PackagesPanel } from './packages-panel';
 
-type ProjectTab = 'overview' | 'scripts' | 'logs' | 'ports' | 'environment' | 'git' | 'github' | 'health';
+type ProjectTab = 'overview' | 'scripts' | 'packages' | 'logs' | 'ports' | 'environment' | 'git' | 'github' | 'health';
 
 interface ProjectViewProps {
   project: Repo;
@@ -122,6 +123,9 @@ export function ProjectView({
         {([
           ['overview', 'Overview', <Ic.Activity size={11} />],
           ['scripts', 'Scripts', <Ic.Play size={11} />, project.scripts.length],
+          ...(project.manifests.includes('package.json')
+            ? [['packages', 'Packages', <Ic.Stack size={11} />] as [ProjectTab, string, React.ReactNode]]
+            : []),
           ['logs', 'Logs', <Ic.Logs size={11} />, projectLogs.length],
           ['ports', 'Ports', <Ic.Ports size={11} />, projectPorts.length],
           ['environment', 'Environment', <Ic.Activity size={11} />, envProfiles.length],
@@ -148,6 +152,7 @@ export function ProjectView({
           onConfigure={onConfigureScripts}
         />
       )}
+      {tab === 'packages' && <PackagesPanel projectPath={project.path} />}
       {tab === 'logs' && (
         <LogsTab logs={projectLogs} serviceIds={[...serviceIds]} onOpenLogs={onOpenLogs} />
       )}

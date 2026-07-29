@@ -251,6 +251,40 @@ export interface RepositoryHealth {
   }>;
 }
 
+export type DependencyKind = "dependency" | "dev_dependency" | "peer_dependency" | "optional_dependency";
+export type PackageAction = "install_all" | "add" | "remove" | "update" | "audit" | "outdated" | "regenerate_lockfile";
+
+export interface ProjectPackage {
+  name: string;
+  requested_version: string;
+  installed_version: string | null;
+  kind: DependencyKind;
+}
+
+export interface ProjectPackages {
+  package_manager: PackageManager;
+  packages: ProjectPackage[];
+  installed_count: number;
+  missing_count: number;
+}
+
+export interface PackageActionPayload {
+  project_path: string;
+  action: PackageAction;
+  package_name?: string | null;
+  version?: string | null;
+  dev?: boolean;
+}
+
+export interface PackageActionResult {
+  package_manager: PackageManager;
+  command: string;
+  success: boolean;
+  exit_code: number | null;
+  stdout: string;
+  stderr: string;
+}
+
 // ── Commands ──────────────────────────────────────────────────────────────────
 
 export const tauriApi = {
@@ -346,6 +380,12 @@ export const tauriApi = {
 
   analyzeRepositoryHealth: (paths: string[]) =>
     invoke<RepositoryHealth[]>("analyze_repository_health", { paths }),
+
+  getProjectPackages: (path: string) =>
+    invoke<ProjectPackages>("get_project_packages", { path }),
+
+  runPackageAction: (payload: PackageActionPayload) =>
+    invoke<PackageActionResult>("run_package_action", { payload }),
 
   openInEditor: (path: string) => invoke<void>("open_in_editor", { path }),
 
