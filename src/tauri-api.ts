@@ -215,6 +215,36 @@ export interface CreateProjectResult {
   warnings: string[];
 }
 
+export type RepositoryHealthStatus = "healthy" | "attention" | "risk";
+export type HealthSignalState = "good" | "info" | "warn" | "bad";
+
+export interface RepositoryHealth {
+  path: string;
+  score: number;
+  status: RepositoryHealthStatus;
+  signals: Array<{
+    id: string;
+    label: string;
+    state: HealthSignalState;
+    detail: string;
+  }>;
+  has_readme: boolean;
+  has_license: boolean;
+  has_ci: boolean;
+  dependency_manifests: string[];
+  uncommitted_changes: number;
+  oldest_uncommitted_days: number | null;
+  unpushed_commits: number;
+  last_commit_timestamp: number | null;
+  days_since_last_commit: number | null;
+  stale_branches: Array<{
+    name: string;
+    last_commit_timestamp: number;
+    days_since_commit: number;
+    merged_into_head: boolean;
+  }>;
+}
+
 // ── Commands ──────────────────────────────────────────────────────────────────
 
 export const tauriApi = {
@@ -307,6 +337,9 @@ export const tauriApi = {
 
   createProject: (payload: CreateProjectPayload) =>
     invoke<CreateProjectResult>("create_project", { payload }),
+
+  analyzeRepositoryHealth: (paths: string[]) =>
+    invoke<RepositoryHealth[]>("analyze_repository_health", { paths }),
 
   openInEditor: (path: string) => invoke<void>("open_in_editor", { path }),
 

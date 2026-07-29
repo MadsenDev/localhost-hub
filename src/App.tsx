@@ -7,6 +7,7 @@ import { HomeView } from './view-home';
 import { WorkspaceView } from './view-workspace';
 import { ReposView } from './view-repos';
 import { GitHubReposView } from './view-github-repos';
+import { HealthView } from './view-health';
 import { PortsView } from './view-ports';
 import { LogsView } from './view-logs';
 import { SessionsView } from './view-sessions';
@@ -895,6 +896,7 @@ export default function App() {
       />
     );
     if (view === "github-repos") return <GitHubReposView />;
+    if (view === "health") return <HealthView repos={repos} />;
     if (view === "workspace" && !currentWs) return (
       <WorkspaceView
         workspace={null}

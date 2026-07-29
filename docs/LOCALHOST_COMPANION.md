@@ -78,7 +78,7 @@ product boundary and multiply security risk.
 ## Architecture Direction
 
 ```text
-Localhost Companion (Android / Compose)
+Localhost Companion (Kotlin / Jetpack Compose)
                     |
           WebSocket events + HTTP
                     |
@@ -134,6 +134,23 @@ Requirements:
 Remote access beyond the LAN should prefer Tailscale, WireGuard, or SSH rather
 than a custom cloud relay.
 
+## Android Implementation Target
+
+Companion should be a native Android application written in **Kotlin with
+Jetpack Compose**. The supplied interactive HTML prototype is a product and
+visual reference, not an application shell to embed or ship. Its flows should
+be rebuilt as native Compose screens, navigation, sheets, permissions, and
+notifications.
+
+Prefer Android platform facilities where they improve reliability:
+
+- Android Keystore-backed device credentials
+- foreground-service behavior only when a sustained connection requires it
+- native notifications and notification actions
+- CameraX or the platform QR scanner for pairing
+- Network Service Discovery for `_localhost-hub._tcp.local`
+- lifecycle-aware WebSocket reconnect behavior
+
 ## Android Information Architecture
 
 Keep navigation limited to:
@@ -141,8 +158,37 @@ Keep navigation limited to:
 - **Home** — connected Hub, running services, and workspace controls
 - **Projects** — project state, services, ports, and basic Git state
 - **Logs** — live output filtered by project or service
+- **Ports** — reachable development URLs and open-on-device actions
 
 The UI should prioritize one-handed status and control, not dashboard density.
+
+## Supplied Design Reference
+
+The July 2026 Companion prototype establishes the initial native screen map and
+visual direction:
+
+- Pairing progresses through discovery, QR scan, explicit device permissions,
+  and a connected confirmation.
+- Home shows the connected desktop, connection failures, running services,
+  workspace controls, and LAN-reachable URLs.
+- Projects leads to a focused project detail with service controls, ports,
+  recent logs, and read-only Git state.
+- Logs provides live service filtering.
+- Ports is a fourth bottom-navigation destination for mobile testing.
+- Destructive or disruptive controls use confirmation sheets.
+- Unexpected process exits surface as a clear crash alert and native
+  notification.
+
+The visual language is intentionally close to the desktop V2 UI: dark charcoal
+surfaces, restrained blue accents, compact status cards, monospace technical
+values, and conspicuous running/warning/error states. Native accessibility,
+touch targets, dynamic type, and Android back behavior take precedence over
+pixel-identical reproduction of the prototype.
+
+The permission boundary shown in the design remains authoritative: Companion
+may view projects, control services, view logs, and control workspaces according
+to its paired-device grants. It receives no shell, filesystem, or Git-write
+capability.
 
 ## Release Shape
 
@@ -183,4 +229,3 @@ Companion implementation begins only after:
 3. Logs/events can be subscribed to without depending on React or Tauri window
    state.
 4. The threat model and device-revocation flow are documented.
-

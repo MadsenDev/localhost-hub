@@ -49,6 +49,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Keeps incomplete API permissions non-fatal by displaying available repository data with scoped warnings.
   - Opens only validated HTTPS links hosted on `github.com`.
   - Writes the Rust-owned configuration with owner-only permissions on Unix so the stored OAuth token is not left world-readable.
+- Added native repository-health analysis and a dedicated Health view:
+  - Scores local repositories from activity, working-tree age, unpushed commits, inactive branches, README and license presence, dependency manifests, and common CI configuration.
+  - Surfaces healthy, needs-attention, and at-risk summaries with expandable signal details.
+  - Runs filesystem and Git inspection in Rust while keeping presentation and refresh state in React.
+- Refined the Localhost Companion direction from the supplied design prototype:
+  - Fixed the implementation target as a native Kotlin and Jetpack Compose Android app; the HTML prototype remains a design reference only.
+  - Captured its pairing, permission, Home, Projects, Logs, Ports, confirmation, and crash-alert flows.
+  - Preserved the focused remote-control boundary with no shell, filesystem, or Git-write access.
 
 ### Changed
 
