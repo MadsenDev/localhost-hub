@@ -155,6 +155,8 @@ function buildHubData(
         order: ss.order ?? index,
         env_profile_id: ss.env_profile_id ?? null,
         expected_port: ss.expected_port ?? null,
+        startup_delay_ms: ss.startup_delay_ms ?? 0,
+        readiness_timeout_ms: ss.readiness_timeout_ms ?? 0,
       };
     });
     return {
@@ -595,6 +597,8 @@ export default function App() {
         run_mode: svc.run_mode ?? 'parallel',
         order: svc.order ?? w.services.length,
         expected_port: svc.expected_port ?? null,
+        startup_delay_ms: svc.startup_delay_ms ?? 0,
+        readiness_timeout_ms: svc.readiness_timeout_ms ?? 0,
       }],
     } : w));
   }
@@ -626,7 +630,10 @@ export default function App() {
   function updateWorkspaceService(
     wsId: string,
     svcId: string,
-    patch: Partial<Pick<StoredService, 'run_mode' | 'order' | 'env_profile_id' | 'expected_port'>>,
+    patch: Partial<Pick<
+      StoredService,
+      'run_mode' | 'order' | 'env_profile_id' | 'expected_port' | 'startup_delay_ms' | 'readiness_timeout_ms'
+    >>,
   ) {
     saveWorkspaces(storedWsRef.current.map(w => w.id === wsId ? {
       ...w,
@@ -980,6 +987,8 @@ export default function App() {
         environment,
         expected_ports: deriveExpectedPorts(service.cmd, environment, service.expected_port),
         allow_port_conflicts: false,
+        startup_delay_ms: service.startup_delay_ms ?? 0,
+        readiness_timeout_ms: service.readiness_timeout_ms ?? 0,
       };
     });
     const allowPortConflicts = await approveExpectedPorts(
@@ -1015,6 +1024,15 @@ export default function App() {
       });
       if (result.failed.length > 0) {
         toast(`${result.failed.length} service${result.failed.length === 1 ? '' : 's'} failed to start`, "error");
+      }
+      result.warnings.forEach(({ service_id, warning }) => {
+        pushLog(service_id, warning, "warn");
+      });
+      if (result.warnings.length > 0) {
+        toast(
+          `${result.warnings.length} service${result.warnings.length === 1 ? '' : 's'} did not become ready before startup continued`,
+          "info",
+        );
       }
     } catch (error) {
       live.services.forEach((service) => {

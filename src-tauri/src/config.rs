@@ -83,6 +83,10 @@ pub struct StoredService {
     pub env_profile_id: Option<String>,
     #[serde(default)]
     pub expected_port: Option<u16>,
+    #[serde(default)]
+    pub startup_delay_ms: u64,
+    #[serde(default)]
+    pub readiness_timeout_ms: u64,
 }
 
 fn default_run_mode() -> String {
@@ -196,5 +200,7 @@ mod tests {
 
         assert_eq!(service.expected_port, None);
         assert_eq!(service.run_mode, "parallel");
+        assert_eq!(service.startup_delay_ms, 0);
+        assert_eq!(service.readiness_timeout_ms, 0);
     }
 }

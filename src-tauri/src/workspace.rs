@@ -5,11 +5,13 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 const DEFAULT_MAX_DEPTH: usize = 4;
-const SEQUENTIAL_START_DELAY: Duration = Duration::from_millis(250);
+const READINESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
+const MAX_STARTUP_DELAY_MS: u64 = 120_000;
+const MAX_READINESS_TIMEOUT_MS: u64 = 300_000;
 const DEFAULT_IGNORED_DIRS: &[&str] = &[
     ".git",
     ".next",
@@ -82,12 +84,22 @@ pub struct WorkspaceServiceSpec {
     pub expected_ports: Vec<u16>,
     #[serde(default)]
     pub allow_port_conflicts: bool,
+    #[serde(default)]
+    pub startup_delay_ms: u64,
+    #[serde(default)]
+    pub readiness_timeout_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkspaceServiceFailure {
     pub service_id: String,
     pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceServiceWarning {
+    pub service_id: String,
+    pub warning: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -104,6 +116,7 @@ pub struct WorkspaceRunResult {
     pub stopped: Vec<String>,
     pub not_running: Vec<String>,
     pub failed: Vec<WorkspaceServiceFailure>,
+    pub warnings: Vec<WorkspaceServiceWarning>,
 }
 
 impl WorkspaceRunResult {
@@ -115,6 +128,7 @@ impl WorkspaceRunResult {
             stopped: Vec::new(),
             not_running: Vec::new(),
             failed: Vec::new(),
+            warnings: Vec::new(),
         }
     }
 }
@@ -162,14 +176,30 @@ pub fn start_workspace(
     for service in parallel {
         start_workspace_service(&app, manager, service, &mut result);
     }
-    for (index, service) in sequential.into_iter().enumerate() {
-        if index > 0 {
-            thread::sleep(SEQUENTIAL_START_DELAY);
+    for service in sequential {
+        if service.startup_delay_ms > 0 {
+            thread::sleep(Duration::from_millis(service.startup_delay_ms));
         }
-        start_workspace_service(&app, manager, service, &mut result);
+        let service_id = service.service_id.clone();
+        let expected_ports = service.expected_ports.clone();
+        let readiness_timeout_ms = service.readiness_timeout_ms;
+        let running = start_workspace_service(&app, manager, service, &mut result);
+        if running && readiness_timeout_ms > 0 {
+            if let Err(warning) = wait_for_service_readiness(
+                manager,
+                &service_id,
+                &expected_ports,
+                Duration::from_millis(readiness_timeout_ms),
+            ) {
+                result.warnings.push(WorkspaceServiceWarning {
+                    service_id,
+                    warning,
+                });
+            }
+        }
     }
 
-    let (kind, message) = if result.failed.is_empty() {
+    let (kind, message) = if result.failed.is_empty() && result.warnings.is_empty() {
         (
             WorkspaceEventKind::Started,
             format!("started {} workspace services", result.started.len()),
@@ -179,13 +209,22 @@ pub fn start_workspace(
             WorkspaceEventKind::Error,
             format!("failed to start {} workspace services", result.failed.len()),
         )
-    } else {
+    } else if !result.failed.is_empty() {
         (
             WorkspaceEventKind::Partial,
             format!(
                 "started {} services; {} failed",
                 result.started.len(),
                 result.failed.len()
+            ),
+        )
+    } else {
+        (
+            WorkspaceEventKind::Partial,
+            format!(
+                "started {} services; {} readiness warnings",
+                result.started.len(),
+                result.warnings.len()
             ),
         )
     };
@@ -272,9 +311,12 @@ fn start_workspace_service(
     manager: &ServiceManager,
     service: WorkspaceServiceSpec,
     result: &mut WorkspaceRunResult,
-) {
+) -> bool {
     match manager.is_running(&service.service_id) {
-        Ok(true) => result.already_running.push(service.service_id),
+        Ok(true) => {
+            result.already_running.push(service.service_id);
+            true
+        }
         Ok(false) => match manager.start(
             app.clone(),
             service.service_id.clone(),
@@ -284,17 +326,64 @@ fn start_workspace_service(
             service.expected_ports,
             service.allow_port_conflicts,
         ) {
-            Ok(_) => result.started.push(service.service_id),
-            Err(error) => result.failed.push(WorkspaceServiceFailure {
+            Ok(_) => {
+                result.started.push(service.service_id);
+                true
+            }
+            Err(error) => {
+                result.failed.push(WorkspaceServiceFailure {
+                    service_id: service.service_id,
+                    error,
+                });
+                false
+            }
+        },
+        Err(error) => {
+            result.failed.push(WorkspaceServiceFailure {
                 service_id: service.service_id,
                 error,
-            }),
-        },
-        Err(error) => result.failed.push(WorkspaceServiceFailure {
-            service_id: service.service_id,
-            error,
-        }),
+            });
+            false
+        }
     }
+}
+
+fn wait_for_service_readiness(
+    manager: &ServiceManager,
+    service_id: &str,
+    expected_ports: &[u16],
+    timeout: Duration,
+) -> Result<(), String> {
+    let started = Instant::now();
+    loop {
+        if !manager.is_running(service_id)? {
+            return Err(format!(
+                "service exited before expected port{} {} became ready",
+                if expected_ports.len() == 1 { "" } else { "s" },
+                format_ports(expected_ports)
+            ));
+        }
+        if manager.owns_listening_ports(service_id, expected_ports)? {
+            return Ok(());
+        }
+        if started.elapsed() >= timeout {
+            return Err(format!(
+                "timed out after {} ms waiting for expected port{} {}",
+                timeout.as_millis(),
+                if expected_ports.len() == 1 { "" } else { "s" },
+                format_ports(expected_ports)
+            ));
+        }
+        thread::sleep(READINESS_POLL_INTERVAL);
+    }
+}
+
+fn format_ports(ports: &[u16]) -> String {
+    ports
+        .iter()
+        .map(|port| format!(":{port}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn plan_workspace_services(
@@ -312,6 +401,24 @@ fn plan_workspace_services(
         if !seen.insert(service.service_id.clone()) {
             return Err(format!(
                 "workspace contains duplicate service id: {}",
+                service.service_id
+            ));
+        }
+        if service.startup_delay_ms > MAX_STARTUP_DELAY_MS {
+            return Err(format!(
+                "workspace service {} startup delay exceeds {} ms",
+                service.service_id, MAX_STARTUP_DELAY_MS
+            ));
+        }
+        if service.readiness_timeout_ms > MAX_READINESS_TIMEOUT_MS {
+            return Err(format!(
+                "workspace service {} readiness timeout exceeds {} ms",
+                service.service_id, MAX_READINESS_TIMEOUT_MS
+            ));
+        }
+        if service.readiness_timeout_ms > 0 && service.expected_ports.is_empty() {
+            return Err(format!(
+                "workspace service {} cannot wait for readiness without an expected port",
                 service.service_id
             ));
         }
@@ -1086,6 +1193,8 @@ mod tests {
             environment: ServiceEnvironment::default(),
             expected_ports: Vec::new(),
             allow_port_conflicts: false,
+            startup_delay_ms: 0,
+            readiness_timeout_ms: 0,
         }
     }
 
@@ -1129,6 +1238,28 @@ mod tests {
         assert_eq!(service.order, 0);
         assert!(service.expected_ports.is_empty());
         assert!(!service.allow_port_conflicts);
+        assert_eq!(service.startup_delay_ms, 0);
+        assert_eq!(service.readiness_timeout_ms, 0);
+    }
+
+    #[test]
+    fn validates_workspace_readiness_configuration() {
+        let mut missing_port = workspace_service("web", WorkspaceRunMode::Sequential, 0);
+        missing_port.readiness_timeout_ms = 30_000;
+        assert!(plan_workspace_services(vec![missing_port])
+            .unwrap_err()
+            .contains("without an expected port"));
+
+        let mut excessive_delay = workspace_service("api", WorkspaceRunMode::Sequential, 0);
+        excessive_delay.startup_delay_ms = MAX_STARTUP_DELAY_MS + 1;
+        assert!(plan_workspace_services(vec![excessive_delay])
+            .unwrap_err()
+            .contains("startup delay exceeds"));
+
+        let mut valid = workspace_service("ready", WorkspaceRunMode::Sequential, 0);
+        valid.expected_ports = vec![8080];
+        valid.readiness_timeout_ms = 30_000;
+        assert!(plan_workspace_services(vec![valid]).is_ok());
     }
 
     #[test]

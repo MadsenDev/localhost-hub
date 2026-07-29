@@ -1,5 +1,6 @@
 use crate::ports::{
-    extract_local_urls, find_port_conflicts, port_from_local_url, scan_live_ports, LivePort,
+    extract_local_urls, find_port_conflicts, port_from_local_url, scan_all_live_ports,
+    scan_live_ports, LivePort,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -280,6 +281,40 @@ impl ServiceManager {
             .lock()
             .map_err(|e| e.to_string())?
             .contains_key(service_id))
+    }
+
+    pub fn owns_listening_ports(
+        &self,
+        service_id: &str,
+        expected_ports: &[u16],
+    ) -> Result<bool, String> {
+        if expected_ports.is_empty() {
+            return Ok(true);
+        }
+        let pid = self
+            .children
+            .lock()
+            .map_err(|error| error.to_string())?
+            .get(service_id)
+            .map(|managed| managed.pid)
+            .ok_or_else(|| "service is not managed by Localhost Hub".to_string())?;
+        let mut system = System::new_with_specifics(
+            RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
+        );
+        system.refresh_all();
+        let process_ids = process_tree_ids(&system, pid);
+        let owned_ports = scan_all_live_ports()
+            .into_iter()
+            .filter(|port| {
+                port.pid
+                    .map(|pid| process_ids.contains(&Pid::from_u32(pid)))
+                    .unwrap_or(false)
+            })
+            .map(|port| port.port)
+            .collect::<HashSet<_>>();
+        Ok(expected_ports
+            .iter()
+            .all(|port| owned_ports.contains(port)))
     }
 
     fn start_with_sink(

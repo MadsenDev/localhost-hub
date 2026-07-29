@@ -19,6 +19,8 @@ export interface Service {
   order?: number;
   env_profile_id?: string | null;
   expected_port?: number | null;
+  startup_delay_ms?: number;
+  readiness_timeout_ms?: number;
   _ws?: string;
 }
 
@@ -236,6 +238,8 @@ export interface StoredService {
   order?: number;
   env_profile_id?: string | null;
   expected_port?: number | null;
+  startup_delay_ms?: number;
+  readiness_timeout_ms?: number;
 }
 
 export interface StoredWorkspace {
