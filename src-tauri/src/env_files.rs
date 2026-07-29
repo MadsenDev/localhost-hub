@@ -154,17 +154,17 @@ fn parse_double_quoted(value: &str, line_number: usize) -> Result<String, String
     let mut escaped = false;
     for (index, character) in value.char_indices() {
         if escaped {
-            output.push(match character {
-                'n' => '\n',
-                'r' => '\r',
-                't' => '\t',
-                '\\' => '\\',
-                '"' => '"',
+            match character {
+                'n' => output.push('\n'),
+                'r' => output.push('\r'),
+                't' => output.push('\t'),
+                '\\' => output.push('\\'),
+                '"' => output.push('"'),
                 other => {
                     output.push('\\');
-                    other
+                    output.push(other);
                 }
-            });
+            }
             escaped = false;
             continue;
         }
