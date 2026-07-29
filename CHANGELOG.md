@@ -66,6 +66,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Detects matching development processes started outside Hub, preferring the process that owns the listening port.
   - Labels externally owned processes separately and permits explicit termination without offering an unsafe synthetic restart.
   - Includes direct and external services in global runtime counts, logs, ports, and project views.
+- Added Rust-owned environment-profile execution:
+  - Creates and edits per-project profiles in the V2 Project Detail interface, including masked secret fields and one project default.
+  - Applies the default profile to direct project scripts and lets each workspace service select a specific profile.
+  - Validates environment keys in Rust, extends the inherited system environment, and preserves the same environment snapshot across managed restarts.
+  - Keeps profile values out of Hub lifecycle events while documenting that locally stored secret-marked values are masked rather than encrypted.
+  - Preserves compatibility with existing configuration files that predate environment profiles.
 - Refined the Localhost Companion direction from the supplied design prototype:
   - Fixed the implementation target as a native Kotlin and Jetpack Compose Android app; the HTML prototype remains a design reference only.
   - Captured its pairing, permission, Home, Projects, Logs, Ports, confirmation, and crash-alert flows.

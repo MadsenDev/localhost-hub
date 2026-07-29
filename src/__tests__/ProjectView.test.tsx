@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ProjectView } from '../view-project';
-import type { LogLine, Port, Repo, Service } from '../types';
+import type { EnvProfile, LogLine, Port, Repo, Service } from '../types';
 
 const project: Repo = {
   id: 'repo-localhost-hub',
@@ -78,9 +78,11 @@ const log: LogLine = {
 function renderProject({
   services = [service],
   onStartScript = vi.fn(),
+  envProfiles = [],
 }: {
   services?: Service[];
   onStartScript?: ReturnType<typeof vi.fn>;
+  envProfiles?: EnvProfile[];
 } = {}) {
   return render(
     <ProjectView
@@ -97,6 +99,8 @@ function renderProject({
       onOpenEditor={vi.fn()}
       onConfigureScripts={vi.fn()}
       onManageGit={vi.fn()}
+      envProfiles={envProfiles}
+      onSaveEnvProfiles={vi.fn()}
     />,
   );
 }
@@ -145,5 +149,22 @@ describe('ProjectView', () => {
 
     expect(onStartScript).toHaveBeenCalledWith(project, project.scripts[0]);
     expect(screen.getAllByRole('button', { name: /Add to workspace/ })).toHaveLength(2);
+  });
+
+  it('shows masked project environment profiles', () => {
+    renderProject({
+      envProfiles: [{
+        id: 'development',
+        project_path: project.path,
+        name: 'Development',
+        description: 'Local API',
+        is_default: true,
+        vars: [{ key: 'API_TOKEN', value: 'private-value', is_secret: true }],
+      }],
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Environment/ }));
+    expect(screen.getByDisplayValue('Development')).toBeInTheDocument();
+    expect(screen.getByLabelText('API_TOKEN value')).toHaveAttribute('type', 'password');
   });
 });

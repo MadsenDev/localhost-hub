@@ -16,6 +16,29 @@ pub struct AppConfig {
     pub user_workspaces: Vec<StoredWorkspace>,
     #[serde(default)]
     pub appearance: AppearanceConfig,
+    #[serde(default)]
+    pub env_profiles: Vec<EnvProfile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvProfile {
+    pub id: String,
+    pub project_path: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub is_default: bool,
+    #[serde(default)]
+    pub vars: Vec<EnvVariable>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvVariable {
+    pub key: String,
+    pub value: String,
+    #[serde(default)]
+    pub is_secret: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +79,8 @@ pub struct StoredService {
     pub run_mode: String,
     #[serde(default)]
     pub order: usize,
+    #[serde(default)]
+    pub env_profile_id: Option<String>,
 }
 
 fn default_run_mode() -> String {
@@ -130,5 +155,27 @@ mod tests {
             assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
         }
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn older_config_without_environment_profiles_still_loads() {
+        let config: AppConfig = serde_json::from_str(
+            r##"{
+                "onboarding_complete": true,
+                "github_token": null,
+                "github_user": null,
+                "workspace_roots": [],
+                "user_workspaces": [],
+                "appearance": {
+                    "theme": "charcoal",
+                    "accent": "#4a78c4",
+                    "density": "balanced",
+                    "sidebar": "labeled"
+                }
+            }"##,
+        )
+        .expect("deserialize old config");
+
+        assert!(config.env_profiles.is_empty());
     }
 }

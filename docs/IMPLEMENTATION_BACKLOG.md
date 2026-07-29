@@ -37,7 +37,8 @@ This backlog captures the current product direction in implementation order. Kee
 - [x] Stop workspace services before deleting a workspace.
 - [ ] Add configurable startup delays and readiness/health checks.
 - [ ] Add service dependencies and dependency-aware startup ordering.
-- [ ] Add workspace environment profiles.
+- [x] Add project environment profiles with workspace-service selection and Rust-owned process injection.
+- [ ] Add safe `.env` import/export and per-run temporary overrides.
 
 ### Ports and local URLs
 
@@ -69,7 +70,7 @@ This backlog captures the current product direction in implementation order. Kee
 - [x] Detect JavaScript, Rust, Go, Python, Ruby, and PHP project foundations.
 - [x] Use scanned `Repo[]` data as the canonical project source across Home, Repos, the command palette, and Project Detail.
 - [x] Make Project Detail work with live scanned data.
-- [x] Add project tabs: Overview, Scripts, Git, GitHub, Ports, Logs, Health.
+- [x] Add project tabs: Overview, Scripts, Environment, Git, GitHub, Ports, Logs, Health.
 - [ ] Detect README/license files.
 - [ ] Detect Docker/devcontainer files.
 - [ ] Detect languages and dependency manifests.
