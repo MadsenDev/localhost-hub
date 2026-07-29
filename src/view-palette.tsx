@@ -41,6 +41,7 @@ export function CommandPalette({ open, onClose, data, onRunScript, onSwitchWs, o
     [
       { id: "v-home",     label: "Go to Home",       sub: "Dashboard overview",  kind: "nav", icon: <Ic.Home size={13} />,    run: () => onOpenView("home") },
       { id: "v-ws",       label: "Go to Workspace",  sub: "Currently selected",  kind: "nav", icon: <Ic.Stack size={13} />,   run: () => onOpenView("workspace") },
+      { id: "v-health",   label: "Go to Health",     sub: "Repository health",    kind: "nav", icon: <Ic.Activity size={13} />, run: () => onOpenView("health") },
       { id: "v-ports",    label: "Go to Ports",      sub: "Port topology map",   kind: "nav", icon: <Ic.Ports size={13} />,   run: () => onOpenView("ports") },
       { id: "v-logs",     label: "Go to Logs",       sub: "Streaming logs",      kind: "nav", icon: <Ic.Logs size={13} />,    run: () => onOpenView("logs") },
       { id: "v-sessions", label: "Go to Sessions",   sub: "Timeline scrubber",   kind: "nav", icon: <Ic.History size={13} />, run: () => onOpenView("sessions") }

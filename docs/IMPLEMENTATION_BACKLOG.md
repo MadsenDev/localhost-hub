@@ -168,16 +168,18 @@ This backlog captures the current product direction in implementation order. Kee
 
 ## Phase 4: Repo Health
 
-- [ ] Track last commit age.
-- [ ] Track uncommitted changes age.
-- [ ] Track unpushed commits.
-- [ ] Detect stale branches.
-- [ ] Detect README presence.
-- [ ] Detect license presence.
-- [ ] Detect dependency files.
+- [x] Track last commit age.
+- [x] Track uncommitted changes age.
+- [x] Track unpushed commits.
+- [x] Detect stale branches.
+- [x] Detect README presence.
+- [x] Detect license presence.
+- [x] Detect dependency files.
+- [x] Detect common CI configuration.
 - [ ] Detect archived GitHub state.
 - [ ] Classify repos as active, quiet, dirty, unpushed, stale, archived, experimental.
 - [ ] Add health warnings to Home and Repos.
+- [x] Add a dedicated Health view with scores, warnings, and signal details.
 - [ ] Add optional metrics: commit frequency, contributor count, branch age, PR age, issue age.
 
 ## Phase 5: Optional AI Layer

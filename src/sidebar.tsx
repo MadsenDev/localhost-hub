@@ -16,6 +16,7 @@ export function Sidebar({ view, setView, ws, setWs, workspaces, runningByWs, onC
     { id: 'home',       label: 'Home',       icon: <Ic.Home /> },
     { id: 'repos',      label: 'Repos',      icon: <Ic.Folder /> },
     { id: 'github-repos', label: 'GitHub',    icon: <Ic.Branch /> },
+    { id: 'health',     label: 'Health',     icon: <Ic.Activity /> },
     { id: 'ports',      label: 'Ports',      icon: <Ic.Ports />,     badge: <span className="badge live">live</span> },
     { id: 'logs',       label: 'Logs',       icon: <Ic.Logs /> },
     { id: 'sessions',   label: 'Sessions',   icon: <Ic.History /> },

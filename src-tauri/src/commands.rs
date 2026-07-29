@@ -27,6 +27,7 @@ use crate::services::{terminate_process_tree, ManagedServiceInfo, ServiceManager
 use crate::scaffold::{
     create_project as scaffold_project, CreateProjectPayload, CreateProjectResult,
 };
+use crate::health::{analyze_repositories, RepositoryHealth};
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -312,6 +313,15 @@ pub fn find_default_workspace_roots() -> Vec<String> {
 #[tauri::command]
 pub async fn create_project(payload: CreateProjectPayload) -> Result<CreateProjectResult, String> {
     scaffold_project(payload).await
+}
+
+#[tauri::command]
+pub async fn analyze_repository_health(
+    paths: Vec<String>,
+) -> Result<Vec<RepositoryHealth>, String> {
+    tauri::async_runtime::spawn_blocking(move || analyze_repositories(paths))
+        .await
+        .map_err(|error| format!("Repository health analysis failed: {error}"))
 }
 
 // ── Shell integration ─────────────────────────────────────────────────────────
