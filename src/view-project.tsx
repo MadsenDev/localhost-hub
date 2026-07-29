@@ -1,9 +1,14 @@
 import React from 'react';
-import type { LogLine, Port, Repo, Service } from './types';
+import type { LogLine, Port, Repo, Script, Service } from './types';
 import { Ic } from './icons';
 import { StatusDot } from './shared';
 import { GitHubProjectPanel } from './github-project-panel';
 import { tauriApi, type RepositoryHealth } from './tauri-api';
+import {
+  directProjectServiceId,
+  DIRECT_PROJECT_WORKSPACE,
+  EXTERNAL_PROCESS_WORKSPACE,
+} from './project-runtime';
 
 type ProjectTab = 'overview' | 'scripts' | 'logs' | 'ports' | 'git' | 'github' | 'health';
 
@@ -13,9 +18,9 @@ interface ProjectViewProps {
   ports: Port[];
   logs: LogLine[];
   onBack: () => void;
-  onStartService: (workspaceId: string, serviceId: string) => void;
-  onStopService: (workspaceId: string, serviceId: string) => void;
-  onRestartService: (workspaceId: string, serviceId: string) => void;
+  onStartScript: (project: Repo, script: Script, configuredService?: Service) => void;
+  onStopService: (service: Service) => void;
+  onRestartService: (service: Service) => void;
   onOpenLogs: (serviceIds: string[]) => void;
   onOpenUrl: (url: string) => void;
   onOpenEditor: (path: string) => void;
@@ -40,7 +45,7 @@ export function ProjectView({
   ports,
   logs,
   onBack,
-  onStartService,
+  onStartScript,
   onStopService,
   onRestartService,
   onOpenLogs,
@@ -51,7 +56,10 @@ export function ProjectView({
 }: ProjectViewProps) {
   const [tab, setTab] = React.useState<ProjectTab>('overview');
   const projectServices = services.filter(service => belongsToProject(service, project));
-  const serviceIds = new Set(projectServices.map(service => service.id));
+  const serviceIds = new Set([
+    ...projectServices.map(service => service.id),
+    ...project.scripts.map(script => directProjectServiceId(project, script)),
+  ]);
   const projectLogs = logs.filter(line => serviceIds.has(line.src));
   const projectPorts = ports.filter(port =>
     serviceIds.has(port.svc)
@@ -128,7 +136,7 @@ export function ProjectView({
         <ScriptsTab
           project={project}
           services={projectServices}
-          onStart={onStartService}
+          onStart={onStartScript}
           onStop={onStopService}
           onRestart={onRestartService}
           onConfigure={onConfigureScripts}
@@ -174,6 +182,7 @@ function OverviewTab({ project, services, ports }: { project: Repo; services: Se
             <span className="mono" style={{ color: 'var(--fg-3)', fontSize: 11 }}>
               {service.pid ? `PID ${service.pid}` : service.status}
               {service.port ? ` · :${service.port}` : ''}
+              {service._ws === EXTERNAL_PROCESS_WORKSPACE ? ' · external' : service._ws === DIRECT_PROJECT_WORKSPACE ? ' · direct' : ''}
             </span>
           </div>
         ))}
@@ -214,9 +223,9 @@ function ScriptsTab({
 }: {
   project: Repo;
   services: Service[];
-  onStart: (workspaceId: string, serviceId: string) => void;
-  onStop: (workspaceId: string, serviceId: string) => void;
-  onRestart: (workspaceId: string, serviceId: string) => void;
+  onStart: (project: Repo, script: Script, configuredService?: Service) => void;
+  onStop: (service: Service) => void;
+  onRestart: (service: Service) => void;
   onConfigure: () => void;
 }) {
   if (project.scripts.length === 0) {
@@ -230,20 +239,24 @@ function ScriptsTab({
       </div>
       {project.scripts.map(script => {
         const service = services.find(item => item.cmd === script.cmd || item.name === script.name);
-        const workspaceId = service?._ws;
         const live = service && service.status !== 'stopped' && service.status !== 'failed' && service.status !== 'exited';
         return (
           <div key={`${script.name}:${script.cmd}`} className="script-row">
             <span className="name">{script.name}</span>
             <span className="cmd">{script.cmd}</span>
             <span style={{ display: 'inline-flex', gap: 6 }}>
-              {service && workspaceId ? live ? <>
-                <button className="btn sm ghost" onClick={() => onRestart(workspaceId, service.id)}><Ic.Reload size={11} /> Restart</button>
-                <button className="btn sm danger" onClick={() => onStop(workspaceId, service.id)}><Ic.Stop size={11} /> Stop</button>
+              {service ? live ? <>
+                {service._ws !== EXTERNAL_PROCESS_WORKSPACE && (
+                  <button className="btn sm ghost" onClick={() => onRestart(service)}><Ic.Reload size={11} /> Restart</button>
+                )}
+                <button className="btn sm danger" onClick={() => onStop(service)}><Ic.Stop size={11} /> Stop</button>
               </> : (
-                <button className="btn sm primary" onClick={() => onStart(workspaceId, service.id)}><Ic.Play size={11} /> Run</button>
+                <button className="btn sm primary" onClick={() => onStart(project, script, service)}><Ic.Play size={11} /> Run</button>
               ) : (
-                <button className="btn sm ghost" onClick={onConfigure}><Ic.Plus size={11} /> Add to workspace</button>
+                <>
+                  <button className="btn sm primary" onClick={() => onStart(project, script)}><Ic.Play size={11} /> Run</button>
+                  <button className="btn sm ghost" onClick={onConfigure}><Ic.Plus size={11} /> Add to workspace</button>
+                </>
               )}
             </span>
           </div>

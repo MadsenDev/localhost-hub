@@ -1,5 +1,5 @@
 import React from 'react';
-import type { HubDataShape, Service, Session, LogLine, Workspace, Port, ServiceStatus, Repo, StoredWorkspace, StoredService, GitStatus } from './types';
+import type { HubDataShape, Service, Session, LogLine, Workspace, Port, ServiceStatus, Repo, Script, StoredWorkspace, StoredService, GitStatus } from './types';
 import { useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakColor, TweakButton } from './tweaks-panel';
 import { TitleBar } from './chrome';
 import { Sidebar } from './sidebar';
@@ -20,6 +20,12 @@ import { listenToServiceEvents, tauriApi, type WorkspaceGroup, type ProcessInfo,
 import { Ic } from './icons';
 import { formatDuration } from './utils';
 import { CreateProjectDialog } from './create-project-dialog';
+import {
+  buildProjectRuntimeServices,
+  directProjectServiceId,
+  DIRECT_PROJECT_WORKSPACE,
+  EXTERNAL_PROCESS_WORKSPACE,
+} from './project-runtime';
 
 const TWEAK_DEFAULTS = {
   theme: "charcoal",
@@ -248,6 +254,9 @@ export default function App() {
   const [toasts, setToasts] = React.useState<Toast[]>([]);
   const [workspaceRefreshKey, setWorkspaceRefreshKey] = React.useState(0);
   const [, setManagedRuntimes] = React.useState<Record<string, ManagedRuntime>>({});
+  const [managedServices, setManagedServices] = React.useState<ManagedServiceInfo[]>([]);
+  const [liveProcesses, setLiveProcesses] = React.useState<ProcessInfo[]>([]);
+  const [livePorts, setLivePorts] = React.useState<LivePort[]>([]);
 
   const [logs, setLogs] = React.useState<LogLine[]>([]);
   const [sources, setSources] = React.useState<Record<string, boolean>>({});
@@ -313,6 +322,9 @@ export default function App() {
       if (cancelled) return;
       liveProcessesRef.current = processes;
       livePortsRef.current = ports;
+      setLiveProcesses(processes);
+      setLivePorts(ports);
+      setManagedServices(managed);
       syncManagedServiceRuntimes(managed);
       setRepos(buildRepos(liveGroupsRef.current, processes, ports, gitStatusesRef.current));
       setData(buildHubData(storedWsRef.current, processes, ports, managedRuntimesRef.current));
@@ -328,9 +340,17 @@ export default function App() {
     };
   }, [onboarding, workspaceRefreshKey]);
 
-  const allServices = React.useMemo(
+  const workspaceServices = React.useMemo(
     () => data.workspaces.flatMap((w) => w.services.map((s) => ({ ...s, _ws: w.id }))),
     [data]
+  );
+  const projectRuntimeServices = React.useMemo(
+    () => buildProjectRuntimeServices(repos, workspaceServices, managedServices, liveProcesses, livePorts),
+    [repos, workspaceServices, managedServices, liveProcesses, livePorts],
+  );
+  const allServices = React.useMemo(
+    () => [...workspaceServices, ...projectRuntimeServices],
+    [workspaceServices, projectRuntimeServices],
   );
   const runningCount = allServices.filter((s) => s.status === "running").length;
   const portsLive = data.ports.filter((p) => p.status === "running").length;
@@ -453,11 +473,11 @@ export default function App() {
       if (event.kind !== "url") pushLog(event.service_id, event.message, kind);
       if (event.kind === "starting" || event.kind === "restarting") {
         const svc = storedWsRef.current.flatMap((w) => w.services.map((s) => ({ ...s, wsId: w.id }))).find((s) => s.id === event.service_id);
-        if (svc) setManagedServiceStatus(svc.wsId, event.service_id, event.kind, event.pid ?? null);
+        setManagedServiceStatus(svc?.wsId ?? DIRECT_PROJECT_WORKSPACE, event.service_id, event.kind, event.pid ?? null);
       }
       if (event.kind === "started") {
         const svc = storedWsRef.current.flatMap((w) => w.services.map((s) => ({ ...s, wsId: w.id }))).find((s) => s.id === event.service_id);
-        if (svc) setManagedServiceStatus(svc.wsId, event.service_id, "running", event.pid ?? null);
+        setManagedServiceStatus(svc?.wsId ?? DIRECT_PROJECT_WORKSPACE, event.service_id, "running", event.pid ?? null);
       }
       if (event.kind === "url") {
         const svc = storedWsRef.current.flatMap((w) => w.services.map((s) => ({ ...s, wsId: w.id }))).find((s) => s.id === event.service_id);
@@ -470,7 +490,10 @@ export default function App() {
           : event.kind === "exited"
             ? event.code && event.code !== 0 ? "crashed" : "exited"
             : "stopped";
-        if (svc) setManagedServiceStatus(svc.wsId, event.service_id, status, event.pid ?? null);
+        setManagedServiceStatus(svc?.wsId ?? DIRECT_PROJECT_WORKSPACE, event.service_id, status, event.pid ?? null);
+        if (!svc) {
+          setManagedServices(current => current.filter(service => service.service_id !== event.service_id));
+        }
       }
     }).then((dispose) => {
       if (cancelled) dispose();
@@ -587,19 +610,6 @@ export default function App() {
       return next;
     });
   }, [allServices]);
-
-  function setServiceStatus(wsId: string, svcId: string, status: Service["status"]) {
-    setData((d) => ({
-      ...d,
-      workspaces: d.workspaces.map((w) => w.id !== wsId ? w : {
-        ...w,
-        services: w.services.map((s) => s.id !== svcId ? s : {
-          ...s, status,
-          uptime: ["stopped", "failed", "exited", "crashed"].includes(status) ? 0 : s.uptime,
-        }),
-      }),
-    }));
-  }
 
   function setManagedServiceStatus(wsId: string, svcId: string, status: ServiceStatus, pid?: number | null) {
     const existing = managedRuntimesRef.current[svcId];
@@ -724,6 +734,95 @@ export default function App() {
       setManagedServiceStatus(wsId, svcId, "failed");
       pushLog(svcId, String(err), "error");
       toast(`Failed to start ${svc.name}`, "error");
+    }
+  }
+
+  async function startProjectScript(project: Repo, script: Script, configuredService?: Service) {
+    configuredService ??= allServices.find(service =>
+      service.repo_path === project.path
+      && (service.cmd === script.cmd || service.name === script.name)
+    );
+    if (configuredService?._ws && configuredService._ws !== DIRECT_PROJECT_WORKSPACE && configuredService._ws !== EXTERNAL_PROCESS_WORKSPACE) {
+      await startService(configuredService._ws, configuredService.id);
+      return;
+    }
+    if (configuredService?.status === "running") {
+      toast(`${project.name} · ${script.name} is already running`, "info");
+      return;
+    }
+    const serviceId = directProjectServiceId(project, script);
+    setManagedServiceStatus(DIRECT_PROJECT_WORKSPACE, serviceId, "starting");
+    pushLog(serviceId, `> ${script.cmd}`, "info");
+    toast(`Starting ${project.name} · ${script.name}`, "info");
+    try {
+      const pid = await tauriApi.startService(serviceId, project.path, script.cmd);
+      const startedAt = Date.now();
+      setManagedServiceStatus(DIRECT_PROJECT_WORKSPACE, serviceId, "running", pid);
+      setManagedServices(current => [
+        ...current.filter(service => service.service_id !== serviceId),
+        {
+          service_id: serviceId,
+          cwd: project.path,
+          cmd: script.cmd,
+          pid,
+          started_at_ms: startedAt,
+          uptime_ms: 0,
+          cpu_usage: 0,
+          memory_mb: 0,
+          ports: [],
+          urls: [],
+        },
+      ]);
+    } catch (error) {
+      setManagedServiceStatus(DIRECT_PROJECT_WORKSPACE, serviceId, "failed");
+      pushLog(serviceId, String(error), "error");
+      toast(`Failed to start ${project.name} · ${script.name}`, "error");
+    }
+  }
+
+  async function stopProjectService(service: Service) {
+    if (service._ws !== DIRECT_PROJECT_WORKSPACE && service._ws !== EXTERNAL_PROCESS_WORKSPACE) {
+      if (service._ws) await stopService(service._ws, service.id);
+      return;
+    }
+    try {
+      if (service._ws === EXTERNAL_PROCESS_WORKSPACE) {
+        if (!service.pid) throw new Error("The external process no longer has a PID.");
+        await tauriApi.killProcess(service.pid);
+        setLiveProcesses(current => current.filter(process => process.pid !== service.pid));
+      } else {
+        await tauriApi.stopManagedService(service.id);
+        setManagedServices(current => current.filter(item => item.service_id !== service.id));
+        setManagedServiceStatus(DIRECT_PROJECT_WORKSPACE, service.id, "stopped");
+      }
+      toast(`Stopped ${service.name}`, "info");
+    } catch (error) {
+      pushLog(service.id, String(error), "error");
+      toast(`Failed to stop ${service.name}`, "error");
+    }
+  }
+
+  async function restartProjectService(service: Service) {
+    if (service._ws !== DIRECT_PROJECT_WORKSPACE) {
+      if (service._ws && service._ws !== EXTERNAL_PROCESS_WORKSPACE) {
+        await restartService(service._ws, service.id);
+      }
+      return;
+    }
+    setManagedServiceStatus(DIRECT_PROJECT_WORKSPACE, service.id, "restarting");
+    toast(`Restarting ${service.name}`, "info");
+    try {
+      const pid = await tauriApi.restartManagedService(service.id);
+      setManagedServiceStatus(DIRECT_PROJECT_WORKSPACE, service.id, "running", pid);
+      setManagedServices(current => current.map(item =>
+        item.service_id === service.id
+          ? { ...item, pid, started_at_ms: Date.now(), uptime_ms: 0 }
+          : item
+      ));
+    } catch (error) {
+      setManagedServiceStatus(DIRECT_PROJECT_WORKSPACE, service.id, "failed");
+      pushLog(service.id, String(error), "error");
+      toast(`Failed to restart ${service.name}`, "error");
     }
   }
 
@@ -904,6 +1003,7 @@ export default function App() {
         onCreateProject={() => setCreateProjectOpen(true)}
         onGitChanged={refreshRepoGitStatus}
         onOpenProject={(id) => { setProject(id); setView("project"); }}
+        onRunScript={(repo, script) => void startProjectScript(repo, script)}
       />
     );
     if (view === "github-repos") return <GitHubReposView />;
@@ -990,9 +1090,9 @@ export default function App() {
           ports={data.ports}
           logs={logs}
           onBack={() => setView("repos")}
-          onStartService={startService}
-          onStopService={stopService}
-          onRestartService={restartService}
+          onStartScript={startProjectScript}
+          onStopService={stopProjectService}
+          onRestartService={restartProjectService}
           onOpenLogs={openLogsForSources}
           onOpenUrl={openLocalUrl}
           onOpenEditor={openProjectInEditor}
@@ -1089,6 +1189,7 @@ export default function App() {
         data={data}
         projects={repos}
         onRunScript={(wsId, svcId) => startService(wsId, svcId)}
+        onRunProjectScript={(repo, script) => void startProjectScript(repo, script)}
         onSwitchWs={(id) => { setWs(id); setView("workspace"); }}
         onOpenView={(v) => setView(v)}
         onOpenProject={(id) => { setProject(id); setView("project"); }}

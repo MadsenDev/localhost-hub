@@ -75,15 +75,21 @@ const log: LogLine = {
   kind: 'ok',
 };
 
-function renderProject() {
+function renderProject({
+  services = [service],
+  onStartScript = vi.fn(),
+}: {
+  services?: Service[];
+  onStartScript?: ReturnType<typeof vi.fn>;
+} = {}) {
   return render(
     <ProjectView
       project={project}
-      services={[service]}
+      services={services}
       ports={[port]}
       logs={[log]}
       onBack={vi.fn()}
-      onStartService={vi.fn()}
+      onStartScript={onStartScript}
       onStopService={vi.fn()}
       onRestartService={vi.fn()}
       onOpenLogs={vi.fn()}
@@ -127,5 +133,17 @@ describe('ProjectView', () => {
     fireEvent.click(gitTab!);
     expect(screen.getByText('Connect live project data')).toBeInTheDocument();
     expect(screen.getByText('src/App.tsx')).toBeInTheDocument();
+  });
+
+  it('runs a detected script directly when it is not configured in a workspace', () => {
+    const onStartScript = vi.fn();
+    renderProject({ services: [], onStartScript });
+
+    fireEvent.click(screen.getByRole('button', { name: /Scripts/ }));
+    const runButtons = screen.getAllByRole('button', { name: /^Run$/ });
+    fireEvent.click(runButtons[0]);
+
+    expect(onStartScript).toHaveBeenCalledWith(project, project.scripts[0]);
+    expect(screen.getAllByRole('button', { name: /Add to workspace/ })).toHaveLength(2);
   });
 });
