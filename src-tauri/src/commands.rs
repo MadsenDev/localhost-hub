@@ -2,7 +2,11 @@ use tauri::{AppHandle, State};
 
 use crate::ports::{normalize_local_url, scan_live_ports, LivePort};
 use crate::processes::{get_dev_processes, get_system_stats as sys_stats, ProcessInfo, SystemStats};
-use crate::git::{get_git_status as git_status, GitStatus};
+use crate::git::{
+    commit as git_commit_changes, get_git_diff as git_diff, get_git_status as git_status,
+    stage_files as git_stage_files, unstage_files as git_unstage_files, GitCommitResult, GitDiff,
+    GitStatus,
+};
 use crate::workspace::{
     scan_as_workspace_groups, scan_for_projects, start_workspace as start_workspace_runs,
     stop_workspace as stop_workspace_runs, DetectedProject, WorkspaceGroup, WorkspaceRunResult,
@@ -140,6 +144,30 @@ pub fn get_system_stats() -> SystemStats {
 #[tauri::command]
 pub fn get_git_status(path: String) -> Option<GitStatus> {
     git_status(&path)
+}
+
+#[tauri::command]
+pub fn get_git_diff(
+    path: String,
+    file_path: Option<String>,
+    staged: bool,
+) -> Result<GitDiff, String> {
+    git_diff(&path, file_path.as_deref(), staged)
+}
+
+#[tauri::command]
+pub fn stage_git_files(path: String, files: Vec<String>) -> Result<GitStatus, String> {
+    git_stage_files(&path, &files)
+}
+
+#[tauri::command]
+pub fn unstage_git_files(path: String, files: Vec<String>) -> Result<GitStatus, String> {
+    git_unstage_files(&path, &files)
+}
+
+#[tauri::command]
+pub fn commit_git_changes(path: String, message: String) -> Result<GitCommitResult, String> {
+    git_commit_changes(&path, &message)
 }
 
 // ── Workspace / project scanning ──────────────────────────────────────────────

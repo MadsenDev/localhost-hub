@@ -108,11 +108,11 @@ This backlog captures the current product direction in implementation order. Kee
 
 ### Staging and commits
 
-- [ ] Stage file.
-- [ ] Unstage file.
-- [ ] Stage all.
-- [ ] Unstage all.
-- [ ] Commit with message input.
+- [x] Stage file.
+- [x] Unstage file.
+- [x] Stage all.
+- [x] Unstage all.
+- [x] Commit with message input.
 - [ ] Amend last commit later.
 - [ ] Signed commits later.
 - [ ] Stage hunks later.
@@ -120,17 +120,17 @@ This backlog captures the current product direction in implementation order. Kee
 
 ### Diff viewer
 
-- [ ] Text diff.
+- [x] Text diff.
 - [ ] Syntax highlighting.
-- [ ] Additions/removals.
-- [ ] File sidebar.
+- [x] Additions/removals.
+- [x] File sidebar.
 - [ ] Side-by-side diff later.
 - [ ] Image diff later.
 - [ ] Markdown preview diff later.
 
 ### Branches and remotes
 
-- [ ] Show current branch.
+- [x] Show current branch.
 - [ ] Switch branch.
 - [ ] Create branch.
 - [ ] Delete branch.

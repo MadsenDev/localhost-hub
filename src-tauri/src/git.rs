@@ -1,5 +1,10 @@
-use git2::{Repository, Status, StatusOptions};
+use git2::{
+    DiffFormat, DiffOptions, ErrorCode, Index, Repository, Status, StatusOptions,
+};
 use serde::{Deserialize, Serialize};
+use std::path::{Component, Path};
+
+const MAX_DIFF_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GitFileStatus {
@@ -26,6 +31,21 @@ pub struct GitStatus {
     pub last_commit_hash: Option<String>,
     pub last_commit_author: Option<String>,
     pub last_commit_timestamp: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitDiff {
+    pub patch: String,
+    pub files_changed: usize,
+    pub additions: usize,
+    pub deletions: usize,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitCommitResult {
+    pub hash: String,
+    pub message: String,
 }
 
 pub fn get_git_status(path: &str) -> Option<GitStatus> {
@@ -108,6 +128,207 @@ pub fn get_git_status(path: &str) -> Option<GitStatus> {
         last_commit_author,
         last_commit_timestamp,
     })
+}
+
+pub fn get_git_diff(
+    path: &str,
+    file_path: Option<&str>,
+    staged: bool,
+) -> Result<GitDiff, String> {
+    let repo = writable_repository(path)?;
+    let mut options = DiffOptions::new();
+    options
+        .include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .show_untracked_content(true);
+    if let Some(file_path) = file_path {
+        validate_repo_path(file_path)?;
+        options.pathspec(file_path);
+    }
+
+    let diff = if staged {
+        let head_tree = repo
+            .head()
+            .ok()
+            .and_then(|head| head.peel_to_tree().ok());
+        repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut options))
+    } else {
+        repo.diff_index_to_workdir(None, Some(&mut options))
+    }
+    .map_err(|error| format!("Could not create Git diff: {error}"))?;
+
+    let stats = diff
+        .stats()
+        .map_err(|error| format!("Could not calculate diff statistics: {error}"))?;
+    let mut bytes = Vec::new();
+    let mut truncated = false;
+    diff.print(DiffFormat::Patch, |_, _, line| {
+        let origin = line.origin();
+        if matches!(origin, '+' | '-' | ' ') {
+            bytes.push(origin as u8);
+        }
+        bytes.extend_from_slice(line.content());
+        if bytes.len() > MAX_DIFF_BYTES {
+            bytes.truncate(MAX_DIFF_BYTES);
+            truncated = true;
+            return false;
+        }
+        true
+    })
+    .map_err(|error| format!("Could not render Git diff: {error}"))?;
+
+    let mut patch = String::from_utf8_lossy(&bytes).into_owned();
+    if truncated {
+        patch.push_str("\n\n[Diff truncated at 2 MiB]\n");
+    }
+
+    Ok(GitDiff {
+        patch,
+        files_changed: stats.files_changed(),
+        additions: stats.insertions(),
+        deletions: stats.deletions(),
+        truncated,
+    })
+}
+
+pub fn stage_files(path: &str, files: &[String]) -> Result<GitStatus, String> {
+    let repo = writable_repository(path)?;
+    let paths = validated_paths(files)?;
+    let workdir = repo
+        .workdir()
+        .ok_or_else(|| "Bare repositories cannot stage working-tree files.".to_string())?;
+    let mut index = repo
+        .index()
+        .map_err(|error| format!("Could not open Git index: {error}"))?;
+
+    for relative in &paths {
+        let full_path = workdir.join(relative);
+        if full_path.exists() {
+            index
+                .add_path(relative)
+                .map_err(|error| format!("Could not stage {}: {error}", relative.display()))?;
+        } else {
+            remove_from_index(&mut index, relative)?;
+        }
+    }
+    index
+        .write()
+        .map_err(|error| format!("Could not write Git index: {error}"))?;
+    get_git_status(path).ok_or_else(|| "Could not refresh Git status.".to_string())
+}
+
+pub fn unstage_files(path: &str, files: &[String]) -> Result<GitStatus, String> {
+    let repo = writable_repository(path)?;
+    let paths = validated_paths(files)?;
+
+    if let Ok(head) = repo.head().and_then(|head| head.peel_to_commit()) {
+        let object = head.as_object();
+        repo.reset_default(Some(object), paths.iter())
+            .map_err(|error| format!("Could not unstage files: {error}"))?;
+    } else {
+        let mut index = repo
+            .index()
+            .map_err(|error| format!("Could not open Git index: {error}"))?;
+        for relative in &paths {
+            remove_from_index(&mut index, relative)?;
+        }
+        index
+            .write()
+            .map_err(|error| format!("Could not write Git index: {error}"))?;
+    }
+
+    get_git_status(path).ok_or_else(|| "Could not refresh Git status.".to_string())
+}
+
+pub fn commit(path: &str, message: &str) -> Result<GitCommitResult, String> {
+    let repo = writable_repository(path)?;
+    let message = message.trim();
+    if message.is_empty() {
+        return Err("Commit message cannot be empty.".to_string());
+    }
+
+    let current = get_git_status(path).ok_or_else(|| "Could not read Git status.".to_string())?;
+    if current.staged == 0 {
+        return Err("There are no staged changes to commit.".to_string());
+    }
+
+    let signature = repo.signature().map_err(|_| {
+        "Git author is not configured. Set user.name and user.email before committing.".to_string()
+    })?;
+    let mut index = repo
+        .index()
+        .map_err(|error| format!("Could not open Git index: {error}"))?;
+    let tree_id = index
+        .write_tree()
+        .map_err(|error| format!("Could not write commit tree: {error}"))?;
+    let tree = repo
+        .find_tree(tree_id)
+        .map_err(|error| format!("Could not load commit tree: {error}"))?;
+    let parents = repo
+        .head()
+        .ok()
+        .and_then(|head| head.peel_to_commit().ok())
+        .into_iter()
+        .collect::<Vec<_>>();
+    let parent_refs = parents.iter().collect::<Vec<_>>();
+    let oid = repo
+        .commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            message,
+            &tree,
+            &parent_refs,
+        )
+        .map_err(|error| format!("Could not create commit: {error}"))?;
+
+    Ok(GitCommitResult {
+        hash: short_oid(oid),
+        message: message.to_string(),
+    })
+}
+
+fn writable_repository(path: &str) -> Result<Repository, String> {
+    let repo = Repository::discover(path)
+        .map_err(|error| format!("Could not open Git repository: {error}"))?;
+    if repo.is_bare() {
+        return Err("This operation requires a working tree.".to_string());
+    }
+    Ok(repo)
+}
+
+fn validated_paths(files: &[String]) -> Result<Vec<&Path>, String> {
+    if files.is_empty() {
+        return Err("Select at least one file.".to_string());
+    }
+    files
+        .iter()
+        .map(|file| {
+            validate_repo_path(file)?;
+            Ok(Path::new(file))
+        })
+        .collect()
+}
+
+fn validate_repo_path(path: &str) -> Result<(), String> {
+    let path = Path::new(path);
+    if path.as_os_str().is_empty()
+        || path.is_absolute()
+        || !path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
+    {
+        return Err("Git file paths must stay inside the repository.".to_string());
+    }
+    Ok(())
+}
+
+fn remove_from_index(index: &mut Index, path: &Path) -> Result<(), String> {
+    match index.remove_path(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.code() == ErrorCode::NotFound => Ok(()),
+        Err(error) => Err(format!("Could not stage deletion for {}: {error}", path.display())),
+    }
 }
 
 fn branch_name(repo: &Repository) -> String {
@@ -205,6 +426,13 @@ mod tests {
             ));
             fs::create_dir_all(&path).expect("create test directory");
             let repo = Repository::init(&path).expect("initialize repository");
+            let mut config = repo.config().expect("open repository config");
+            config
+                .set_str("user.name", "Localhost Hub")
+                .expect("configure user name");
+            config
+                .set_str("user.email", "hub@example.test")
+                .expect("configure user email");
             Self { path, repo }
         }
 
@@ -317,5 +545,96 @@ mod tests {
             .expect("tracked file status");
         assert_eq!(tracked.index_status.as_deref(), Some("modified"));
         assert_eq!(tracked.worktree_status.as_deref(), Some("modified"));
+    }
+
+    #[test]
+    fn stages_and_unstages_modified_untracked_and_deleted_files() {
+        let test = TestRepo::init();
+        test.write("modified.txt", "initial");
+        test.write("deleted.txt", "initial");
+        test.commit_all("Initial commit");
+        test.write("modified.txt", "changed");
+        fs::remove_file(test.path.join("deleted.txt")).expect("delete tracked file");
+        test.write("untracked.txt", "new");
+
+        let files = vec![
+            "modified.txt".to_string(),
+            "deleted.txt".to_string(),
+            "untracked.txt".to_string(),
+        ];
+        let staged = stage_files(test.path.to_str().unwrap(), &files).expect("stage files");
+        assert_eq!(staged.staged, 3);
+        assert_eq!(staged.unstaged, 0);
+        assert_eq!(staged.untracked, 0);
+
+        let unstaged =
+            unstage_files(test.path.to_str().unwrap(), &files).expect("unstage files");
+        assert_eq!(unstaged.staged, 0);
+        assert_eq!(unstaged.unstaged, 2);
+        assert_eq!(unstaged.untracked, 1);
+    }
+
+    #[test]
+    fn commits_staged_changes_and_returns_short_hash() {
+        let test = TestRepo::init();
+        test.write("README.md", "hello");
+        stage_files(
+            test.path.to_str().unwrap(),
+            &["README.md".to_string()],
+        )
+        .expect("stage file");
+
+        let result = commit(test.path.to_str().unwrap(), "Initial commit")
+            .expect("commit staged file");
+
+        assert_eq!(result.hash.len(), 8);
+        assert_eq!(result.message, "Initial commit");
+        assert!(status(&test.path).clean);
+    }
+
+    #[test]
+    fn renders_staged_and_worktree_diffs_separately() {
+        let test = TestRepo::init();
+        test.write("tracked.txt", "before\n");
+        test.commit_all("Initial commit");
+        test.write("tracked.txt", "staged\n");
+        stage_files(
+            test.path.to_str().unwrap(),
+            &["tracked.txt".to_string()],
+        )
+        .expect("stage file");
+        test.write("tracked.txt", "worktree\n");
+
+        let staged = get_git_diff(
+            test.path.to_str().unwrap(),
+            Some("tracked.txt"),
+            true,
+        )
+        .expect("staged diff");
+        let worktree = get_git_diff(
+            test.path.to_str().unwrap(),
+            Some("tracked.txt"),
+            false,
+        )
+        .expect("worktree diff");
+
+        assert!(staged.patch.contains("+staged"));
+        assert!(worktree.patch.contains("+worktree"));
+        assert_eq!(staged.files_changed, 1);
+        assert!(!staged.truncated);
+    }
+
+    #[test]
+    fn rejects_paths_that_escape_the_repository() {
+        let test = TestRepo::init();
+        let result = stage_files(
+            test.path.to_str().unwrap(),
+            &["../outside.txt".to_string()],
+        );
+
+        assert_eq!(
+            result.unwrap_err(),
+            "Git file paths must stay inside the repository."
+        );
     }
 }

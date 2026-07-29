@@ -386,6 +386,17 @@ export default function App() {
     setTimeout(() => setToasts((ts) => ts.filter((x) => x.id !== id)), 3200);
   }
 
+  async function refreshRepoGitStatus(path: string) {
+    const status = await tauriApi.getGitStatus(path);
+    gitStatusesRef.current = { ...gitStatusesRef.current, [path]: status };
+    setRepos(buildRepos(
+      liveGroupsRef.current,
+      liveProcessesRef.current,
+      livePortsRef.current,
+      gitStatusesRef.current,
+    ));
+  }
+
   function updateAppearance(key: AppearanceKey, value: string) {
     setTweak(key, value);
     const nextAppearance = {
@@ -857,6 +868,7 @@ export default function App() {
         workspaces={storedWorkspaces}
         onAddToWorkspace={addServiceToWorkspace}
         onCreateWorkspace={createWorkspace}
+        onGitChanged={refreshRepoGitStatus}
       />
     );
     if (view === "github-repos") return <GitHubReposView />;
