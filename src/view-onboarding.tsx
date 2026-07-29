@@ -1,5 +1,5 @@
 import React from 'react';
-import { HubLogo } from './brand';
+import { AnimatedHubLockup } from './brand';
 import { Ic } from './icons';
 import { githubAuth, type GitHubUser, type DeviceCodeResponse } from './github-auth';
 import { tauriApi } from './tauri-api';
@@ -114,12 +114,9 @@ export function OnboardingView({ onComplete }: OnboardingProps) {
       <div className="ob-inner">
 
         {/* Header */}
-        <div className="ob-head">
-          <HubLogo size={28} accent="var(--blue)" body="var(--fg-1)" />
-          <div className="ob-head-text">
-            <div className="ob-title">Localhost Hub</div>
-            <div className="ob-sub">First-run setup</div>
-          </div>
+        <div className="ob-head ob-brand-head">
+          <AnimatedHubLockup markSize={64} accent="var(--blue)" body="var(--fg-1)" />
+          <div className="ob-sub">First-run setup</div>
         </div>
 
         {/* Three-column setup cards */}

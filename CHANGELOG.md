@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added the animated Localhost Hub brand lockup to first-run onboarding, with a reduced-motion fallback.
 - Began the `0.9.x` Tauri unification in the canonical `localhost-hub` repository:
   - Ported the newer Localhost Hub V2 interface to React 19, Vite 7, and the Tauri 2 desktop shell.
   - Added native Rust modules and Tauri commands for projects, processes, services, ports, workspaces, Git, GitHub, configuration, and project scaffolding.

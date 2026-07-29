@@ -1,0 +1,189 @@
+@keyframes hub-lockup-pop {
+  0% { transform: scale(0); }
+  58% { transform: scale(1.2); }
+  80% { transform: scale(0.96); }
+  100% { transform: scale(1); }
+}
+@keyframes hub-lockup-node {
+  0% { transform: translateY(-124px) scale(0.5); opacity: 0; }
+  26% { opacity: 1; }
+  70% { transform: translateY(10px) scale(1.07); }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes hub-lockup-link {
+  0% { transform: scaleY(0); }
+  70% { transform: scaleY(1.06); }
+  100% { transform: scaleY(1); }
+}
+@keyframes hub-lockup-ring {
+  0% { transform: scale(1.3) rotate(-9deg); opacity: 0; }
+  55% { transform: scale(0.965) rotate(1.5deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+@keyframes hub-lockup-ripple {
+  0% { transform: scale(0.3); opacity: 0.8; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+@keyframes hub-lockup-signal {
+  0% { stroke-dashoffset: 14; opacity: 0; }
+  5% { opacity: 1; }
+  23% { stroke-dashoffset: -100; opacity: 1; }
+  29%, 100% { stroke-dashoffset: -100; opacity: 0; }
+}
+@keyframes hub-lockup-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.016); }
+}
+@keyframes hub-lockup-core {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.94); }
+}
+@keyframes hub-lockup-letter {
+  from { transform: translateY(112%); opacity: 0.2; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes hub-lockup-caret {
+  from { left: 0; }
+  to { left: calc(100% - 3px); }
+}
+@keyframes hub-lockup-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+@keyframes hub-lockup-caret-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.hub-lockup {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--hub-body);
+}
+.hub-lockup-mark {
+  flex: none;
+  width: var(--hub-mark-size);
+  height: var(--hub-mark-size);
+  overflow: visible;
+  transform-origin: 50% 50%;
+  animation: hub-lockup-breathe 5.4s ease-in-out 2.3s infinite;
+}
+.hub-lockup-link {
+  fill: var(--hub-body);
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+  animation: hub-lockup-link 0.3s cubic-bezier(0.2, 1.04, 0.4, 1) both;
+}
+.hub-lockup-node {
+  fill: var(--hub-accent);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hub-lockup-node 0.46s cubic-bezier(0.3, 1.2, 0.5, 1) both;
+}
+.hub-lockup-signal {
+  fill: none;
+  stroke: var(--hub-accent);
+  stroke-width: 13;
+  stroke-linecap: round;
+  stroke-dasharray: 14 200;
+  opacity: 0;
+  animation: hub-lockup-signal 3.6s linear infinite;
+}
+.hub-lockup-ring {
+  fill: none;
+  stroke: var(--hub-body);
+  stroke-width: 25.85;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hub-lockup-ring 0.4s cubic-bezier(0.3, 1.15, 0.5, 1) 0.98s both;
+}
+.hub-lockup-core {
+  fill: var(--hub-accent);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation:
+    hub-lockup-pop 0.38s cubic-bezier(0.34, 1.5, 0.6, 1) both,
+    hub-lockup-core 5.4s ease-in-out 2.3s infinite;
+}
+.hub-lockup-ripple {
+  fill: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hub-lockup-ripple 0.8s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.hub-lockup-ripple-accent {
+  stroke: var(--hub-accent);
+  stroke-width: 7;
+  animation-delay: 0.06s;
+}
+.hub-lockup-ripple-body {
+  stroke: var(--hub-body);
+  stroke-width: 5;
+  animation-delay: 1.06s;
+}
+.hub-lockup-wordmark {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 0.24em;
+  margin-left: calc(var(--hub-mark-size) * -0.06);
+  overflow: hidden;
+  color: var(--hub-body);
+  font-family: var(--font-sans);
+  font-size: calc(var(--hub-mark-size) * 0.36);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+  white-space: nowrap;
+}
+.hub-lockup-hub {
+  color: var(--hub-accent);
+}
+.hub-lockup-letter {
+  display: inline-block;
+  animation: hub-lockup-letter 0.44s cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+.hub-lockup-caret-track {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.hub-lockup-caret {
+  position: absolute;
+  bottom: 0.18em;
+  left: 0;
+  width: 0.08em;
+  height: 0.74em;
+  background: var(--hub-accent);
+  opacity: 0;
+  animation:
+    hub-lockup-blink 0.46s steps(1, end) 1.8s 3 forwards,
+    hub-lockup-caret 0.42s linear 1.38s both,
+    hub-lockup-caret-out 0.18s linear 3.18s forwards;
+}
+
+.ob-brand-head {
+  flex-direction: column;
+  gap: 6px;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-lockup *,
+  .hub-lockup-mark {
+    animation: none !important;
+  }
+  .hub-lockup-node,
+  .hub-lockup-ring,
+  .hub-lockup-letter {
+    opacity: 1;
+  }
+  .hub-lockup-caret,
+  .hub-lockup-ripple,
+  .hub-lockup-signal {
+    display: none;
+  }
+}
