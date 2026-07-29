@@ -151,6 +151,23 @@ describe('ProjectView', () => {
     expect(screen.getAllByRole('button', { name: /Add to workspace/ })).toHaveLength(2);
   });
 
+  it('runs a script once with unsaved environment overrides', () => {
+    const onStartScript = vi.fn();
+    renderProject({ services: [], onStartScript });
+
+    fireEvent.click(screen.getByRole('button', { name: /Scripts/ }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Run with env' })[0]);
+    expect(screen.getByRole('dialog', { name: /Run dev with overrides/ })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Override key'), { target: { value: 'PORT' } });
+    fireEvent.change(screen.getByLabelText('PORT value'), { target: { value: '4173' } });
+    fireEvent.click(screen.getByRole('button', { name: /Run once/ }));
+
+    expect(onStartScript).toHaveBeenCalledWith(project, project.scripts[0], undefined, [
+      { key: 'PORT', value: '4173', is_secret: false },
+    ]);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('shows masked project environment profiles', () => {
     renderProject({
       envProfiles: [{

@@ -1,6 +1,7 @@
 import React from 'react';
 import type { EnvProfile } from './types';
 import { Ic } from './icons';
+import { tauriApi } from './tauri-api';
 
 interface EnvProfilesPanelProps {
   projectPath: string;
@@ -19,11 +20,14 @@ export function EnvProfilesPanel({ projectPath, profiles, onSave }: EnvProfilesP
   const [revealed, setRevealed] = React.useState<Set<string>>(new Set());
   const [error, setError] = React.useState('');
   const [saving, setSaving] = React.useState(false);
+  const [transferring, setTransferring] = React.useState('');
+  const [status, setStatus] = React.useState('');
 
   React.useEffect(() => {
     setDrafts(profiles);
     setRevealed(new Set());
     setError('');
+    setStatus('');
   }, [projectPath, profiles]);
 
   function updateProfile(id: string, patch: Partial<EnvProfile>) {
@@ -58,6 +62,66 @@ export function EnvProfilesPanel({ projectPath, profiles, onSave }: EnvProfilesP
     }
   }
 
+  async function importFile() {
+    setError('');
+    setStatus('');
+    setTransferring('import');
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const path = await open({
+        title: 'Import an environment file',
+        multiple: false,
+        directory: false,
+      });
+      if (!path) return;
+      const imported = await tauriApi.importEnvFile(path);
+      if (!imported) throw new Error('Environment import is available in the desktop app.');
+      const fileName = imported.path.replace(/\\/g, '/').split('/').pop() || '.env';
+      const profile: EnvProfile = {
+        id: newId('env'),
+        project_path: projectPath,
+        name: fileName,
+        description: `Imported from ${fileName}`,
+        is_default: drafts.length === 0,
+        vars: imported.variables,
+      };
+      setDrafts(current => [...current, profile]);
+      setStatus(`Imported ${imported.variables.length} variables into a new unsaved profile.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setTransferring('');
+    }
+  }
+
+  async function exportProfile(profile: EnvProfile) {
+    const confirmed = window.confirm(
+      `Export "${profile.name}" to a plaintext .env file? Secret-marked values will be included.`,
+    );
+    if (!confirmed) return;
+    setError('');
+    setStatus('');
+    setTransferring(`export:${profile.id}`);
+    try {
+      const { save: saveDialog } = await import('@tauri-apps/plugin-dialog');
+      const suffix = profile.name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '');
+      const defaultPath = profile.name === '.env' || profile.name.startsWith('.env.')
+        ? profile.name
+        : suffix ? `.env.${suffix}` : '.env';
+      const path = await saveDialog({
+        title: 'Export environment profile',
+        defaultPath,
+      });
+      if (!path) return;
+      await tauriApi.exportEnvFile(path, profile.vars);
+      setStatus(`Exported ${profile.vars.length} variables with owner-private permissions where supported.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setTransferring('');
+    }
+  }
+
   return (
     <div className="panel">
       <div className="panel-head">
@@ -68,6 +132,9 @@ export function EnvProfilesPanel({ projectPath, profiles, onSave }: EnvProfilesP
           </div>
         </div>
         <div className="panel-actions">
+          <button className="btn sm ghost" onClick={() => void importFile()} disabled={Boolean(transferring)}>
+            {transferring === 'import' ? 'Importing…' : 'Import .env'}
+          </button>
           <button className="btn sm ghost" onClick={addProfile}><Ic.Plus size={11} /> Add profile</button>
           <button className="btn sm primary" onClick={() => void save()} disabled={saving}>
             {saving ? 'Saving…' : 'Save profiles'}
@@ -76,6 +143,7 @@ export function EnvProfilesPanel({ projectPath, profiles, onSave }: EnvProfilesP
       </div>
 
       {error && <div style={{ padding: '10px 14px', color: 'var(--danger)', borderBottom: '1px solid var(--line-soft)' }}>{error}</div>}
+      {status && <div style={{ padding: '10px 14px', color: 'var(--ok)', borderBottom: '1px solid var(--line-soft)' }}>{status}</div>}
 
       {drafts.length === 0 ? (
         <div className="empty" style={{ padding: 36 }}>
@@ -86,7 +154,7 @@ export function EnvProfilesPanel({ projectPath, profiles, onSave }: EnvProfilesP
         </div>
       ) : drafts.map(profile => (
         <div key={profile.id} style={{ padding: 14, borderBottom: '1px solid var(--line-soft)' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 1fr) minmax(220px, 2fr) auto auto', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 1fr) minmax(220px, 2fr) auto auto auto', gap: 8, alignItems: 'center' }}>
             <input
               aria-label="Profile name"
               className="input"
@@ -105,6 +173,13 @@ export function EnvProfilesPanel({ projectPath, profiles, onSave }: EnvProfilesP
               <input type="radio" checked={profile.is_default} onChange={() => setDefault(profile.id)} />
               Default
             </label>
+            <button
+              className="btn sm ghost"
+              onClick={() => void exportProfile(profile)}
+              disabled={Boolean(transferring)}
+            >
+              {transferring === `export:${profile.id}` ? 'Exporting…' : 'Export .env'}
+            </button>
             <button
               className="btn sm ghost"
               style={{ color: 'var(--danger)' }}

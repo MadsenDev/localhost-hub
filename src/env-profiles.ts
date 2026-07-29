@@ -1,4 +1,4 @@
-import type { EnvProfile } from './types';
+import type { EnvProfile, EnvVariable } from './types';
 import type { ServiceEnvironment } from './tauri-api';
 
 export function profilesForProject(profiles: EnvProfile[], projectPath: string): EnvProfile[] {
@@ -18,10 +18,17 @@ export function resolveEnvProfile(
   return projectProfiles.find(profile => profile.is_default) ?? null;
 }
 
-export function toServiceEnvironment(profile: EnvProfile | null): ServiceEnvironment {
+export function toServiceEnvironment(
+  profile: EnvProfile | null,
+  overrides: EnvVariable[] = [],
+): ServiceEnvironment {
+  const merged = new Map(
+    profile?.vars.map(({ key, value }) => [key, { key, value }]) ?? [],
+  );
+  overrides.forEach(({ key, value }) => merged.set(key, { key, value }));
   return {
     inherit_system: true,
-    vars: profile?.vars.map(({ key, value }) => ({ key, value })) ?? [],
+    vars: [...merged.values()],
   };
 }
 

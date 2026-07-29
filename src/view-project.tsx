@@ -1,5 +1,5 @@
 import React from 'react';
-import type { EnvProfile, LogLine, Port, Repo, Script, Service } from './types';
+import type { EnvProfile, EnvVariable, LogLine, Port, Repo, Script, Service } from './types';
 import { Ic } from './icons';
 import { StatusDot } from './shared';
 import { GitHubProjectPanel } from './github-project-panel';
@@ -11,6 +11,8 @@ import {
 } from './project-runtime';
 import { EnvProfilesPanel } from './env-profiles-panel';
 import { PackagesPanel } from './packages-panel';
+import { RunWithEnvDialog } from './run-with-env-dialog';
+import { resolveEnvProfile } from './env-profiles';
 
 type ProjectTab = 'overview' | 'scripts' | 'packages' | 'logs' | 'ports' | 'environment' | 'git' | 'github' | 'health';
 
@@ -20,7 +22,7 @@ interface ProjectViewProps {
   ports: Port[];
   logs: LogLine[];
   onBack: () => void;
-  onStartScript: (project: Repo, script: Script, configuredService?: Service) => void;
+  onStartScript: (project: Repo, script: Script, configuredService?: Service, overrides?: EnvVariable[]) => void;
   onStopService: (service: Service) => void;
   onRestartService: (service: Service) => void;
   onOpenLogs: (serviceIds: string[]) => void;
@@ -150,6 +152,7 @@ export function ProjectView({
           onStop={onStopService}
           onRestart={onRestartService}
           onConfigure={onConfigureScripts}
+          profiles={envProfiles}
         />
       )}
       {tab === 'packages' && <PackagesPanel projectPath={project.path} />}
@@ -238,18 +241,22 @@ function ScriptsTab({
   onStop,
   onRestart,
   onConfigure,
+  profiles,
 }: {
   project: Repo;
   services: Service[];
-  onStart: (project: Repo, script: Script, configuredService?: Service) => void;
+  onStart: (project: Repo, script: Script, configuredService?: Service, overrides?: EnvVariable[]) => void;
   onStop: (service: Service) => void;
   onRestart: (service: Service) => void;
   onConfigure: () => void;
+  profiles: EnvProfile[];
 }) {
+  const [overrideTarget, setOverrideTarget] = React.useState<{ script: Script; service?: Service } | null>(null);
   if (project.scripts.length === 0) {
     return <div className="panel"><Empty icon={<Ic.Play size={28} />} title="No runnable scripts were detected." /></div>;
   }
   return (
+    <>
     <div className="panel">
       <div className="panel-head">
         <div className="panel-title"><span className="dot" /> Detected scripts</div>
@@ -268,11 +275,13 @@ function ScriptsTab({
                   <button className="btn sm ghost" onClick={() => onRestart(service)}><Ic.Reload size={11} /> Restart</button>
                 )}
                 <button className="btn sm danger" onClick={() => onStop(service)}><Ic.Stop size={11} /> Stop</button>
-              </> : (
+              </> : (<>
                 <button className="btn sm primary" onClick={() => onStart(project, script, service)}><Ic.Play size={11} /> Run</button>
-              ) : (
+                <button className="btn sm ghost" onClick={() => setOverrideTarget({ script, service })}>Run with env</button>
+              </>) : (
                 <>
                   <button className="btn sm primary" onClick={() => onStart(project, script)}><Ic.Play size={11} /> Run</button>
+                  <button className="btn sm ghost" onClick={() => setOverrideTarget({ script })}>Run with env</button>
                   <button className="btn sm ghost" onClick={onConfigure}><Ic.Plus size={11} /> Add to workspace</button>
                 </>
               )}
@@ -281,6 +290,22 @@ function ScriptsTab({
         );
       })}
     </div>
+    {overrideTarget && (
+      <RunWithEnvDialog
+        scriptName={overrideTarget.script.name}
+        profileName={resolveEnvProfile(
+          profiles,
+          project.path,
+          overrideTarget.service?.env_profile_id,
+        )?.name ?? null}
+        onClose={() => setOverrideTarget(null)}
+        onRun={variables => {
+          onStart(project, overrideTarget.script, overrideTarget.service, variables);
+          setOverrideTarget(null);
+        }}
+      />
+    )}
+    </>
   );
 }
 

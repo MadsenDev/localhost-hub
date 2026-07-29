@@ -1,5 +1,5 @@
 import React from 'react';
-import type { EnvProfile, HubDataShape, Service, Session, LogLine, Workspace, Port, ServiceStatus, Repo, Script, StoredWorkspace, StoredService, GitStatus } from './types';
+import type { EnvProfile, EnvVariable, HubDataShape, Service, Session, LogLine, Workspace, Port, ServiceStatus, Repo, Script, StoredWorkspace, StoredService, GitStatus } from './types';
 import { useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakColor, TweakButton } from './tweaks-panel';
 import { TitleBar } from './chrome';
 import { Sidebar } from './sidebar';
@@ -740,7 +740,7 @@ export default function App() {
     setManagedRuntimes(next);
   }
 
-  async function startService(wsId: string, svcId: string) {
+  async function startService(wsId: string, svcId: string, overrides: EnvVariable[] = []) {
     const svc = data.workspaces.find((w) => w.id === wsId)?.services.find((s) => s.id === svcId);
     if (!svc) return;
     setManagedServiceStatus(wsId, svcId, "starting");
@@ -749,7 +749,7 @@ export default function App() {
     try {
       if (!svc.repo_path) throw new Error("Missing repo path for service.");
       const profile = resolveEnvProfile(envProfilesRef.current, svc.repo_path, svc.env_profile_id);
-      await tauriApi.startService(svc.id, svc.repo_path, svc.cmd, toServiceEnvironment(profile));
+      await tauriApi.startService(svc.id, svc.repo_path, svc.cmd, toServiceEnvironment(profile, overrides));
     } catch (err) {
       setManagedServiceStatus(wsId, svcId, "failed");
       pushLog(svcId, String(err), "error");
@@ -757,13 +757,18 @@ export default function App() {
     }
   }
 
-  async function startProjectScript(project: Repo, script: Script, configuredService?: Service) {
+  async function startProjectScript(
+    project: Repo,
+    script: Script,
+    configuredService?: Service,
+    overrides: EnvVariable[] = [],
+  ) {
     configuredService ??= allServices.find(service =>
       service.repo_path === project.path
       && (service.cmd === script.cmd || service.name === script.name)
     );
     if (configuredService?._ws && configuredService._ws !== DIRECT_PROJECT_WORKSPACE && configuredService._ws !== EXTERNAL_PROCESS_WORKSPACE) {
-      await startService(configuredService._ws, configuredService.id);
+      await startService(configuredService._ws, configuredService.id, overrides);
       return;
     }
     if (configuredService?.status === "running") {
@@ -780,7 +785,7 @@ export default function App() {
         serviceId,
         project.path,
         script.cmd,
-        toServiceEnvironment(profile),
+        toServiceEnvironment(profile, overrides),
       );
       const startedAt = Date.now();
       setManagedServiceStatus(DIRECT_PROJECT_WORKSPACE, serviceId, "running", pid);

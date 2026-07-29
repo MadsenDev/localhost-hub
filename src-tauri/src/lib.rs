@@ -9,6 +9,7 @@ mod services;
 mod scaffold;
 mod health;
 mod packages;
+mod env_files;
 
 use tauri::Manager;
 
@@ -60,7 +61,8 @@ pub fn run() {
             commands::fetch_git_remote,
             commands::pull_git_remote,
             commands::push_git_remote,
-            commands::read_env_file,
+            commands::import_env_file,
+            commands::export_env_file,
             commands::get_system_stats,
             commands::load_config,
             commands::save_config,
