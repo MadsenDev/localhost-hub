@@ -111,6 +111,22 @@ Possible responsibilities:
 
 Prefer optional and BYOK-compatible design later.
 
+### Companion Layer
+
+Future, post-parity layer.
+
+Localhost Companion is a focused Android remote for observing and controlling
+Hub-managed projects, services, workspaces, logs, ports, and basic Git state. It
+must share Rust application services with Tauri commands rather than duplicate
+business logic behind a second API.
+
+It is not a mobile project manager. Project creation, environment editing,
+package management, repository management, Git writes, and terminal access
+remain desktop responsibilities.
+
+See [Localhost Companion](LOCALHOST_COMPANION.md) for the product boundary,
+security model, architecture, and release plan.
+
 ## Main Product Areas
 
 ### Local Project Discovery
