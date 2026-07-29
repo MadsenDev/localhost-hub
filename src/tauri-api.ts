@@ -4,7 +4,7 @@
  * In a browser (vite dev without tauri), all calls return empty/null
  * so the app works in both environments.
  */
-import type { GitCommitResult, GitDiff, GitRepositoryInfo, GitStatus } from "./types";
+import type { GitCommitResult, GitDiff, GitNetworkResult, GitRepositoryInfo, GitStatus } from "./types";
 
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -201,6 +201,15 @@ export const tauriApi = {
 
   removeGitRemote: (path: string, name: string) =>
     invoke<GitRepositoryInfo>("remove_git_remote", { path, name }),
+
+  fetchGitRemote: (path: string, remote: string) =>
+    invoke<GitNetworkResult>("fetch_git_remote", { path, remote }),
+
+  pullGitRemote: (path: string, remote: string) =>
+    invoke<GitNetworkResult>("pull_git_remote", { path, remote }),
+
+  pushGitRemote: (path: string, remote: string) =>
+    invoke<GitNetworkResult>("push_git_remote", { path, remote }),
 
   listGitHubRepos: () => invoke<GitHubRepo[]>("github_list_repos"),
 

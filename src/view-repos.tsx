@@ -374,6 +374,7 @@ function RepoCard({
             <GitRepositoryPanel
               path={gitPath}
               statusHash={git.last_commit_hash}
+              clean={git.clean}
               onStatusChanged={() => onGitChanged(gitPath)}
             />
           )}
@@ -415,10 +416,12 @@ function RepoCard({
 function GitRepositoryPanel({
   path,
   statusHash,
+  clean,
   onStatusChanged,
 }: {
   path: string;
   statusHash: string | null;
+  clean: boolean;
   onStatusChanged: () => Promise<void>;
 }) {
   const [info, setInfo] = React.useState<GitRepositoryInfo | null>(null);
@@ -460,7 +463,10 @@ function GitRepositoryPanel({
         setInfo(await tauriApi.getGitRepositoryInfo(path, 30));
       }
       if (refreshStatus) await onStatusChanged();
-      setNotice({ text: `${label} complete.`, error: false });
+      const detail = result && typeof result === 'object' && 'output' in result
+        ? String(result.output)
+        : '';
+      setNotice({ text: detail || `${label} complete.`, error: false });
     } catch (error) {
       setNotice({ text: error instanceof Error ? error.message : String(error), error: true });
     } finally {
@@ -589,6 +595,33 @@ function GitRepositoryPanel({
                     <button className="btn sm ghost" onClick={() => setRenaming(null)}>Cancel</button>
                   </div>
                 )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button
+                    className="btn sm ghost"
+                    disabled={pending !== null}
+                    onClick={() => run('Fetch', () => tauriApi.fetchGitRemote(path, remote.name), true)}
+                  >
+                    Fetch
+                  </button>
+                  <button
+                    className="btn sm ghost"
+                    disabled={pending !== null || !clean}
+                    title={clean ? 'Fast-forward pull' : 'Commit or stash local changes before pulling'}
+                    onClick={() => run('Pull', () => tauriApi.pullGitRemote(path, remote.name), true)}
+                  >
+                    Pull
+                  </button>
+                  <button
+                    className="btn sm primary"
+                    disabled={pending !== null}
+                    onClick={() => run('Push', () => tauriApi.pushGitRemote(path, remote.name), true)}
+                  >
+                    Push
+                  </button>
+                  <span style={{ marginLeft: 'auto', color: 'var(--fg-4)', fontSize: 9.5 }}>
+                    credential helper / SSH agent
+                  </span>
+                </div>
               </div>
             ))}
             {info?.remotes.length === 0 && <span style={{ color: 'var(--fg-4)', fontSize: 10.5 }}>No remotes configured.</span>}
@@ -636,7 +669,11 @@ function GitRepositoryPanel({
         </div>
       </div>
 
-      {notice && <div style={{ color: notice.error ? 'var(--bad)' : 'var(--ok)', fontSize: 10.5 }}>{notice.text}</div>}
+      {notice && (
+        <div style={{ color: notice.error ? 'var(--bad)' : 'var(--ok)', fontSize: 10.5, whiteSpace: 'pre-wrap', maxHeight: 120, overflow: 'auto' }}>
+          {notice.text}
+        </div>
+      )}
     </div>
   );
 }

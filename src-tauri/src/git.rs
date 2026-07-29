@@ -3,9 +3,13 @@ use git2::{
     Sort, Status, StatusOptions,
 };
 use serde::{Deserialize, Serialize};
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
+use std::time::Duration;
+use tokio::process::Command;
+use tokio::time::timeout;
 
 const MAX_DIFF_BYTES: usize = 2 * 1024 * 1024;
+const GIT_NETWORK_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GitFileStatus {
@@ -85,6 +89,15 @@ pub struct GitRepositoryInfo {
     pub branches: Vec<GitBranch>,
     pub remotes: Vec<GitRemote>,
     pub history: Vec<GitHistoryEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitNetworkResult {
+    pub operation: String,
+    pub remote: String,
+    pub branch: String,
+    pub output: String,
+    pub status: GitStatus,
 }
 
 pub fn get_git_status(path: &str) -> Option<GitStatus> {
@@ -394,6 +407,171 @@ pub fn remove_remote(path: &str, name: &str) -> Result<GitRepositoryInfo, String
     repo.remote_delete(name)
         .map_err(|error| format!("Could not remove remote '{name}': {error}"))?;
     get_repository_info(path, 30)
+}
+
+pub async fn fetch_remote(path: &str, remote: &str) -> Result<GitNetworkResult, String> {
+    let context = network_context(path, remote)?;
+    let output = run_git_command(
+        &context.workdir,
+        "fetch",
+        &["fetch", "--prune", &context.remote],
+    )
+    .await?;
+    network_result(path, "fetch", context, output)
+}
+
+pub async fn pull_remote(path: &str, remote: &str) -> Result<GitNetworkResult, String> {
+    let status = get_git_status(path).ok_or_else(|| "Could not read Git status.".to_string())?;
+    if !status.clean {
+        return Err("Commit or stash local changes before pulling.".to_string());
+    }
+    let context = network_context(path, remote)?;
+    let remote_branch = context.remote_branch.clone();
+    let output = run_git_command(
+        &context.workdir,
+        "pull",
+        &["pull", "--ff-only", &context.remote, &remote_branch],
+    )
+    .await?;
+    network_result(path, "pull", context, output)
+}
+
+pub async fn push_remote(path: &str, remote: &str) -> Result<GitNetworkResult, String> {
+    let context = network_context(path, remote)?;
+    let destination = format!("HEAD:refs/heads/{}", context.branch);
+    let mut arguments = vec!["push"];
+    if !context.has_upstream {
+        arguments.push("--set-upstream");
+    }
+    arguments.push(&context.remote);
+    arguments.push(&destination);
+    let output = run_git_command(&context.workdir, "push", &arguments).await?;
+    network_result(path, "push", context, output)
+}
+
+struct NetworkContext {
+    workdir: PathBuf,
+    remote: String,
+    branch: String,
+    remote_branch: String,
+    has_upstream: bool,
+}
+
+fn network_context(path: &str, remote: &str) -> Result<NetworkContext, String> {
+    let repo = writable_repository(path)?;
+    let remote = validate_remote_name(remote)?;
+    repo.find_remote(remote)
+        .map_err(|error| format!("Could not find remote '{remote}': {error}"))?;
+    let workdir = repo
+        .workdir()
+        .ok_or_else(|| "Network operations require a working tree.".to_string())?
+        .to_path_buf();
+    let head = repo
+        .head()
+        .map_err(|_| "Create the first commit before using a remote.".to_string())?;
+    if !head.is_branch() {
+        return Err("Check out a local branch before using a remote.".to_string());
+    }
+    let branch = head
+        .shorthand()
+        .ok_or_else(|| "Current branch name is not valid UTF-8.".to_string())?
+        .to_string();
+    let local = repo
+        .find_branch(&branch, BranchType::Local)
+        .map_err(|error| format!("Could not read current branch: {error}"))?;
+    let upstream = local
+        .upstream()
+        .ok()
+        .and_then(|upstream| upstream.name().ok().flatten().map(str::to_string));
+    let remote_prefix = format!("{remote}/");
+    let remote_branch = upstream
+        .as_deref()
+        .and_then(|name| name.strip_prefix(&remote_prefix))
+        .unwrap_or(&branch)
+        .to_string();
+
+    Ok(NetworkContext {
+        workdir,
+        remote: remote.to_string(),
+        branch,
+        remote_branch,
+        has_upstream: upstream.is_some(),
+    })
+}
+
+async fn run_git_command(
+    workdir: &Path,
+    operation: &str,
+    arguments: &[&str],
+) -> Result<String, String> {
+    let mut command = Command::new("git");
+    command
+        .args(arguments)
+        .current_dir(workdir)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .kill_on_drop(true);
+
+    let output = timeout(GIT_NETWORK_TIMEOUT, command.output())
+        .await
+        .map_err(|_| format!("Git {operation} timed out after 120 seconds."))?
+        .map_err(|error| format!("Could not start Git {operation}: {error}"))?;
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let sanitized = redact_url_credentials(combined.trim());
+    if !output.status.success() {
+        let detail = if sanitized.is_empty() {
+            format!("Git exited with status {}.", output.status)
+        } else {
+            sanitized
+        };
+        return Err(format!(
+            "Git {operation} failed: {detail}\nConfigure a Git credential helper or SSH agent if authentication is required."
+        ));
+    }
+    Ok(if sanitized.is_empty() {
+        format!("Git {operation} completed.")
+    } else {
+        sanitized
+    })
+}
+
+fn network_result(
+    path: &str,
+    operation: &str,
+    context: NetworkContext,
+    output: String,
+) -> Result<GitNetworkResult, String> {
+    let status = get_git_status(path).ok_or_else(|| "Could not refresh Git status.".to_string())?;
+    Ok(GitNetworkResult {
+        operation: operation.to_string(),
+        remote: context.remote,
+        branch: context.branch,
+        output,
+        status,
+    })
+}
+
+fn redact_url_credentials(input: &str) -> String {
+    let mut output = input.to_string();
+    let mut search_from = 0usize;
+    while let Some(relative_scheme) = output[search_from..].find("://") {
+        let credentials_start = search_from + relative_scheme + 3;
+        let remainder = &output[credentials_start..];
+        let endpoint = remainder
+            .find(|character: char| character.is_whitespace())
+            .unwrap_or(remainder.len());
+        let Some(relative_at) = remainder[..endpoint].rfind('@') else {
+            search_from = credentials_start;
+            continue;
+        };
+        let credentials_end = credentials_start + relative_at;
+        output.replace_range(credentials_start..=credentials_end, "[redacted]@");
+        search_from = credentials_start + "[redacted]@".len();
+    }
+    output
 }
 
 fn list_branches(repo: &Repository) -> Result<Vec<GitBranch>, String> {
@@ -960,5 +1138,99 @@ mod tests {
         let removed = remove_remote(test.path.to_str().unwrap(), "upstream")
             .expect("remove remote");
         assert!(removed.remotes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn pushes_fetches_and_fast_forward_pulls_with_a_local_remote() {
+        let source = TestRepo::init();
+        source.write("README.md", "one\n");
+        source.commit_all("Initial commit");
+        let remote_path = unique_test_path("remote.git");
+        Repository::init_bare(&remote_path).expect("initialize bare remote");
+        add_remote(
+            source.path.to_str().unwrap(),
+            "origin",
+            remote_path.to_str().unwrap(),
+        )
+        .expect("add source remote");
+
+        let pushed = push_remote(source.path.to_str().unwrap(), "origin")
+            .await
+            .expect("push initial commit");
+        assert_eq!(pushed.operation, "push");
+        assert!(pushed.status.clean);
+        Repository::open_bare(&remote_path)
+            .expect("open bare remote")
+            .set_head(&format!("refs/heads/{}", pushed.branch))
+            .expect("set bare remote HEAD");
+
+        let clone_path = unique_test_path("clone");
+        let clone_repo = Repository::clone(remote_path.to_str().unwrap(), &clone_path)
+            .expect("clone local remote");
+        configure_test_identity(&clone_repo);
+        let clone = TestRepo {
+            path: clone_path,
+            repo: clone_repo,
+        };
+        clone.write("README.md", "two\n");
+        clone.commit_all("Remote commit");
+        push_remote(clone.path.to_str().unwrap(), "origin")
+            .await
+            .expect("push remote commit");
+
+        let fetched = fetch_remote(source.path.to_str().unwrap(), "origin")
+            .await
+            .expect("fetch remote commit");
+        assert_eq!(fetched.status.behind, 1);
+
+        source.write("local.txt", "dirty");
+        let dirty_pull = pull_remote(source.path.to_str().unwrap(), "origin").await;
+        assert_eq!(
+            dirty_pull.unwrap_err(),
+            "Commit or stash local changes before pulling."
+        );
+        fs::remove_file(source.path.join("local.txt")).expect("remove dirty file");
+
+        let pulled = pull_remote(source.path.to_str().unwrap(), "origin")
+            .await
+            .expect("fast-forward pull");
+        assert!(pulled.status.clean);
+        assert_eq!(
+            fs::read_to_string(source.path.join("README.md")).unwrap(),
+            "two\n"
+        );
+
+        let _ = fs::remove_dir_all(remote_path);
+    }
+
+    #[test]
+    fn redacts_credentials_embedded_in_urls() {
+        assert_eq!(
+            redact_url_credentials(
+                "fatal: unable to access 'https://user:secret@example.test/repo.git/'"
+            ),
+            "fatal: unable to access 'https://[redacted]@example.test/repo.git/'"
+        );
+    }
+
+    fn unique_test_path(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "localhost-hub-git-test-{}-{nonce}-{label}",
+            std::process::id()
+        ))
+    }
+
+    fn configure_test_identity(repo: &Repository) {
+        let mut config = repo.config().expect("open repository config");
+        config
+            .set_str("user.name", "Localhost Hub")
+            .expect("configure user name");
+        config
+            .set_str("user.email", "hub@example.test")
+            .expect("configure user email");
     }
 }

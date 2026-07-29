@@ -136,9 +136,9 @@ This backlog captures the current product direction in implementation order. Kee
 - [x] Delete branch.
 - [ ] Search branches.
 - [x] Show upstream tracking state.
-- [ ] Fetch.
-- [ ] Pull.
-- [ ] Push.
+- [x] Fetch.
+- [x] Pull.
+- [x] Push.
 - [ ] Force push with warning.
 - [ ] Pull with rebase later.
 
