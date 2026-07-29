@@ -90,9 +90,9 @@ This backlog captures the current product direction in implementation order. Kee
 - [ ] Select local clone destination.
 - [ ] Initialize repo.
 - [ ] Open existing repo.
-- [ ] Add remote.
-- [ ] Remove remote.
-- [ ] Rename remote.
+- [x] Add remote.
+- [x] Remove remote.
+- [x] Rename remote.
 - [ ] Add post-clone actions: install dependencies, create workspace, open editor, run dev script.
 
 ### Git status
@@ -131,11 +131,11 @@ This backlog captures the current product direction in implementation order. Kee
 ### Branches and remotes
 
 - [x] Show current branch.
-- [ ] Switch branch.
-- [ ] Create branch.
-- [ ] Delete branch.
+- [x] Switch branch.
+- [x] Create branch.
+- [x] Delete branch.
 - [ ] Search branches.
-- [ ] Show upstream tracking state.
+- [x] Show upstream tracking state.
 - [ ] Fetch.
 - [ ] Pull.
 - [ ] Push.
@@ -144,10 +144,10 @@ This backlog captures the current product direction in implementation order. Kee
 
 ### History
 
-- [ ] Commit history.
+- [x] Commit history.
 - [ ] Commit details.
-- [ ] Author/date.
-- [ ] Changed files.
+- [x] Author/date.
+- [x] Changed files.
 - [ ] Commit search later.
 
 ## Phase 3: GitHub Intelligence

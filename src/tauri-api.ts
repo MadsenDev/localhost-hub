@@ -4,7 +4,7 @@
  * In a browser (vite dev without tauri), all calls return empty/null
  * so the app works in both environments.
  */
-import type { GitCommitResult, GitDiff, GitStatus } from "./types";
+import type { GitCommitResult, GitDiff, GitRepositoryInfo, GitStatus } from "./types";
 
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -180,6 +180,27 @@ export const tauriApi = {
 
   commitGitChanges: (path: string, message: string) =>
     invoke<GitCommitResult>("commit_git_changes", { path, message }),
+
+  getGitRepositoryInfo: (path: string, historyLimit = 30) =>
+    invoke<GitRepositoryInfo>("get_git_repository_info", { path, historyLimit }),
+
+  createGitBranch: (path: string, name: string) =>
+    invoke<GitStatus>("create_git_branch", { path, name }),
+
+  checkoutGitBranch: (path: string, name: string) =>
+    invoke<GitStatus>("checkout_git_branch", { path, name }),
+
+  deleteGitBranch: (path: string, name: string) =>
+    invoke<void>("delete_git_branch", { path, name }),
+
+  addGitRemote: (path: string, name: string, url: string) =>
+    invoke<GitRepositoryInfo>("add_git_remote", { path, name, url }),
+
+  renameGitRemote: (path: string, currentName: string, newName: string) =>
+    invoke<GitRepositoryInfo>("rename_git_remote", { path, currentName, newName }),
+
+  removeGitRemote: (path: string, name: string) =>
+    invoke<GitRepositoryInfo>("remove_git_remote", { path, name }),
 
   listGitHubRepos: () => invoke<GitHubRepo[]>("github_list_repos"),
 

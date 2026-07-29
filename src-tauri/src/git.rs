@@ -1,5 +1,6 @@
 use git2::{
-    DiffFormat, DiffOptions, ErrorCode, Index, Repository, Status, StatusOptions,
+    build::CheckoutBuilder, BranchType, DiffFormat, DiffOptions, ErrorCode, Index, Repository,
+    Sort, Status, StatusOptions,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path};
@@ -46,6 +47,44 @@ pub struct GitDiff {
 pub struct GitCommitResult {
     pub hash: String,
     pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitBranch {
+    pub name: String,
+    pub current: bool,
+    pub remote: bool,
+    pub upstream: Option<String>,
+    pub ahead: usize,
+    pub behind: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitRemote {
+    pub name: String,
+    pub url: Option<String>,
+    pub push_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitHistoryEntry {
+    pub hash: String,
+    pub full_hash: String,
+    pub message: String,
+    pub author: String,
+    pub author_email: Option<String>,
+    pub timestamp: i64,
+    pub parent_count: usize,
+    pub files_changed: usize,
+    pub additions: usize,
+    pub deletions: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitRepositoryInfo {
+    pub branches: Vec<GitBranch>,
+    pub remotes: Vec<GitRemote>,
+    pub history: Vec<GitHistoryEntry>,
 }
 
 pub fn get_git_status(path: &str) -> Option<GitStatus> {
@@ -286,6 +325,234 @@ pub fn commit(path: &str, message: &str) -> Result<GitCommitResult, String> {
         hash: short_oid(oid),
         message: message.to_string(),
     })
+}
+
+pub fn get_repository_info(path: &str, history_limit: usize) -> Result<GitRepositoryInfo, String> {
+    let repo = writable_repository(path)?;
+    Ok(GitRepositoryInfo {
+        branches: list_branches(&repo)?,
+        remotes: list_remotes(&repo)?,
+        history: list_history(&repo, history_limit.clamp(1, 200))?,
+    })
+}
+
+pub fn create_branch(path: &str, name: &str) -> Result<GitStatus, String> {
+    let repo = writable_repository(path)?;
+    let name = validate_branch_name(name)?;
+    let head = repo
+        .head()
+        .and_then(|head| head.peel_to_commit())
+        .map_err(|_| "Create the first commit before creating another branch.".to_string())?;
+    repo.branch(name, &head, false)
+        .map_err(|error| format!("Could not create branch '{name}': {error}"))?;
+    checkout_local_branch(&repo, name)?;
+    get_git_status(path).ok_or_else(|| "Could not refresh Git status.".to_string())
+}
+
+pub fn checkout_branch(path: &str, name: &str) -> Result<GitStatus, String> {
+    let repo = writable_repository(path)?;
+    let name = validate_branch_name(name)?;
+    checkout_local_branch(&repo, name)?;
+    get_git_status(path).ok_or_else(|| "Could not refresh Git status.".to_string())
+}
+
+pub fn delete_branch(path: &str, name: &str) -> Result<(), String> {
+    let repo = writable_repository(path)?;
+    let name = validate_branch_name(name)?;
+    if branch_name(&repo) == name {
+        return Err("The current branch cannot be deleted.".to_string());
+    }
+    let mut branch = repo
+        .find_branch(name, BranchType::Local)
+        .map_err(|error| format!("Could not find branch '{name}': {error}"))?;
+    branch
+        .delete()
+        .map_err(|error| format!("Could not delete branch '{name}': {error}"))
+}
+
+pub fn add_remote(path: &str, name: &str, url: &str) -> Result<GitRepositoryInfo, String> {
+    let repo = writable_repository(path)?;
+    let name = validate_remote_name(name)?;
+    let url = validate_remote_url(url)?;
+    repo.remote(name, url)
+        .map_err(|error| format!("Could not add remote '{name}': {error}"))?;
+    get_repository_info(path, 30)
+}
+
+pub fn rename_remote(path: &str, current_name: &str, new_name: &str) -> Result<GitRepositoryInfo, String> {
+    let repo = writable_repository(path)?;
+    let current_name = validate_remote_name(current_name)?;
+    let new_name = validate_remote_name(new_name)?;
+    repo.remote_rename(current_name, new_name)
+        .map_err(|error| format!("Could not rename remote '{current_name}': {error}"))?;
+    get_repository_info(path, 30)
+}
+
+pub fn remove_remote(path: &str, name: &str) -> Result<GitRepositoryInfo, String> {
+    let repo = writable_repository(path)?;
+    let name = validate_remote_name(name)?;
+    repo.remote_delete(name)
+        .map_err(|error| format!("Could not remove remote '{name}': {error}"))?;
+    get_repository_info(path, 30)
+}
+
+fn list_branches(repo: &Repository) -> Result<Vec<GitBranch>, String> {
+    let mut result = Vec::new();
+    let branches = repo
+        .branches(None)
+        .map_err(|error| format!("Could not list branches: {error}"))?;
+    for branch_result in branches {
+        let (branch, branch_type) =
+            branch_result.map_err(|error| format!("Could not read branch: {error}"))?;
+        let Some(name) = branch
+            .name()
+            .map_err(|error| format!("Could not read branch name: {error}"))?
+        else {
+            continue;
+        };
+        let remote = branch_type == BranchType::Remote;
+        let upstream_branch = if remote { None } else { branch.upstream().ok() };
+        let upstream = upstream_branch
+            .as_ref()
+            .and_then(|branch| branch.name().ok().flatten())
+            .map(str::to_string);
+        let divergence = if let (Some(local), Some(upstream_target)) = (
+            branch.get().target(),
+            upstream_branch.as_ref().and_then(|branch| branch.get().target()),
+        ) {
+            repo.graph_ahead_behind(local, upstream_target).unwrap_or((0, 0))
+        } else {
+            (0, 0)
+        };
+        result.push(GitBranch {
+            name: name.to_string(),
+            current: !remote && branch.is_head(),
+            remote,
+            upstream,
+            ahead: divergence.0,
+            behind: divergence.1,
+        });
+    }
+    result.sort_by(|left, right| {
+        right
+            .current
+            .cmp(&left.current)
+            .then(left.remote.cmp(&right.remote))
+            .then(left.name.cmp(&right.name))
+    });
+    Ok(result)
+}
+
+fn list_remotes(repo: &Repository) -> Result<Vec<GitRemote>, String> {
+    let names = repo
+        .remotes()
+        .map_err(|error| format!("Could not list remotes: {error}"))?;
+    let mut remotes = names
+        .iter()
+        .flatten()
+        .filter_map(|name| repo.find_remote(name).ok().map(|remote| (name, remote)))
+        .map(|(name, remote)| GitRemote {
+            name: name.to_string(),
+            url: remote.url().map(str::to_string),
+            push_url: remote.pushurl().map(str::to_string),
+        })
+        .collect::<Vec<_>>();
+    remotes.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(remotes)
+}
+
+fn list_history(repo: &Repository, limit: usize) -> Result<Vec<GitHistoryEntry>, String> {
+    if repo.is_empty().unwrap_or(true) {
+        return Ok(Vec::new());
+    }
+    let mut walk = repo
+        .revwalk()
+        .map_err(|error| format!("Could not read commit history: {error}"))?;
+    walk.set_sorting(Sort::TIME)
+        .map_err(|error| format!("Could not sort commit history: {error}"))?;
+    walk.push_head()
+        .map_err(|error| format!("Could not read HEAD history: {error}"))?;
+
+    walk.take(limit)
+        .map(|oid| {
+            let oid = oid.map_err(|error| format!("Could not read commit: {error}"))?;
+            let commit = repo
+                .find_commit(oid)
+                .map_err(|error| format!("Could not load commit: {error}"))?;
+            let tree = commit
+                .tree()
+                .map_err(|error| format!("Could not load commit tree: {error}"))?;
+            let parent_tree = commit.parent(0).ok().and_then(|parent| parent.tree().ok());
+            let diff = repo
+                .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)
+                .map_err(|error| format!("Could not inspect commit changes: {error}"))?;
+            let stats = diff
+                .stats()
+                .map_err(|error| format!("Could not inspect commit statistics: {error}"))?;
+            let author = commit.author();
+            Ok(GitHistoryEntry {
+                hash: short_oid(oid),
+                full_hash: oid.to_string(),
+                message: commit.summary().unwrap_or("(no commit message)").to_string(),
+                author: author.name().unwrap_or("Unknown").to_string(),
+                author_email: author.email().map(str::to_string),
+                timestamp: commit.time().seconds(),
+                parent_count: commit.parent_count(),
+                files_changed: stats.files_changed(),
+                additions: stats.insertions(),
+                deletions: stats.deletions(),
+            })
+        })
+        .collect()
+}
+
+fn checkout_local_branch(repo: &Repository, name: &str) -> Result<(), String> {
+    let branch = repo
+        .find_branch(name, BranchType::Local)
+        .map_err(|error| format!("Could not find branch '{name}': {error}"))?;
+    let reference = branch.get();
+    let target = reference
+        .peel_to_commit()
+        .map_err(|error| format!("Could not load branch '{name}': {error}"))?;
+    repo.checkout_tree(
+        target.as_object(),
+        Some(CheckoutBuilder::new().safe().recreate_missing(true)),
+    )
+    .map_err(|error| format!("Could not check out branch '{name}': {error}"))?;
+    let reference_name = reference
+        .name()
+        .ok_or_else(|| "Branch reference is not valid UTF-8.".to_string())?;
+    repo.set_head(reference_name)
+        .map_err(|error| format!("Could not activate branch '{name}': {error}"))
+}
+
+fn validate_branch_name(name: &str) -> Result<&str, String> {
+    let name = name.trim();
+    let reference = format!("refs/heads/{name}");
+    if name.is_empty() || !git2::Reference::is_valid_name(&reference) {
+        return Err("Enter a valid Git branch name.".to_string());
+    }
+    Ok(name)
+}
+
+fn validate_remote_name(name: &str) -> Result<&str, String> {
+    let name = name.trim();
+    if name.is_empty()
+        || name.contains(char::is_whitespace)
+        || name.contains('/')
+        || name.contains('\\')
+    {
+        return Err("Enter a valid remote name.".to_string());
+    }
+    Ok(name)
+}
+
+fn validate_remote_url(url: &str) -> Result<&str, String> {
+    let url = url.trim();
+    if url.is_empty() || url.contains('\0') {
+        return Err("Enter a valid remote URL.".to_string());
+    }
+    Ok(url)
 }
 
 fn writable_repository(path: &str) -> Result<Repository, String> {
@@ -636,5 +903,62 @@ mod tests {
             result.unwrap_err(),
             "Git file paths must stay inside the repository."
         );
+    }
+
+    #[test]
+    fn creates_checks_out_lists_and_deletes_branches() {
+        let test = TestRepo::init();
+        test.write("README.md", "hello");
+        test.commit_all("Initial commit");
+        let original = status(&test.path).branch;
+
+        let created = create_branch(test.path.to_str().unwrap(), "feature/test")
+            .expect("create and checkout branch");
+        assert_eq!(created.branch, "feature/test");
+
+        let info = get_repository_info(test.path.to_str().unwrap(), 30)
+            .expect("repository info");
+        assert!(info
+            .branches
+            .iter()
+            .any(|branch| branch.name == "feature/test" && branch.current));
+
+        checkout_branch(test.path.to_str().unwrap(), &original).expect("checkout original");
+        delete_branch(test.path.to_str().unwrap(), "feature/test").expect("delete branch");
+        assert!(!get_repository_info(test.path.to_str().unwrap(), 30)
+            .unwrap()
+            .branches
+            .iter()
+            .any(|branch| branch.name == "feature/test"));
+    }
+
+    #[test]
+    fn reports_commit_history_and_remote_lifecycle() {
+        let test = TestRepo::init();
+        test.write("README.md", "one\n");
+        test.commit_all("Initial commit");
+        test.write("README.md", "two\n");
+        test.commit_all("Second commit");
+
+        let added = add_remote(
+            test.path.to_str().unwrap(),
+            "origin",
+            "https://example.test/repo.git",
+        )
+        .expect("add remote");
+        assert_eq!(added.remotes[0].name, "origin");
+        assert_eq!(added.history.len(), 2);
+        assert_eq!(added.history[0].message, "Second commit");
+        assert_eq!(added.history[0].files_changed, 1);
+        assert_eq!(added.history[0].additions, 1);
+        assert_eq!(added.history[0].deletions, 1);
+
+        let renamed = rename_remote(test.path.to_str().unwrap(), "origin", "upstream")
+            .expect("rename remote");
+        assert_eq!(renamed.remotes[0].name, "upstream");
+
+        let removed = remove_remote(test.path.to_str().unwrap(), "upstream")
+            .expect("remove remote");
+        assert!(removed.remotes.is_empty());
     }
 }

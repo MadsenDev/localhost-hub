@@ -3,9 +3,13 @@ use tauri::{AppHandle, State};
 use crate::ports::{normalize_local_url, scan_live_ports, LivePort};
 use crate::processes::{get_dev_processes, get_system_stats as sys_stats, ProcessInfo, SystemStats};
 use crate::git::{
-    commit as git_commit_changes, get_git_diff as git_diff, get_git_status as git_status,
+    add_remote as git_add_remote, checkout_branch as git_checkout_branch,
+    commit as git_commit_changes, create_branch as git_create_branch,
+    delete_branch as git_delete_branch, get_git_diff as git_diff,
+    get_git_status as git_status, get_repository_info as git_repository_info,
+    remove_remote as git_remove_remote, rename_remote as git_rename_remote,
     stage_files as git_stage_files, unstage_files as git_unstage_files, GitCommitResult, GitDiff,
-    GitStatus,
+    GitRepositoryInfo, GitStatus,
 };
 use crate::workspace::{
     scan_as_workspace_groups, scan_for_projects, start_workspace as start_workspace_runs,
@@ -168,6 +172,52 @@ pub fn unstage_git_files(path: String, files: Vec<String>) -> Result<GitStatus, 
 #[tauri::command]
 pub fn commit_git_changes(path: String, message: String) -> Result<GitCommitResult, String> {
     git_commit_changes(&path, &message)
+}
+
+#[tauri::command]
+pub fn get_git_repository_info(
+    path: String,
+    history_limit: Option<usize>,
+) -> Result<GitRepositoryInfo, String> {
+    git_repository_info(&path, history_limit.unwrap_or(30))
+}
+
+#[tauri::command]
+pub fn create_git_branch(path: String, name: String) -> Result<GitStatus, String> {
+    git_create_branch(&path, &name)
+}
+
+#[tauri::command]
+pub fn checkout_git_branch(path: String, name: String) -> Result<GitStatus, String> {
+    git_checkout_branch(&path, &name)
+}
+
+#[tauri::command]
+pub fn delete_git_branch(path: String, name: String) -> Result<(), String> {
+    git_delete_branch(&path, &name)
+}
+
+#[tauri::command]
+pub fn add_git_remote(
+    path: String,
+    name: String,
+    url: String,
+) -> Result<GitRepositoryInfo, String> {
+    git_add_remote(&path, &name, &url)
+}
+
+#[tauri::command]
+pub fn rename_git_remote(
+    path: String,
+    current_name: String,
+    new_name: String,
+) -> Result<GitRepositoryInfo, String> {
+    git_rename_remote(&path, &current_name, &new_name)
+}
+
+#[tauri::command]
+pub fn remove_git_remote(path: String, name: String) -> Result<GitRepositoryInfo, String> {
+    git_remove_remote(&path, &name)
 }
 
 // ── Workspace / project scanning ──────────────────────────────────────────────

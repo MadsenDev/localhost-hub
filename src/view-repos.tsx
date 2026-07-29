@@ -1,5 +1,5 @@
 import React from 'react';
-import type { GitDiff, Repo, StoredWorkspace, StoredService } from './types';
+import type { GitDiff, GitRepositoryInfo, Repo, StoredWorkspace, StoredService } from './types';
 import { Ic } from './icons';
 import { StatusDot } from './shared';
 import { tauriApi } from './tauri-api';
@@ -258,11 +258,9 @@ function RepoCard({
                 </div>
               )}
             </div>
-            {git.files.length > 0 && (
-              <button className="btn sm ghost" style={{ flexShrink: 0, fontSize: 10.5 }} onClick={() => setGitExpanded(value => !value)}>
-                {gitExpanded ? 'Hide files' : 'View files'}
-              </button>
-            )}
+            <button className="btn sm ghost" style={{ flexShrink: 0, fontSize: 10.5 }} onClick={() => setGitExpanded(value => !value)}>
+              {gitExpanded ? 'Close Git' : 'Open Git'}
+            </button>
           </div>
 
           {gitExpanded && git.files.length > 0 && (
@@ -372,6 +370,13 @@ function RepoCard({
               )}
             </div>
           )}
+          {gitExpanded && (
+            <GitRepositoryPanel
+              path={gitPath}
+              statusHash={git.last_commit_hash}
+              onStatusChanged={() => onGitChanged(gitPath)}
+            />
+          )}
         </div>
       )}
 
@@ -403,6 +408,235 @@ function RepoCard({
       {repo.scripts.length === 0 && (
         <div style={{ padding: '10px 14px', fontSize: 12, color: 'var(--fg-4)' }}>No scripts detected</div>
       )}
+    </div>
+  );
+}
+
+function GitRepositoryPanel({
+  path,
+  statusHash,
+  onStatusChanged,
+}: {
+  path: string;
+  statusHash: string | null;
+  onStatusChanged: () => Promise<void>;
+}) {
+  const [info, setInfo] = React.useState<GitRepositoryInfo | null>(null);
+  const [pending, setPending] = React.useState<string | null>(null);
+  const [notice, setNotice] = React.useState<{ text: string; error: boolean } | null>(null);
+  const [branchName, setBranchName] = React.useState('');
+  const [remoteName, setRemoteName] = React.useState('');
+  const [remoteUrl, setRemoteUrl] = React.useState('');
+  const [renaming, setRenaming] = React.useState<{ current: string; next: string } | null>(null);
+
+  const load = React.useCallback(async () => {
+    setPending('Loading repository');
+    try {
+      setInfo(await tauriApi.getGitRepositoryInfo(path, 30));
+      setNotice(null);
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : String(error), error: true });
+    } finally {
+      setPending(null);
+    }
+  }, [path]);
+
+  React.useEffect(() => {
+    load();
+  }, [load, statusHash]);
+
+  async function run(
+    label: string,
+    action: () => Promise<GitRepositoryInfo | unknown>,
+    refreshStatus = false,
+  ) {
+    setPending(label);
+    setNotice(null);
+    try {
+      const result = await action();
+      if (result && typeof result === 'object' && 'branches' in result) {
+        setInfo(result as GitRepositoryInfo);
+      } else {
+        setInfo(await tauriApi.getGitRepositoryInfo(path, 30));
+      }
+      if (refreshStatus) await onStatusChanged();
+      setNotice({ text: `${label} complete.`, error: false });
+    } catch (error) {
+      setNotice({ text: error instanceof Error ? error.message : String(error), error: true });
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function createBranch() {
+    const name = branchName.trim();
+    if (!name) return;
+    await run('Create branch', () => tauriApi.createGitBranch(path, name), true);
+    setBranchName('');
+  }
+
+  async function addRemote() {
+    const name = remoteName.trim();
+    const url = remoteUrl.trim();
+    if (!name || !url) return;
+    await run('Add remote', () => tauriApi.addGitRemote(path, name, url));
+    setRemoteName('');
+    setRemoteUrl('');
+  }
+
+  return (
+    <div style={{ marginTop: 9, borderTop: '1px solid var(--line-0)', paddingTop: 8, display: 'grid', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
+        <div style={{ border: '1px solid var(--line-1)', borderRadius: 'var(--r-1)', overflow: 'hidden' }}>
+          <div style={{ padding: '6px 8px', background: 'var(--bg-2)', fontSize: 10.5, fontWeight: 600 }}>Branches</div>
+          <div style={{ padding: 7, display: 'grid', gap: 4 }}>
+            {info?.branches.filter(branch => !branch.remote).map(branch => (
+              <div key={branch.name} style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 24 }}>
+                <Ic.Branch size={10} />
+                <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 10.5 }}>
+                  {branch.name}
+                </span>
+                {branch.upstream && (
+                  <span className="mono" title={branch.upstream} style={{ color: 'var(--fg-4)', fontSize: 9.5 }}>
+                    ↑{branch.ahead} ↓{branch.behind}
+                  </span>
+                )}
+                {branch.current ? (
+                  <span className="tag ok">current</span>
+                ) : (
+                  <>
+                    <button
+                      className="btn sm ghost"
+                      disabled={pending !== null}
+                      onClick={() => run('Checkout', () => tauriApi.checkoutGitBranch(path, branch.name), true)}
+                    >
+                      Checkout
+                    </button>
+                    <button
+                      className="btn sm ghost"
+                      disabled={pending !== null}
+                      onClick={() => {
+                        if (window.confirm(`Delete local branch "${branch.name}"?`)) {
+                          run('Delete branch', () => tauriApi.deleteGitBranch(path, branch.name));
+                        }
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 5, marginTop: 3 }}>
+              <input
+                value={branchName}
+                onChange={event => setBranchName(event.target.value)}
+                placeholder="new branch"
+                className="mono"
+                style={{ flex: 1, minWidth: 0, background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-1)', padding: '4px 6px', fontSize: 10.5, color: 'var(--fg-1)' }}
+              />
+              <button className="btn sm ghost" disabled={pending !== null || !branchName.trim()} onClick={createBranch}>Create</button>
+            </div>
+            {(info?.branches.some(branch => branch.remote) ?? false) && (
+              <div style={{ color: 'var(--fg-4)', fontSize: 10, marginTop: 3 }}>
+                Remote: {info!.branches.filter(branch => branch.remote).map(branch => branch.name).join(', ')}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ border: '1px solid var(--line-1)', borderRadius: 'var(--r-1)', overflow: 'hidden' }}>
+          <div style={{ padding: '6px 8px', background: 'var(--bg-2)', fontSize: 10.5, fontWeight: 600 }}>Remotes</div>
+          <div style={{ padding: 7, display: 'grid', gap: 5 }}>
+            {info?.remotes.map(remote => (
+              <div key={remote.name} style={{ display: 'grid', gap: 3 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span className="mono" style={{ fontSize: 10.5, fontWeight: 600 }}>{remote.name}</span>
+                  <span className="mono" title={remote.url ?? ''} style={{ flex: 1, minWidth: 0, color: 'var(--fg-4)', fontSize: 9.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {remote.url ?? 'no fetch URL'}
+                  </span>
+                  <button className="btn sm ghost" disabled={pending !== null} onClick={() => setRenaming({ current: remote.name, next: remote.name })}>Rename</button>
+                  <button
+                    className="btn sm ghost"
+                    disabled={pending !== null}
+                    onClick={() => {
+                      if (window.confirm(`Remove remote "${remote.name}"? This does not delete the remote repository.`)) {
+                        run('Remove remote', () => tauriApi.removeGitRemote(path, remote.name));
+                      }
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+                {renaming?.current === remote.name && (
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <input
+                      value={renaming.next}
+                      onChange={event => setRenaming({ current: remote.name, next: event.target.value })}
+                      className="mono"
+                      style={{ flex: 1, minWidth: 0, background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-1)', padding: '4px 6px', fontSize: 10.5, color: 'var(--fg-1)' }}
+                    />
+                    <button
+                      className="btn sm ghost"
+                      disabled={pending !== null || !renaming.next.trim()}
+                      onClick={async () => {
+                        await run('Rename remote', () => tauriApi.renameGitRemote(path, remote.name, renaming.next.trim()));
+                        setRenaming(null);
+                      }}
+                    >
+                      Save
+                    </button>
+                    <button className="btn sm ghost" onClick={() => setRenaming(null)}>Cancel</button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {info?.remotes.length === 0 && <span style={{ color: 'var(--fg-4)', fontSize: 10.5 }}>No remotes configured.</span>}
+            <div style={{ display: 'grid', gridTemplateColumns: '90px minmax(0, 1fr) auto', gap: 4, marginTop: 3 }}>
+              <input
+                value={remoteName}
+                onChange={event => setRemoteName(event.target.value)}
+                placeholder="origin"
+                className="mono"
+                style={{ minWidth: 0, background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-1)', padding: '4px 6px', fontSize: 10.5, color: 'var(--fg-1)' }}
+              />
+              <input
+                value={remoteUrl}
+                onChange={event => setRemoteUrl(event.target.value)}
+                placeholder="https://…"
+                className="mono"
+                style={{ minWidth: 0, background: 'var(--bg-2)', border: '1px solid var(--line-1)', borderRadius: 'var(--r-1)', padding: '4px 6px', fontSize: 10.5, color: 'var(--fg-1)' }}
+              />
+              <button className="btn sm ghost" disabled={pending !== null || !remoteName.trim() || !remoteUrl.trim()} onClick={addRemote}>Add</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ border: '1px solid var(--line-1)', borderRadius: 'var(--r-1)', overflow: 'hidden' }}>
+        <div style={{ padding: '6px 8px', background: 'var(--bg-2)', display: 'flex', gap: 8, alignItems: 'center', fontSize: 10.5, fontWeight: 600 }}>
+          <span style={{ flex: 1 }}>Recent commits</span>
+          {pending && <span style={{ color: 'var(--fg-4)', fontWeight: 400 }}>{pending}…</span>}
+          <button className="btn sm ghost" disabled={pending !== null} onClick={load}>Refresh</button>
+        </div>
+        <div style={{ maxHeight: 230, overflow: 'auto' }}>
+          {info?.history.map(entry => (
+            <div key={entry.full_hash} style={{ display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) auto', gap: 7, padding: '6px 8px', borderTop: '1px solid var(--line-0)', fontSize: 10.5 }}>
+              <span className="mono" title={entry.full_hash} style={{ color: 'var(--blue)' }}>{entry.hash}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: 'var(--fg-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.message}</div>
+                <div style={{ color: 'var(--fg-4)', fontSize: 9.5 }}>{entry.author} · {new Date(entry.timestamp * 1000).toLocaleString()}</div>
+              </div>
+              <span className="mono" style={{ color: 'var(--fg-4)', whiteSpace: 'nowrap' }}>
+                {entry.files_changed} files <span style={{ color: 'var(--ok)' }}>+{entry.additions}</span> <span style={{ color: 'var(--bad)' }}>−{entry.deletions}</span>
+              </span>
+            </div>
+          ))}
+          {info?.history.length === 0 && <div style={{ padding: 10, color: 'var(--fg-4)', fontSize: 10.5 }}>No commits yet.</div>}
+        </div>
+      </div>
+
+      {notice && <div style={{ color: notice.error ? 'var(--bad)' : 'var(--ok)', fontSize: 10.5 }}>{notice.text}</div>}
     </div>
   );
 }
