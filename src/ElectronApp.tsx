@@ -68,7 +68,6 @@ function AppContent() {
   } = useWorkspaces(electronAPI);
   const {
     projects,
-    filteredProjects,
     selectedProjectId,
     selectProject,
     query,
@@ -91,7 +90,6 @@ function AppContent() {
   } = useProjects({ electronAPI });
   const {
     plugins: availablePlugins,
-    pluginMap,
     loading: pluginsLoading,
     error: pluginsError,
     refresh: refreshPlugins,
@@ -154,10 +152,6 @@ function AppContent() {
         .filter((entry): entry is ProjectPluginActionEntry => Boolean(entry));
     });
   }, [availablePlugins, enabledProjectPlugins, selectedProject]);
-  const pluginProjectActions = useMemo(
-    () => availablePlugins.filter((plugin) => plugin.launch?.projectActions?.length),
-    [availablePlugins]
-  );
 
   useEffect(() => {
     if (!selectedProject) {
@@ -1565,12 +1559,10 @@ function AppContent() {
   const sidebarWidth = settings.getSettingAsNumber('sidebarWidth', 288);
   const compactMode = settings.getSettingAsBoolean('compactMode', false);
   const fontSize = settings.getSettingAsString('fontSize', 'medium');
-  const reduceAnimations = settings.getSettingAsBoolean('reduceAnimations', false);
   
   const theme = settings.getSettingAsString('theme', 'dark');
   const fontSizeClass = fontSize === 'small' ? 'text-sm' : fontSize === 'large' ? 'text-base' : 'text-sm';
   const compactClass = compactMode ? 'gap-2' : 'gap-6';
-  const animationClass = reduceAnimations ? '' : '';
 
   useEffect(() => {
     if (typeof window === 'undefined') {

@@ -2061,6 +2061,12 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
+}
+/* Drops onto its own line beneath the account row and Disconnect button. */
+.settings-secret-note {
+  flex-basis: 100%;
+  margin: 0;
 }
 .settings-connect strong,
 .settings-github-user strong {

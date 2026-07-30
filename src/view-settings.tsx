@@ -1,7 +1,7 @@
 import React from 'react';
 import { Ic } from './icons';
 import { githubAuth, type AppConfig, type DeviceCodeResponse, type GitHubUser } from './github-auth';
-import { tauriApi } from './tauri-api';
+import { tauriApi, type SecretBackend } from './tauri-api';
 import type { Repo, StoredWorkspace } from './types';
 
 interface TweakValues {
@@ -63,6 +63,15 @@ export function SettingsView({
   const [config, setConfig] = React.useState<AppConfig | null>(null);
   const [roots, setRoots] = React.useState<string[]>([]);
   const [auth, setAuth] = React.useState<AuthState>(githubUser ? { phase: 'connected', user: githubUser } : { phase: 'idle' });
+  const [secretBackend, setSecretBackend] = React.useState<SecretBackend | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    tauriApi.secretStorageBackend()
+      .then((backend) => { if (!cancelled) setSecretBackend(backend); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [editingWs, setEditingWs] = React.useState<string | null>(null);
   const [nameInput, setNameInput] = React.useState('');
   const [rootError, setRootError] = React.useState('');
@@ -210,6 +219,7 @@ export function SettingsView({
           <div className="settings-panel-body">
             <GitHubSettingsAction
               auth={auth}
+              secretBackend={secretBackend}
               onStart={startAuth}
               onBeginPoll={beginPolling}
               onDisconnect={disconnectGitHub}
@@ -361,9 +371,10 @@ function EmptyLine({ icon, text }: { icon: React.ReactNode; text: string }) {
 }
 
 function GitHubSettingsAction({
-  auth, onStart, onBeginPoll, onDisconnect, onRetry,
+  auth, secretBackend, onStart, onBeginPoll, onDisconnect, onRetry,
 }: {
   auth: AuthState;
+  secretBackend: SecretBackend | null;
   onStart: () => void;
   onBeginPoll: (code: DeviceCodeResponse) => void;
   onDisconnect: () => void;
@@ -380,6 +391,13 @@ function GitHubSettingsAction({
           </div>
         </div>
         <button className="btn sm ghost danger" onClick={onDisconnect}>Disconnect</button>
+        {secretBackend ? (
+          <p className="settings-sub settings-secret-note">
+            {secretBackend === 'keyring'
+              ? 'Your access token is stored in the system credential store.'
+              : 'No system credential store is available, so your access token is stored in a file readable only by your user account.'}
+          </p>
+        ) : null}
       </div>
     );
   }

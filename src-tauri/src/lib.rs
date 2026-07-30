@@ -7,6 +7,7 @@ mod config;
 mod github;
 mod services;
 mod scaffold;
+mod secrets;
 mod health;
 mod packages;
 mod env_files;
@@ -66,6 +67,7 @@ pub fn run() {
             commands::export_env_file,
             commands::get_system_stats,
             commands::load_config,
+            commands::secret_storage_backend,
             commands::save_config,
             commands::github_request_device_code,
             commands::github_poll_token,

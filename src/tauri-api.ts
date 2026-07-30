@@ -170,6 +170,8 @@ export interface WorkspaceRunResult {
   blocked: Array<{ service_id: string; reason: string }>;
 }
 
+export type SecretBackend = "keyring" | "file";
+
 export interface GitHubRepo {
   name: string;
   full_name: string;
@@ -419,6 +421,11 @@ export const tauriApi = {
     action<GitNetworkResult>("push_git_remote", { path, remote }),
 
   listGitHubRepos: () => query<GitHubRepo[]>("github_list_repos", undefined, []),
+
+  // Where secrets are actually stored. "file" means no OS credential store was
+  // available, so the interface should say so rather than imply otherwise.
+  secretStorageBackend: () =>
+    query<SecretBackend>("secret_storage_backend", undefined, "file"),
 
   getGitHubProjectContext: (path: string) =>
     action<GitHubProjectContext>("github_get_project_context", { path }),

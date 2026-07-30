@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { writeFile, mkdir, unlink, readFile } from 'node:fs/promises';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { exec, execSync } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -35,7 +35,6 @@ import {
   addWorkspaceItem,
   updateWorkspaceItem,
   removeWorkspaceItem,
-  type WorkspaceRecord,
   type WorkspaceItemRecord
 } from './database';
 import { findProjectIdByPath as findProjectIdByPathHelper } from './utils/projectLookup';
@@ -130,9 +129,52 @@ const stoppedProcesses = new Set<string>();
 const workspaceRunMap = new Map<number, Set<string>>();
 const runWorkspaceMap = new Map<string, { workspaceId: number; itemId?: number; runMode: 'parallel' | 'sequential' }>();
 
+// Variables kept when "Inherit System Environment" is off.
+//
+// An entirely empty environment is not useful: with no PATH, spawning `npm` or
+// any other tool fails outright. This is the narrow set a shell and ordinary
+// developer tooling need to function, mirroring the Rust service manager's
+// baseline so the two implementations behave the same.
+const BASELINE_ENV_KEYS =
+  process.platform === 'win32'
+    ? [
+        'PATH',
+        'PATHEXT',
+        'SYSTEMROOT',
+        'SYSTEMDRIVE',
+        'WINDIR',
+        'COMSPEC',
+        'TEMP',
+        'TMP',
+        'USERPROFILE',
+        'NUMBER_OF_PROCESSORS',
+        'PROCESSOR_ARCHITECTURE'
+      ]
+    : ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TZ', 'LANG'];
+
+const FALLBACK_PATH = '/usr/local/bin:/usr/bin:/bin';
+
+function baselineEnvironment(): Record<string, string> {
+  const baseline: Record<string, string> = {};
+  for (const key of BASELINE_ENV_KEYS) {
+    // Windows environment names are case-insensitive; Node preserves the casing
+    // the OS reported, so fall back to a case-insensitive lookup.
+    const value =
+      process.env[key] ??
+      Object.entries(process.env).find(([name]) => name.toLowerCase() === key.toLowerCase())?.[1];
+    if (value) {
+      baseline[key] = value;
+    }
+  }
+  if (process.platform !== 'win32' && !baseline.PATH) {
+    baseline.PATH = FALLBACK_PATH;
+  }
+  return baseline;
+}
+
 const DEFAULT_ENV_FILES = ['.env', '.env.local', '.env.development', '.env.production', '.env.test'];
 
-async function createAskPassScript(username: string, password: string) {
+async function createAskPassScript() {
   const scriptPath = join(app.getPath('userData'), `git-askpass-${randomUUID()}.js`);
   const content = `#!/usr/bin/env node
 const prompt = (process.argv[2] || '').toLowerCase();
@@ -158,7 +200,7 @@ async function runGitCommand(
     env.LOCALHOST_HUB_GIT_PASSWORD = options.credentials.password;
     env.GIT_TERMINAL_PROMPT = '0';
     env.DISPLAY = env.DISPLAY || 'localhost-hub';
-    askPassPath = await createAskPassScript(options.credentials.username, options.credentials.password);
+    askPassPath = await createAskPassScript();
     env.GIT_ASKPASS = askPassPath;
     env.SSH_ASKPASS = askPassPath;
   }
@@ -610,7 +652,7 @@ async function launchScriptProcess(options: LaunchScriptOptions) {
   }
 
   const inheritSystemEnv = getSetting('inheritSystemEnv') !== 'false';
-  const env = inheritSystemEnv ? { ...process.env } : {};
+  const env = inheritSystemEnv ? { ...process.env } : baselineEnvironment();
   if (options.envOverrides) {
     for (const [key, value] of Object.entries(options.envOverrides)) {
       if (key) {
@@ -1561,7 +1603,7 @@ ipcMain.handle('git:checkInstalled', async () => {
       
       // Fallback: try to find git in PATH (might work if PATH is updated)
       try {
-        execSync('git --version', { stdio: 'ignore', shell: true });
+        execSync('git --version', { stdio: 'ignore' });
         return { installed: true };
       } catch {
         // Try PowerShell as last resort
@@ -1577,11 +1619,11 @@ ipcMain.handle('git:checkInstalled', async () => {
       try {
         execSync('git --version', { stdio: 'ignore' });
         return { installed: true };
-      } catch (error: any) {
+      } catch {
         return { installed: false };
       }
     }
-  } catch (error: any) {
+  } catch {
     return { installed: false };
   }
 });

@@ -161,8 +161,6 @@ export function GitPanel({ project, gitStatus, gitStatusLoading, onRefreshGit, e
     );
   }
 
-  const changeList = gitStatus.changes ?? [];
-  const hasChanges = changeList.length > 0;
 
   return (
     <div className="space-y-6">

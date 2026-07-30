@@ -5,13 +5,16 @@ use crate::ports::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
-    io::{BufRead, BufReader},
+    io::{BufReader, Read},
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
 use tauri::{AppHandle, Emitter};
+
+/// Largest line buffered before it is forced out as its own log event.
+const MAX_LOG_LINE_BYTES: usize = 8 * 1024;
 
 const STOP_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const GRACEFUL_STOP_ATTEMPTS: usize = 30;
@@ -113,6 +116,9 @@ impl EventSink for TauriEventSink {
 }
 
 impl ServiceManager {
+    // The parameter list mirrors the start_service IPC payload; grouping it into
+    // a struct would only move the same fields behind another name.
+    #[allow(clippy::too_many_arguments)]
     pub fn start(
         &self,
         app: AppHandle,
@@ -317,6 +323,9 @@ impl ServiceManager {
             .all(|port| owned_ports.contains(port)))
     }
 
+    // The parameter list mirrors the start_service IPC payload; grouping it into
+    // a struct would only move the same fields behind another name.
+    #[allow(clippy::too_many_arguments)]
     fn start_with_sink(
         &self,
         sink: Arc<dyn EventSink>,
@@ -369,9 +378,12 @@ impl ServiceManager {
             code: None,
         });
 
-        let mut command = shell_command(&cmd);
+        let mut command = shell_command(&cmd, environment.inherit_system);
         if !environment.inherit_system {
             command.env_clear();
+            for (key, value) in baseline_environment() {
+                command.env(key, value);
+            }
         }
         for variable in &environment.vars {
             command.env(&variable.key, &variable.value);
@@ -604,15 +616,77 @@ fn validate_environment(environment: &ServiceEnvironment) -> Result<(), String> 
     Ok(())
 }
 
+/// Variables kept when a profile asks not to inherit the system environment.
+///
+/// A truly empty environment is not useful: without `PATH` the shell cannot find
+/// any external program, so every real command fails. These are the variables a
+/// shell and ordinary developer tooling need in order to function at all —
+/// deliberately narrow, and never anything project- or secret-shaped.
 #[cfg(unix)]
-fn shell_command(command: &str) -> Command {
+const BASELINE_ENVIRONMENT_KEYS: &[&str] = &["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "TZ", "LANG"];
+
+#[cfg(windows)]
+const BASELINE_ENVIRONMENT_KEYS: &[&str] = &[
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "SYSTEMDRIVE",
+    "WINDIR",
+    "COMSPEC",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "NUMBER_OF_PROCESSORS",
+    "PROCESSOR_ARCHITECTURE",
+];
+
+/// A `PATH` to fall back on when the parent process has none, so a non-inheriting
+/// profile still resolves ordinary system binaries.
+#[cfg(unix)]
+const FALLBACK_PATH: &str = "/usr/local/bin:/usr/bin:/bin";
+
+fn baseline_environment() -> Vec<(String, String)> {
+    let mut baseline = Vec::new();
+    for key in BASELINE_ENVIRONMENT_KEYS {
+        // Windows environment names are case-insensitive but `var` is not, so try
+        // the canonical spelling first and fall back to a case-insensitive match.
+        let value = std::env::var(key).ok().or_else(|| {
+            std::env::vars().find_map(|(name, value)| name.eq_ignore_ascii_case(key).then_some(value))
+        });
+        if let Some(value) = value {
+            if !value.is_empty() {
+                baseline.push(((*key).to_string(), value));
+            }
+        }
+    }
+    #[cfg(unix)]
+    if !baseline.iter().any(|(key, _)| key == "PATH") {
+        baseline.push(("PATH".to_string(), FALLBACK_PATH.to_string()));
+    }
+    baseline
+}
+
+/// Builds the shell invocation for a service command.
+///
+/// `inherit_system` decides whether this is a *login* shell. That matters more
+/// than it looks: `sh -l` sources `/etc/profile` and the user's profile, which
+/// re-export `PATH` and version-manager shims. That is what makes an inheriting
+/// profile pick up nvm, rbenv, and friends — and it is also why pairing `-l`
+/// with a cleared environment could not deliver isolation, since the profile put
+/// the user's environment straight back. A non-inheriting profile therefore uses
+/// a plain `sh -c` over an explicit baseline, so what a service sees is
+/// predictable rather than dependent on the user's dotfiles.
+#[cfg(unix)]
+fn shell_command(command: &str, inherit_system: bool) -> Command {
     let mut shell = Command::new("sh");
-    shell.args(["-lc", command]);
+    shell.args([if inherit_system { "-lc" } else { "-c" }, command]);
     shell
 }
 
+/// `cmd /S /C` does not source any profile, so the inheriting and
+/// non-inheriting forms are identical on Windows.
 #[cfg(windows)]
-fn shell_command(command: &str) -> Command {
+fn shell_command(command: &str, _inherit_system: bool) -> Command {
     let mut shell = Command::new("cmd");
     shell.args(["/S", "/C", command]);
     shell
@@ -638,16 +712,15 @@ fn terminate_child(child: &mut Child) -> Result<(), String> {
 
     #[cfg(unix)]
     {
-        if signal_unix_process_group(child.id(), "TERM")? {
-            if wait_for_exit(child, GRACEFUL_STOP_ATTEMPTS)? {
+        if signal_unix_process_group(child.id(), "TERM")?
+            && wait_for_exit(child, GRACEFUL_STOP_ATTEMPTS)? {
                 return Ok(());
             }
-        }
         signal_unix_process_group(child.id(), "KILL")?;
         if wait_for_exit(child, FORCE_STOP_ATTEMPTS)? {
             return Ok(());
         }
-        return Err(format!("process group {} did not stop", child.id()));
+        Err(format!("process group {} did not stop", child.id()))
     }
 
     #[cfg(windows)]
@@ -705,7 +778,7 @@ pub fn terminate_process_tree(pid: u32) -> Result<(), String> {
         if status.success() {
             return Ok(());
         }
-        return Err(format!("failed to terminate PID {pid}"));
+        Err(format!("failed to terminate PID {pid}"))
     }
 
     #[cfg(windows)]
@@ -731,40 +804,20 @@ fn spawn_reader<R>(
     R: std::io::Read + Send + 'static,
 {
     std::thread::spawn(move || {
-        let reader = BufReader::new(reader);
-        for line in reader.lines() {
-            match line {
-                Ok(message) => {
-                    for url in extract_local_urls(&message) {
-                        let is_new = detected_urls
-                            .lock()
-                            .map(|mut urls| {
-                                if urls.contains(&url) {
-                                    false
-                                } else {
-                                    urls.push(url.clone());
-                                    true
-                                }
-                            })
-                            .unwrap_or(false);
-                        if is_new {
-                            sink.emit(ServiceEvent {
-                                service_id: service_id.clone(),
-                                kind: ServiceEventKind::Url,
-                                message: url,
-                                pid: None,
-                                code: None,
-                            });
-                        }
-                    }
-                    sink.emit(ServiceEvent {
-                        service_id: service_id.clone(),
-                        kind: kind.clone(),
-                        message,
-                        pid: None,
-                        code: None,
-                    });
-                }
+        let mut reader = BufReader::new(reader);
+        let mut line: Vec<u8> = Vec::new();
+        let mut chunk = [0u8; 4096];
+        // A carriage return only terminates a line once we know what follows it:
+        // in `\r\n` the pair is one terminator, while a bare `\r` is a progress
+        // bar redrawing. Deferring the decision keeps blank CRLF lines intact.
+        let mut saw_carriage_return = false;
+
+        loop {
+            let read = match reader.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(read) => read,
+                // A signal interrupting the read is not a stream failure.
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(error) => {
                     sink.emit(ServiceEvent {
                         service_id: service_id.clone(),
@@ -775,8 +828,84 @@ fn spawn_reader<R>(
                     });
                     break;
                 }
+            };
+
+            for &byte in &chunk[..read] {
+                if saw_carriage_return {
+                    saw_carriage_return = false;
+                    emit_log_line(&sink, &service_id, &kind, &detected_urls, &mut line);
+                    if byte == b'\n' {
+                        continue;
+                    }
+                }
+                match byte {
+                    b'\r' => saw_carriage_return = true,
+                    b'\n' => emit_log_line(&sink, &service_id, &kind, &detected_urls, &mut line),
+                    _ => {
+                        line.push(byte);
+                        // Flush rather than buffer without bound: some tools emit
+                        // very long single lines, and progress output may never
+                        // send a terminator at all.
+                        if line.len() >= MAX_LOG_LINE_BYTES {
+                            emit_log_line(&sink, &service_id, &kind, &detected_urls, &mut line);
+                        }
+                    }
+                }
             }
         }
+
+        // Surface whatever the process wrote without a trailing terminator.
+        if !line.is_empty() {
+            emit_log_line(&sink, &service_id, &kind, &detected_urls, &mut line);
+        }
+    });
+}
+
+/// Emits one log line and drains the buffer.
+///
+/// Decodes lossily on purpose: invalid UTF-8 becomes replacement characters
+/// instead of ending the stream, which is what `BufRead::lines` did — a service
+/// emitting one non-UTF-8 byte would go silent for the rest of its life while
+/// still running.
+fn emit_log_line(
+    sink: &Arc<dyn EventSink>,
+    service_id: &str,
+    kind: &ServiceEventKind,
+    detected_urls: &Arc<Mutex<Vec<String>>>,
+    line: &mut Vec<u8>,
+) {
+    let message = String::from_utf8_lossy(line).into_owned();
+    line.clear();
+
+    for url in extract_local_urls(&message) {
+        let is_new = detected_urls
+            .lock()
+            .map(|mut urls| {
+                if urls.contains(&url) {
+                    false
+                } else {
+                    urls.push(url.clone());
+                    true
+                }
+            })
+            .unwrap_or(false);
+        if is_new {
+            sink.emit(ServiceEvent {
+                service_id: service_id.to_string(),
+                kind: ServiceEventKind::Url,
+                message: url,
+                pid: None,
+                code: None,
+            });
+        }
+    }
+
+    sink.emit(ServiceEvent {
+        service_id: service_id.to_string(),
+        kind: kind.clone(),
+        message,
+        pid: None,
+        code: None,
     });
 }
 
@@ -941,6 +1070,87 @@ mod tests {
         assert!(predicate(), "condition was not reached before timeout");
     }
 
+    /// Drives spawn_reader directly over a fixed byte stream and returns the
+    /// messages it produced for `kind`.
+    fn read_all(bytes: &[u8], kind: ServiceEventKind, expected: usize) -> Vec<String> {
+        let sink = Arc::new(TestSink::default());
+        let urls = Arc::new(Mutex::new(Vec::new()));
+        spawn_reader(
+            sink.clone(),
+            "reader".to_string(),
+            std::io::Cursor::new(bytes.to_vec()),
+            kind.clone(),
+            urls,
+        );
+        // A Cursor hits EOF immediately so the total is deterministic; waiting
+        // for `expected` avoids sampling a partially-drained stream.
+        wait_until(|| sink.messages(kind.clone()).len() >= expected);
+        sink.messages(kind)
+    }
+
+    #[test]
+    fn invalid_utf8_does_not_end_the_log_stream() {
+        // `BufRead::lines` yields Err here and the old reader broke out of its
+        // loop, so a service went silent for the rest of its life.
+        let bytes = b"before\n\xff\xfe invalid\nafter\n";
+        let messages = read_all(bytes, ServiceEventKind::Stdout, 3);
+
+        assert_eq!(messages.len(), 3, "got {messages:?}");
+        assert_eq!(messages[0], "before");
+        assert!(messages[1].contains("invalid"));
+        assert!(messages[1].contains('\u{fffd}'), "expected replacement chars");
+        assert_eq!(messages[2], "after");
+    }
+
+    #[test]
+    fn carriage_return_progress_output_streams_line_by_line() {
+        // Progress bars redraw with a bare `\r` and never send a newline, so the
+        // old reader buffered the whole run as one unterminated line.
+        let messages = read_all(b"25%\r50%\r100%\n", ServiceEventKind::Stdout, 3);
+        assert_eq!(messages, vec!["25%", "50%", "100%"]);
+    }
+
+    #[test]
+    fn crlf_is_one_terminator_and_blank_lines_survive() {
+        let messages = read_all(b"first\r\n\r\nsecond\n\n", ServiceEventKind::Stdout, 4);
+        assert_eq!(messages, vec!["first", "", "second", ""]);
+    }
+
+    #[test]
+    fn output_without_a_trailing_newline_is_still_emitted() {
+        let messages = read_all(b"no trailing newline", ServiceEventKind::Stdout, 1);
+        assert_eq!(messages, vec!["no trailing newline"]);
+    }
+
+    #[test]
+    fn an_overlong_line_is_flushed_instead_of_buffered_without_bound() {
+        let long = vec![b'x'; MAX_LOG_LINE_BYTES + 32];
+        let messages = read_all(&long, ServiceEventKind::Stdout, 2);
+
+        assert_eq!(messages.len(), 2, "expected a forced flush then the remainder");
+        assert_eq!(messages[0].len(), MAX_LOG_LINE_BYTES);
+        assert_eq!(messages[1].len(), 32);
+    }
+
+    #[test]
+    fn urls_are_detected_across_carriage_return_boundaries() {
+        let sink = Arc::new(TestSink::default());
+        let urls = Arc::new(Mutex::new(Vec::new()));
+        spawn_reader(
+            sink.clone(),
+            "reader".to_string(),
+            std::io::Cursor::new(b"ready on http://localhost:4321/\r".to_vec()),
+            ServiceEventKind::Stdout,
+            urls.clone(),
+        );
+        wait_until(|| !sink.messages(ServiceEventKind::Url).is_empty());
+
+        assert_eq!(
+            sink.messages(ServiceEventKind::Url),
+            vec!["http://localhost:4321/"]
+        );
+    }
+
     #[test]
     fn streams_output_and_removes_exited_service() {
         let manager = ServiceManager::default();
@@ -1027,6 +1237,121 @@ mod tests {
         manager
             .stop_for_test(sink, "restart")
             .expect("cleanup");
+    }
+
+    /// Runs `cmd` under the given inheritance mode and returns its stdout lines.
+    fn run_with_inheritance(
+        service_id: &str,
+        cmd: &str,
+        inherit_system: bool,
+        vars: Vec<ServiceEnvironmentVariable>,
+    ) -> Vec<String> {
+        let manager = ServiceManager::default();
+        let sink = Arc::new(TestSink::default());
+        manager
+            .start_with_sink(
+                sink.clone(),
+                service_id.to_string(),
+                "/tmp".to_string(),
+                cmd.to_string(),
+                ServiceEnvironment {
+                    inherit_system,
+                    vars,
+                },
+                Vec::new(),
+                false,
+            )
+            .expect("start");
+        wait_until(|| sink.has(ServiceEventKind::Exited));
+        sink.messages(ServiceEventKind::Stdout)
+    }
+
+    #[test]
+    fn a_non_inheriting_profile_hides_the_parent_environment() {
+        // Safety: single-threaded within this test's own key, and the value is
+        // only read by the child process it launches.
+        std::env::set_var("LOCALHOST_HUB_LEAK_PROBE", "leaked");
+
+        let messages = run_with_inheritance(
+            "isolated",
+            "printf '%s\\n' \"${LOCALHOST_HUB_LEAK_PROBE:-absent}\"",
+            false,
+            Vec::new(),
+        );
+
+        assert!(
+            messages.iter().any(|message| message == "absent"),
+            "parent variable leaked into a non-inheriting profile: {messages:?}"
+        );
+        std::env::remove_var("LOCALHOST_HUB_LEAK_PROBE");
+    }
+
+    #[test]
+    fn an_inheriting_profile_still_sees_the_parent_environment() {
+        std::env::set_var("LOCALHOST_HUB_INHERIT_PROBE", "inherited");
+
+        let messages = run_with_inheritance(
+            "inheriting",
+            "printf '%s\\n' \"${LOCALHOST_HUB_INHERIT_PROBE:-absent}\"",
+            true,
+            Vec::new(),
+        );
+
+        assert!(
+            messages.iter().any(|message| message == "inherited"),
+            "inheriting profile lost the parent environment: {messages:?}"
+        );
+        std::env::remove_var("LOCALHOST_HUB_INHERIT_PROBE");
+    }
+
+    #[test]
+    fn a_non_inheriting_profile_can_still_run_external_programs() {
+        // Clearing the environment outright leaves no PATH, which would make
+        // every external command fail. The baseline exists to prevent that.
+        let messages = run_with_inheritance(
+            "baseline",
+            "env printf '%s\\n' resolved-external-binary",
+            false,
+            Vec::new(),
+        );
+
+        assert!(
+            messages.iter().any(|m| m == "resolved-external-binary"),
+            "a non-inheriting profile could not resolve a program on PATH: {messages:?}"
+        );
+    }
+
+    #[test]
+    fn profile_variables_apply_on_top_of_a_non_inheriting_baseline() {
+        let messages = run_with_inheritance(
+            "overlay",
+            "printf '%s\\n' \"$LOCALHOST_HUB_OVERLAY\"",
+            false,
+            vec![ServiceEnvironmentVariable {
+                key: "LOCALHOST_HUB_OVERLAY".to_string(),
+                value: "from-profile".to_string(),
+            }],
+        );
+
+        assert!(
+            messages.iter().any(|message| message == "from-profile"),
+            "profile variable was not applied: {messages:?}"
+        );
+    }
+
+    #[test]
+    fn the_baseline_carries_path_and_no_unexpected_extras() {
+        let baseline = baseline_environment();
+        assert!(
+            baseline.iter().any(|(key, value)| key == "PATH" && !value.is_empty()),
+            "baseline must always provide a PATH"
+        );
+        for (key, _) in &baseline {
+            assert!(
+                BASELINE_ENVIRONMENT_KEYS.contains(&key.as_str()),
+                "unexpected key in baseline: {key}"
+            );
+        }
     }
 
     #[test]

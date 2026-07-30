@@ -50,6 +50,13 @@ pub fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
     save_cfg(&app, &config)
 }
 
+/// Reports where secrets are actually stored, so the interface can say so rather
+/// than implying the credential store is always in use.
+#[tauri::command]
+pub fn secret_storage_backend() -> crate::secrets::SecretBackend {
+    crate::secrets::backend()
+}
+
 // ── GitHub OAuth (device flow) ────────────────────────────────────────────────
 
 #[tauri::command]
@@ -121,6 +128,8 @@ pub fn kill_process(pid: u32) -> Result<(), String> {
 }
 
 #[tauri::command]
+// Tauri deserializes each argument by name from the renderer's payload.
+#[allow(clippy::too_many_arguments)]
 pub fn start_service(
     app: AppHandle,
     services: State<ServiceManager>,

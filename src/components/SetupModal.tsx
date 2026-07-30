@@ -13,7 +13,6 @@ interface SetupModalProps {
 export function SetupModal({
   isOpen,
   setupInput,
-  onChange,
   onSave,
   onUseRepoRoot,
   onClose,

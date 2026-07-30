@@ -195,12 +195,6 @@ export function PackagesPanel({ project, electronAPI, onInstallPackage }: Packag
     optionalDependencies: 'Optional Dependencies'
   };
 
-  const typeColors: Record<DependencyType, string> = {
-    dependencies: 'indigo',
-    devDependencies: 'purple',
-    peerDependencies: 'amber',
-    optionalDependencies: 'slate'
-  };
 
   if (loading) {
     return (

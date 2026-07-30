@@ -30,10 +30,11 @@ The blocking problems are not in the Rust. They are in the **migration's integri
 Neither is hard to fix, but until they are, "verify feature parity before removing
 Electron" (UNIFICATION.md stage 10) is not an executable plan.
 
-> **Status: C1 and C2 were fixed in this branch.** See the *Resolution* notes under
-> each. Fixing C1 also surfaced a third defect that neither the audit nor CI could
-> have caught — `tsconfig.app.json` was typechecking only the top level of `src/`
-> (**F1** below). The findings are left in their original form for the record.
+> **Status: C1, C2, H1, H3, H4, H5, M1 (partly), M3, and M7 were fixed in this
+> branch**, plus three defects the audit could not have seen because no gate covered
+> the code they live in (**F1**, **F2**, **F3** below). Each finding keeps its original
+> text, with a *Resolution* note appended where work landed. Still open: **M2**,
+> **M4**, **M5**, **M6**, **M8** — every High-severity finding is now closed.
 
 ### Release-readiness verdict
 
@@ -141,10 +142,12 @@ the reference is the real prior behavior and not an approximation:
   Tauri build is untouched.
 - `electron/main.ts` — loads `index.electron.html` in both dev and packaged paths.
 
-One genuine bug surfaced in the recovered code: it read `plugin.launch.projectAction`,
-but the manifest type had since become `projectActions?: PluginProjectAction[]`. The
-shell was adapted to the current type. This is exactly the drift that having no
-runnable reference allows to accumulate.
+The recovered code referenced `plugin.launch.projectAction`, a field the manifest type
+had since renamed to `projectActions?: PluginProjectAction[]`. It turned out to sit in a
+`useMemo` whose result was never read — a dead near-duplicate of the live
+`projectPluginActions` immediately above it — so the binding was removed rather than
+adapted. Still the drift an unrunnable reference invites, but a stale computation
+rather than a user-facing bug.
 
 Verified: the two bundles are cleanly separated — the Electron bundle has 30
 `electronAPI` references and 0 Tauri internals; the Tauri bundle is the reverse (0
@@ -248,6 +251,38 @@ entry point pulled them all in at once.
 Both defects compound: dead code is not typechecked, so it rots; and because it rots,
 reviving it looks harder than it is.
 
+### F2 — `electron/` was never typechecked either
+
+`tsconfig.json` does include `electron`, but **no script or CI job ever invoked it** —
+`npm run typecheck` and `npm run build` both point at `tsconfig.app.json`, and
+`tsconfig.node.json` covers only `vite.config.ts`. So the Electron main process had no
+typecheck gate at all.
+
+It was hiding two real defects:
+
+- **`findGitExecutable` was broken on Windows.** It referenced an `isWindows` flag
+  that no longer existed in its scope, so the function could not compile — meaning
+  the Windows Git-path lookup was dead. (Found by ESLint flagging the *other*,
+  genuinely-unused declaration, then confirmed against `git show HEAD`.)
+- **Four `execSync` calls passed `shell: true`.** Node types that option as a shell
+  *path*, and `execSync` already runs through a shell, so the argument was both a
+  type error and a no-op. Removed, preserving behavior.
+
+**Fixed:** `noEmit` added to `tsconfig.json`, both defects corrected, and
+`npm run typecheck` now runs `tsconfig.app.json` **and** `tsconfig.json`, so the
+renderer, the Electron main process, and the tests are all covered.
+
+### F3 — `tsconfig.json` emitted JavaScript into the source tree
+
+`tsconfig.json` lacked `"noEmit": true` (unlike `tsconfig.app.json`). The moment it
+was wired into a script it wrote 113 `.js` files next to their sources — and Vitest
+promptly collected the compiled copies alongside the originals, reporting 94 tests
+across 32 files where there are 47 across 16.
+
+Latent rather than active, since nothing invoked that project before. Worth recording
+because it is what makes F2's fix safe to keep: without `noEmit`, adding the gate
+would have quietly polluted the tree on every run.
+
 **Fixed:** `include` is now `["src/**/*.ts", "src/**/*.tsx", "src/assets"]` and the
 full tree — application code and tests — typechecks clean. Worth keeping recursive
 even if C1 is later resolved by deleting Electron, so the next unreferenced module
@@ -300,6 +335,38 @@ remote code execution with full `fs` and shell reach.
 `"csp": "default-src 'self'; img-src 'self' asset: https://avatars.githubusercontent.com data:; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost"`.
 Tune against the GitHub avatar loads and Tauri's IPC transport, then keep it.
 
+**Resolution (this branch):**
+
+```
+default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+img-src 'self' data: https://avatars.githubusercontent.com; font-src 'self' data:;
+connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; frame-src 'none';
+base-uri 'self'; form-action 'none'
+```
+
+Derived from what the bundle actually loads, not from a template. `script-src` needs no
+`'unsafe-inline'` because the built `index.html` contains no inline script with a body.
+`style-src` does, because `tweaks-panel.tsx` injects a `<style>` element and 32 files
+animate through inline `style={{…}}`. `connect-src` needs only IPC, since the renderer
+makes **no** `fetch`, `XMLHttpRequest`, `WebSocket`, or `EventSource` call — every
+GitHub request goes through Rust. The one remote resource anywhere in the renderer is
+the GitHub avatar in `view-settings.tsx`.
+
+**Verified in a browser, not by inspection.** The production bundle was served with the
+policy applied as a real `Content-Security-Policy` response header and loaded in
+Chromium, collecting console violations, blocked requests, and page errors: **0
+violations, 0 console errors**, with the interface rendering — which incidentally also
+demonstrates the C2 fix, since the shell renders with no backend instead of crashing.
+
+That check caught a directive a source read had missed: `@fontsource` inlines several
+font faces as `data:` URIs, so `font-src 'self'` alone blocked **9** font loads. `data:`
+was added.
+
+*Limitation:* the check exercises the shell and the first-run view. Deeper views are
+unreachable without a backend, so a directive triggered only by a later view would not
+appear. Residual risk is small — the avatar is the only remote resource in the tree —
+but this is a smoke test, not proof.
+
 ### H2 — OAuth token and "secret" env vars stored in plaintext
 
 `config.rs` writes `config.json` containing:
@@ -324,6 +391,44 @@ files — good. But:
 non-sensitive config in JSON. At minimum, restrict the Windows ACL and document that
 `is_secret` is cosmetic.
 
+**Resolution (this branch):** a new `secrets.rs` stores the OAuth token and every
+`is_secret` value in the OS credential store via `keyring` 3.6 — Keychain on macOS,
+Credential Manager on Windows, Secret Service on Linux. `config.json` keeps the
+variable *keys* (not sensitive) and holds an empty string in place of each value.
+
+`config.rs` gained four pieces around this:
+
+- `redacted` — the on-disk form, with the token dropped and secret values blanked.
+- `persist_secrets` / `hydrate_secrets` — write to and read from the store on every
+  save and load, so `commands.rs` still works with `cfg.github_token` unchanged.
+- `migrate_plaintext_secrets` — moves anything an older build left in the file, then
+  `load` rewrites the file without it. An existing stored value wins, so re-reading a
+  stale file cannot clobber a newer token. Migration is reported so the rewrite happens
+  once rather than on every launch.
+- `forget_removed_secrets` — diffs the incoming config against the file to delete
+  values whose variable or profile is gone, so removing a secret in the interface also
+  removes it from the store rather than orphaning it.
+
+**On the fallback.** A credential store is not universal: a headless Linux session
+without gnome-keyring or KWallet has none, and neither do most CI containers. Refusing
+to save a token there would be worse than the status quo, so the module probes once and
+falls back to a file with the tightest permissions the platform allows — mode `0600` on
+Unix, and on Windows an `icacls /inheritance:r` ACL granting only the current user,
+which closes the Windows gap this finding raised. A `secret_storage_backend` command
+reports which backend is live, and the settings panel says so plainly instead of
+implying the credential store is always in use.
+
+**Nine tests**, all against the file backend, since that is the path that must work in
+CI and on headless Linux. The load-bearing one asserts the serialized config contains
+neither the token nor the secret value while keeping non-secret settings intact; the
+others cover round-tripping, permission mode, per-profile key scoping, migration,
+stale-file precedence, sign-out clearing the store, and orphan cleanup.
+
+*Limitation:* the keyring path itself is not exercised here — this environment has no
+Secret Service provider, so `cargo test` runs the fallback. The keyring branch is thin
+(construct an `Entry`, get/set/delete) but it is unverified by execution and wants a
+manual check on each desktop platform before `1.0`.
+
 ### H3 — `sh -lc` undermines `inherit_system: false`
 
 `services.rs:608-612` spawns via `sh -lc` — a **login** shell — while
@@ -343,6 +448,37 @@ version managers). The bug is pairing it with a promise of a clean environment.
 that the service environment always extends the user's login shell. Add a test
 asserting which variables survive.
 
+**Resolution (this branch):** `shell_command` now takes the inheritance flag. An
+inheriting profile keeps `sh -lc`, which is what picks up nvm/rbenv shims. A
+non-inheriting profile uses plain `sh -c`, so no profile file runs and the result no
+longer depends on the user's dotfiles.
+
+That exposed a second problem the audit did not anticipate: `env_clear()` on its own
+leaves **no `PATH`**, so no external program resolves and every real command fails. The
+login shell had been quietly papering over this — which is precisely why the
+contradiction went unnoticed. "Do not inherit" therefore now means *a documented minimal
+baseline*, not *empty*: `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TMPDIR`, `TZ`,
+`LANG` on Unix (plus a `PATH` fallback), and the equivalent set on Windows, carried from
+the parent and nothing else. Profile variables layer on top. `cmd /S /C` sources no
+profile, so Windows behavior is unchanged.
+
+Five tests assert the behavior rather than assuming it: a parent variable does **not**
+reach a non-inheriting profile, it **does** reach an inheriting one, a non-inheriting
+profile can still resolve a program on `PATH`, profile variables still apply over the
+baseline, and the baseline carries a `PATH` and nothing outside the allowlist.
+
+Two things worth recording about scope:
+
+- **The Tauri UI cannot currently reach this path.** `env-profiles.ts:30` hardcodes
+  `inherit_system: true` and no control exposes it. The flag is part of the config
+  schema and the IPC contract, so it is reachable by editing config or by future UI —
+  the fix hardens a real path, but not one today's UI exercises.
+- **Electron had the same defect, worse.** `electron/main.ts` used
+  `inheritSystemEnv ? { ...process.env } : {}` and then `spawn`ed `npm` against that
+  empty environment, so turning the setting off broke script running outright. Fixed
+  with a baseline mirroring the Rust one, so the parity reference behaves the same —
+  which is the whole point of keeping it runnable.
+
 ### H4 — Log streaming dies permanently on non-UTF-8 output
 
 `services.rs:734-777` reads child output with `BufReader::lines()`:
@@ -360,6 +496,17 @@ asserting which variables survive.
 degrade to `U+FFFD` instead of terminating the stream; `continue` rather than `break`
 on read errors; split on `\r` as well as `\n`, and flush partial lines above a size
 cap (e.g. 8 KiB).
+
+**Resolution (this branch):** `spawn_reader` now reads bytes rather than decoded lines.
+Invalid UTF-8 becomes replacement characters via `String::from_utf8_lossy` instead of
+ending the stream; `ErrorKind::Interrupted` continues rather than aborting; `\r` and
+`\n` both terminate lines, with `\r\n` treated as one terminator so blank lines
+survive; lines flush at `MAX_LOG_LINE_BYTES` (8 KiB); and output with no trailing
+terminator is emitted at EOF.
+
+Six tests cover the cases, and unlike the original audit these were **executed** — the
+GTK libraries were installed in the audit environment, so the full Rust suite runs
+here: **59 passed** (53 pre-existing + 6 new).
 
 The renderer side is handled correctly — `App.tsx:487` caps at 5,000 lines — and URL
 detection deduplicates, so unbounded growth there is not a concern.
@@ -382,6 +529,11 @@ advisory outright — see M7.
 
 **Fix:** `npm audit fix`, drop `fast-glob`, and add `npm audit --omit=dev` to CI as a
 non-blocking report so production-tree regressions surface on PRs.
+
+**Resolution (this branch):** `@babel/parser`, `@babel/traverse`, and `fast-glob` were
+removed (see M7). `npm audit --omit=dev` now reports **0 vulnerabilities** — dropping
+the unused `fast-glob` was sufficient, with no version bumps needed. The dev-tree
+advisories remain and retire with Electron.
 
 ### M1 — Filesystem capability over-grant
 
@@ -435,6 +587,25 @@ with many effects is precisely where `react-hooks/exhaustive-deps` earns its kee
 **Fix:** add ESLint (`typescript-eslint`, `react-hooks`) and `cargo clippy -- -D warnings`
 plus `cargo fmt --check` to CI. Expect a meaningful first-run backlog; fix
 incrementally with the gate on new code.
+
+**Resolution (this branch):** ESLint 9 flat config (`eslint.config.mjs`) covering the
+renderer (with `react-hooks`), the Electron main process, and the build scripts —
+`.mjs` because the package is `type: commonjs` for Electron's sake. Clippy runs in CI
+with `-D warnings`; its 6 mechanical lints were auto-fixed and the 3 remaining
+`too_many_arguments` were annotated where the signature mirrors the IPC payload.
+
+Severity was calibrated rather than blanket-set: correctness rules **fail** the build,
+while 26 pre-existing `any` usages and 13 `react-hooks/exhaustive-deps` findings are
+**warnings**. Typing away `any` and rewriting hook dependencies both change behavior,
+and doing 39 of those blind is how a lint rollout introduces bugs. The result is
+**0 errors, 42 warnings** with a real gate on new code.
+
+`cargo fmt --check` is deliberately **not** gated yet: the tree predates rustfmt, so
+enabling it needs a one-off `cargo fmt` touching every Rust file, which would bury this
+diff. One command, whenever it suits.
+
+The 13 hook-dependency warnings are the highest-value follow-up — they are the class of
+latent bug the rule exists to catch.
 
 ### M4 — Oversized modules
 
@@ -490,6 +661,11 @@ Misplaced:
   in `devDependencies`
 - `sql.js` / `@types/sql.js` — used only by `electron/database.ts` → retires with
   Electron
+
+**Resolution (this branch):** the three unused packages were removed and `toml` moved to
+`devDependencies`; `npm run check:version` still passes, since `npm ci` installs dev
+dependencies. Both dependency blocks are now alphabetically sorted. `sql.js` stays until
+Electron goes.
 
 `package.json` also lists dependencies out of alphabetical order (the two `@babel/*`
 entries sit between `@tauri-apps/plugin-dialog` and `@tauri-apps/plugin-fs`),

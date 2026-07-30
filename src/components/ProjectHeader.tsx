@@ -79,7 +79,7 @@ export function ProjectHeader({
   onLaunchPlugin,
 }: ProjectHeaderProps) {
   const [packageManager, setPackageManager] = useState<'npm' | 'pnpm' | 'yarn' | 'bun' | null>(null);
-  const [isDetecting, setIsDetecting] = useState(false);
+  const [, setIsDetecting] = useState(false);
   const [pluginMenuOpen, setPluginMenuOpen] = useState(false);
   const pluginMenuRef = useRef<HTMLDivElement | null>(null);
   const pluginActionGroups = useMemo(() => {

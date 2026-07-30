@@ -89,7 +89,7 @@ interface TweaksPanelProps {
   children?: React.ReactNode;
 }
 
-export function TweaksPanel({ title = 'Tweaks', noDeckControls = false, children }: TweaksPanelProps) {
+export function TweaksPanel({ title = 'Tweaks', children }: TweaksPanelProps) {
   const [open, setOpen] = React.useState(false);
   const dragRef = React.useRef<HTMLDivElement>(null);
   const offsetRef = React.useRef({ x: 16, y: 16 });

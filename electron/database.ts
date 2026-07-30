@@ -5,7 +5,6 @@ import type { ProjectInfo, ScriptInfo } from './projectScanner';
 
 // Use dynamic require to avoid bundling issues
 let initSqlJs: any;
-let Database: any;
 let database: any = null;
 let sqlJsModule: any = null;
 
@@ -30,7 +29,6 @@ async function initSqlJsModule() {
     if (!initSqlJs) {
       const sqljs = require('sql.js');
       initSqlJs = sqljs.default || sqljs;
-      Database = sqljs.Database;
     }
     
     // sql.js will automatically find the .wasm file in node_modules

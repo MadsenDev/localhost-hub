@@ -212,7 +212,7 @@ pub fn extract_local_urls(line: &str) -> Vec<String> {
             })
             .next()
             .unwrap_or_default()
-            .trim_end_matches(|character| matches!(character, '.' | ',' | ';' | '!' | '?' | ')'));
+            .trim_end_matches(['.', ',', ';', '!', '?', ')']);
 
         if let Some(url) = normalize_local_url(candidate) {
             if !urls.contains(&url) {
@@ -234,7 +234,7 @@ pub fn normalize_local_url(candidate: &str) -> Option<String> {
     };
 
     let authority_end = remainder
-        .find(|character| matches!(character, '/' | '?' | '#'))
+        .find(['/', '?', '#'])
         .unwrap_or(remainder.len());
     let authority = &remainder[..authority_end];
     if authority.is_empty() || authority.contains('@') {
@@ -261,7 +261,7 @@ pub fn port_from_local_url(url: &str) -> Option<u16> {
         .strip_prefix("http://")
         .or_else(|| normalized.strip_prefix("https://"))?;
     let authority = remainder
-        .split(|character| matches!(character, '/' | '?' | '#'))
+        .split(['/', '?', '#'])
         .next()?;
     split_host_port(authority)?.1
 }

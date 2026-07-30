@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { 
   HiCog6Tooth, 
   HiFolder, 
@@ -8,8 +8,7 @@ import {
   HiServer, 
   HiPaintBrush,
   HiInformationCircle,
-  HiCheck,
-  HiChevronRight
+  HiCheck
 } from 'react-icons/hi2';
 import { LoadingSkeleton } from './LoadingSkeleton';
 import packageJson from '../../package.json';

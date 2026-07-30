@@ -7,8 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Moved the GitHub access token and every environment variable marked secret out of
+  `config.json` and into the operating system credential store: Keychain on macOS,
+  Credential Manager on Windows, and the Secret Service on Linux. A token with
+  repository scope in a plaintext file was readable by any process running as the
+  user, which includes the tooling in every project the application scans. Existing
+  configurations are migrated on first load and the file is rewritten without them.
+  Where no credential store is available, such as a Linux session without a Secret
+  Service provider, the values fall back to a file restricted to the current user
+  account — including a proper access control list on Windows, which the previous
+  code left to inherit from its parent directory — and the settings panel states
+  which of the two is in use rather than implying the credential store always is.
+- Enabled a Content Security Policy for the desktop window, which was previously
+  disabled. The policy allows only same-origin scripts and styles, restricts images
+  to the application, data URLs, and GitHub avatars, and blocks objects and frames
+  outright. Inline styles remain permitted because the interface animates through
+  them. Verified by loading the production bundle in a browser with the policy
+  enforced and confirming no violations.
+- Made environment profiles that do not inherit the system environment behave
+  predictably. The service command previously ran through a login shell, which
+  sources the user's profile files and re-exported the environment that clearing it
+  was meant to remove, so what a service saw depended on the user's dotfiles. A
+  non-inheriting profile now runs without the login shell over a documented minimal
+  baseline. The same correction was applied to the Electron script runner, which
+  passed an entirely empty environment and therefore left no `PATH` for the command
+  to resolve against.
+
+### Changed
+
+- Added ESLint (TypeScript, React Hooks) and wired lint, typechecking, and Clippy
+  into CI. Correctness rules fail the build; pre-existing `any` usage and React Hook
+  dependency findings are reported as warnings so they stay visible without
+  blocking. Removed the dead bindings this surfaced.
+- Removed `@babel/parser`, `@babel/traverse`, and `fast-glob` from the production
+  dependencies. Nothing imported them, and dropping `fast-glob` clears the only
+  advisory in the production dependency tree. Moved `toml`, used solely by the
+  version-sync script, to the development dependencies.
+
 ### Fixed
 
+- Kept service log streaming alive when a process writes output that is not valid
+  UTF-8. Reading lines through a UTF-8 decoder returned an error that ended the
+  reader, so a single stray byte silenced a service's logs for as long as it kept
+  running. Output is now decoded lossily.
+- Made carriage-return progress output visible while it happens. Tools that redraw
+  progress with `\r` and never emit a newline previously buffered their entire run
+  as one unterminated line, so nothing appeared until the process finished. Long
+  lines are also flushed at a bound instead of growing without limit, and `\r\n` is
+  treated as a single terminator so blank lines survive.
+- Restored `findGitExecutable` on Windows, which referenced a platform flag that was
+  never declared, and corrected four `execSync` calls that passed a boolean for the
+  `shell` option, which expects a shell path.
+- Stopped `tsc -p tsconfig.json` from emitting JavaScript beside every source file
+  by marking that project typecheck-only.
 - Restored the Electron parity reference so it can actually be run. The Electron UI
   had no entry point: `index.html` was the only one and it mounts the Tauri
   application, so both `npm run dev:electron` and the packaged Electron build

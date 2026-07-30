@@ -54,7 +54,7 @@ export function EnvProfilesPanel({ projectId, electronAPI }: EnvProfilesPanelPro
   const handleCreateProfile = useCallback(async () => {
     if (!electronAPI?.envProfiles || !newProfileName.trim()) return;
     try {
-      const result = await electronAPI.envProfiles.create({
+      await electronAPI.envProfiles.create({
         projectId,
         name: newProfileName.trim(),
         description: newProfileDescription.trim() || undefined
