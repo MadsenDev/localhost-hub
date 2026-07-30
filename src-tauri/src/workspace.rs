@@ -75,6 +75,8 @@ pub struct WorkspaceServiceSpec {
     pub cwd: String,
     pub cmd: String,
     #[serde(default)]
+    pub depends_on: Vec<String>,
+    #[serde(default)]
     pub run_mode: WorkspaceRunMode,
     #[serde(default)]
     pub order: usize,
@@ -102,6 +104,12 @@ pub struct WorkspaceServiceWarning {
     pub warning: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceServiceBlocked {
+    pub service_id: String,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorkspaceStopSpec {
     pub service_id: String,
@@ -117,6 +125,7 @@ pub struct WorkspaceRunResult {
     pub not_running: Vec<String>,
     pub failed: Vec<WorkspaceServiceFailure>,
     pub warnings: Vec<WorkspaceServiceWarning>,
+    pub blocked: Vec<WorkspaceServiceBlocked>,
 }
 
 impl WorkspaceRunResult {
@@ -129,8 +138,15 @@ impl WorkspaceRunResult {
             not_running: Vec::new(),
             failed: Vec::new(),
             warnings: Vec::new(),
+            blocked: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct PlannedWorkspaceService {
+    service: WorkspaceServiceSpec,
+    dependencies: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -158,11 +174,11 @@ pub fn start_workspace(
     workspace_id: String,
     services: Vec<WorkspaceServiceSpec>,
 ) -> Result<WorkspaceRunResult, String> {
-    let (parallel, sequential) = plan_workspace_services(services)?;
-    let service_ids = parallel
+    let layers = plan_workspace_services(services)?;
+    let service_ids = layers
         .iter()
-        .chain(sequential.iter())
-        .map(|service| service.service_id.clone())
+        .flatten()
+        .map(|planned| planned.service.service_id.clone())
         .collect::<Vec<_>>();
     emit_workspace(
         &app,
@@ -173,24 +189,53 @@ pub fn start_workspace(
     );
 
     let mut result = WorkspaceRunResult::new(workspace_id.clone());
-    for service in parallel {
-        start_workspace_service(&app, manager, service, &mut result);
-    }
-    for service in sequential {
-        if service.startup_delay_ms > 0 {
-            thread::sleep(Duration::from_millis(service.startup_delay_ms));
+    let mut unavailable = HashSet::new();
+    for layer in layers {
+        let mut readiness_checks = Vec::new();
+        for planned in layer {
+            let blocked_by = planned
+                .dependencies
+                .iter()
+                .filter(|dependency| unavailable.contains(*dependency))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !blocked_by.is_empty() {
+                let service_id = planned.service.service_id;
+                result.blocked.push(WorkspaceServiceBlocked {
+                    service_id: service_id.clone(),
+                    reason: format!(
+                        "blocked because prerequisite{} {} did not start or become ready",
+                        if blocked_by.len() == 1 { "" } else { "s" },
+                        blocked_by.join(", ")
+                    ),
+                });
+                unavailable.insert(service_id);
+                continue;
+            }
+
+            if planned.service.startup_delay_ms > 0 {
+                thread::sleep(Duration::from_millis(planned.service.startup_delay_ms));
+            }
+            let service_id = planned.service.service_id.clone();
+            let expected_ports = planned.service.expected_ports.clone();
+            let readiness_timeout_ms = planned.service.readiness_timeout_ms;
+            if start_workspace_service(&app, manager, planned.service, &mut result) {
+                if readiness_timeout_ms > 0 {
+                    readiness_checks.push((service_id, expected_ports, readiness_timeout_ms));
+                }
+            } else {
+                unavailable.insert(service_id);
+            }
         }
-        let service_id = service.service_id.clone();
-        let expected_ports = service.expected_ports.clone();
-        let readiness_timeout_ms = service.readiness_timeout_ms;
-        let running = start_workspace_service(&app, manager, service, &mut result);
-        if running && readiness_timeout_ms > 0 {
+
+        for (service_id, expected_ports, readiness_timeout_ms) in readiness_checks {
             if let Err(warning) = wait_for_service_readiness(
                 manager,
                 &service_id,
                 &expected_ports,
                 Duration::from_millis(readiness_timeout_ms),
             ) {
+                unavailable.insert(service_id.clone());
                 result.warnings.push(WorkspaceServiceWarning {
                     service_id,
                     warning,
@@ -199,35 +244,41 @@ pub fn start_workspace(
         }
     }
 
-    let (kind, message) = if result.failed.is_empty() && result.warnings.is_empty() {
-        (
-            WorkspaceEventKind::Started,
-            format!("started {} workspace services", result.started.len()),
-        )
-    } else if result.started.is_empty() && result.already_running.is_empty() {
-        (
-            WorkspaceEventKind::Error,
-            format!("failed to start {} workspace services", result.failed.len()),
-        )
-    } else if !result.failed.is_empty() {
-        (
-            WorkspaceEventKind::Partial,
-            format!(
-                "started {} services; {} failed",
-                result.started.len(),
-                result.failed.len()
-            ),
-        )
-    } else {
-        (
-            WorkspaceEventKind::Partial,
-            format!(
-                "started {} services; {} readiness warnings",
-                result.started.len(),
-                result.warnings.len()
-            ),
-        )
-    };
+    let (kind, message) =
+        if result.failed.is_empty() && result.warnings.is_empty() && result.blocked.is_empty() {
+            (
+                WorkspaceEventKind::Started,
+                format!("started {} workspace services", result.started.len()),
+            )
+        } else if result.started.is_empty() && result.already_running.is_empty() {
+            (
+                WorkspaceEventKind::Error,
+                format!(
+                    "failed to start workspace: {} failed, {} blocked",
+                    result.failed.len(),
+                    result.blocked.len()
+                ),
+            )
+        } else if !result.failed.is_empty() || !result.blocked.is_empty() {
+            (
+                WorkspaceEventKind::Partial,
+                format!(
+                    "started {} services; {} failed, {} blocked",
+                    result.started.len(),
+                    result.failed.len(),
+                    result.blocked.len()
+                ),
+            )
+        } else {
+            (
+                WorkspaceEventKind::Partial,
+                format!(
+                    "started {} services; {} readiness warnings",
+                    result.started.len(),
+                    result.warnings.len()
+                ),
+            )
+        };
     emit_workspace(&app, &workspace_id, kind, message, result.started.clone());
     Ok(result)
 }
@@ -388,7 +439,7 @@ fn format_ports(ports: &[u16]) -> String {
 
 fn plan_workspace_services(
     services: Vec<WorkspaceServiceSpec>,
-) -> Result<(Vec<WorkspaceServiceSpec>, Vec<WorkspaceServiceSpec>), String> {
+) -> Result<Vec<Vec<PlannedWorkspaceService>>, String> {
     if services.is_empty() {
         return Err("workspace has no services to run".to_string());
     }
@@ -424,11 +475,112 @@ fn plan_workspace_services(
         }
     }
 
-    let (mut sequential, parallel): (Vec<_>, Vec<_>) = services
+    let positions = services
+        .iter()
+        .enumerate()
+        .map(|(index, service)| (service.service_id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    let mut dependencies = services
+        .iter()
+        .map(|service| {
+            (
+                service.service_id.clone(),
+                service.depends_on.iter().cloned().collect::<HashSet<_>>(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+
+    for service in &services {
+        for dependency in &service.depends_on {
+            if dependency == &service.service_id {
+                return Err(format!(
+                    "workspace service {} cannot depend on itself",
+                    service.service_id
+                ));
+            }
+            if !seen.contains(dependency) {
+                return Err(format!(
+                    "workspace service {} depends on missing service {}",
+                    service.service_id, dependency
+                ));
+            }
+        }
+    }
+
+    let mut sequential = services
+        .iter()
+        .filter(|service| service.run_mode == WorkspaceRunMode::Sequential)
+        .collect::<Vec<_>>();
+    sequential.sort_by_key(|service| (service.order, positions[&service.service_id]));
+    for pair in sequential.windows(2) {
+        dependencies
+            .get_mut(&pair[1].service_id)
+            .expect("validated service")
+            .insert(pair[0].service_id.clone());
+    }
+
+    let services_by_id = services
         .into_iter()
-        .partition(|service| service.run_mode == WorkspaceRunMode::Sequential);
-    sequential.sort_by_key(|service| service.order);
-    Ok((parallel, sequential))
+        .map(|service| (service.service_id.clone(), service))
+        .collect::<HashMap<_, _>>();
+    let mut dependents = HashMap::<String, Vec<String>>::new();
+    let mut indegree = HashMap::<String, usize>::new();
+    for (service_id, prerequisites) in &dependencies {
+        indegree.insert(service_id.clone(), prerequisites.len());
+        for prerequisite in prerequisites {
+            dependents
+                .entry(prerequisite.clone())
+                .or_default()
+                .push(service_id.clone());
+        }
+    }
+
+    let mut ready = indegree
+        .iter()
+        .filter_map(|(service_id, count)| (*count == 0).then_some(service_id.clone()))
+        .collect::<Vec<_>>();
+    let mut layers = Vec::new();
+    let mut planned_count = 0;
+    while !ready.is_empty() {
+        ready.sort_by_key(|service_id| positions[service_id]);
+        let current = std::mem::take(&mut ready);
+        let mut layer = Vec::new();
+        for service_id in current {
+            planned_count += 1;
+            let service = services_by_id[&service_id].clone();
+            let mut effective_dependencies = dependencies[&service_id]
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>();
+            effective_dependencies.sort_by_key(|dependency| positions[dependency]);
+            layer.push(PlannedWorkspaceService {
+                service,
+                dependencies: effective_dependencies,
+            });
+            for dependent in dependents.get(&service_id).into_iter().flatten() {
+                let count = indegree.get_mut(dependent).expect("validated dependent");
+                *count -= 1;
+                if *count == 0 {
+                    ready.push(dependent.clone());
+                }
+            }
+        }
+        layers.push(layer);
+    }
+
+    if planned_count != services_by_id.len() {
+        let mut cyclic = indegree
+            .into_iter()
+            .filter_map(|(service_id, count)| (count > 0).then_some(service_id))
+            .collect::<Vec<_>>();
+        cyclic.sort_by_key(|service_id| positions[service_id]);
+        return Err(format!(
+            "workspace service dependency cycle detected: {}",
+            cyclic.join(", ")
+        ));
+    }
+
+    Ok(layers)
 }
 
 fn validate_stop_services(
@@ -1188,6 +1340,7 @@ mod tests {
             service_id: service_id.to_string(),
             cwd: "/tmp".to_string(),
             cmd: "sleep 10".to_string(),
+            depends_on: Vec::new(),
             run_mode,
             order,
             environment: ServiceEnvironment::default(),
@@ -1199,22 +1352,23 @@ mod tests {
     }
 
     #[test]
-    fn plans_parallel_services_before_ordered_sequential_services() {
+    fn plans_independent_services_together_and_orders_sequential_services() {
         let services = vec![
             workspace_service("second", WorkspaceRunMode::Sequential, 2),
             workspace_service("parallel", WorkspaceRunMode::Parallel, 99),
             workspace_service("first", WorkspaceRunMode::Sequential, 1),
         ];
 
-        let (parallel, sequential) = plan_workspace_services(services).expect("plan");
-        assert_eq!(parallel[0].service_id, "parallel");
+        let layers = plan_workspace_services(services).expect("plan");
         assert_eq!(
-            sequential
+            layers[0]
                 .iter()
-                .map(|service| service.service_id.as_str())
+                .map(|planned| planned.service.service_id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["first", "second"]
+            vec!["parallel", "first"]
         );
+        assert_eq!(layers[1][0].service.service_id, "second");
+        assert_eq!(layers[1][0].dependencies, vec!["first"]);
     }
 
     #[test]
@@ -1236,6 +1390,7 @@ mod tests {
         .expect("deserialize");
         assert_eq!(service.run_mode, WorkspaceRunMode::Parallel);
         assert_eq!(service.order, 0);
+        assert!(service.depends_on.is_empty());
         assert!(service.expected_ports.is_empty());
         assert!(!service.allow_port_conflicts);
         assert_eq!(service.startup_delay_ms, 0);
@@ -1260,6 +1415,44 @@ mod tests {
         valid.expected_ports = vec![8080];
         valid.readiness_timeout_ms = 30_000;
         assert!(plan_workspace_services(vec![valid]).is_ok());
+    }
+
+    #[test]
+    fn plans_explicit_dependencies_in_topological_layers() {
+        let database = workspace_service("database", WorkspaceRunMode::Parallel, 0);
+        let mut api = workspace_service("api", WorkspaceRunMode::Parallel, 1);
+        api.depends_on = vec!["database".to_string()];
+        let mut web = workspace_service("web", WorkspaceRunMode::Parallel, 2);
+        web.depends_on = vec!["api".to_string()];
+
+        let layers = plan_workspace_services(vec![database, api, web]).expect("plan");
+        assert_eq!(layers.len(), 3);
+        assert_eq!(layers[0][0].service.service_id, "database");
+        assert_eq!(layers[1][0].service.service_id, "api");
+        assert_eq!(layers[2][0].service.service_id, "web");
+    }
+
+    #[test]
+    fn rejects_invalid_workspace_dependencies() {
+        let mut missing = workspace_service("api", WorkspaceRunMode::Parallel, 0);
+        missing.depends_on = vec!["database".to_string()];
+        assert!(plan_workspace_services(vec![missing])
+            .unwrap_err()
+            .contains("missing service database"));
+
+        let mut self_dependency = workspace_service("api", WorkspaceRunMode::Parallel, 0);
+        self_dependency.depends_on = vec!["api".to_string()];
+        assert!(plan_workspace_services(vec![self_dependency])
+            .unwrap_err()
+            .contains("cannot depend on itself"));
+
+        let mut api = workspace_service("api", WorkspaceRunMode::Parallel, 0);
+        api.depends_on = vec!["web".to_string()];
+        let mut web = workspace_service("web", WorkspaceRunMode::Parallel, 1);
+        web.depends_on = vec!["api".to_string()];
+        assert!(plan_workspace_services(vec![api, web])
+            .unwrap_err()
+            .contains("dependency cycle"));
     }
 
     #[test]

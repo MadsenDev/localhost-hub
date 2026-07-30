@@ -75,6 +75,8 @@ pub struct StoredService {
     pub repo_path: String,
     pub script: String,
     pub cmd: String,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
     #[serde(default = "default_run_mode")]
     pub run_mode: String,
     #[serde(default)]
@@ -200,6 +202,7 @@ mod tests {
 
         assert_eq!(service.expected_port, None);
         assert_eq!(service.run_mode, "parallel");
+        assert!(service.depends_on.is_empty());
         assert_eq!(service.startup_delay_ms, 0);
         assert_eq!(service.readiness_timeout_ms, 0);
     }

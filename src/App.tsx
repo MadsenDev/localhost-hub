@@ -151,6 +151,7 @@ function buildHubData(
         cpu: managedRuntime?.cpu ?? proc?.cpu_usage ?? 0,
         mem: managedRuntime?.memoryMb ?? (proc ? Math.round(proc.memory_kb / 1024) : 0),
         framework: '',
+        depends_on: ss.depends_on ?? [],
         run_mode: ss.run_mode ?? 'parallel',
         order: ss.order ?? index,
         env_profile_id: ss.env_profile_id ?? null,
@@ -594,6 +595,7 @@ export default function App() {
       ...w,
       services: [...w.services, {
         ...svc,
+        depends_on: svc.depends_on ?? [],
         run_mode: svc.run_mode ?? 'parallel',
         order: svc.order ?? w.services.length,
         expected_port: svc.expected_port ?? null,
@@ -624,7 +626,15 @@ export default function App() {
         return;
       }
     }
-    await saveWorkspaces(storedWsRef.current.map(w => w.id === wsId ? { ...w, services: w.services.filter(s => s.id !== svcId) } : w));
+    await saveWorkspaces(storedWsRef.current.map(w => w.id === wsId ? {
+      ...w,
+      services: w.services
+        .filter(s => s.id !== svcId)
+        .map(s => ({
+          ...s,
+          depends_on: (s.depends_on ?? []).filter(dependencyId => dependencyId !== svcId),
+        })),
+    } : w));
   }
 
   function updateWorkspaceService(
@@ -632,7 +642,7 @@ export default function App() {
     svcId: string,
     patch: Partial<Pick<
       StoredService,
-      'run_mode' | 'order' | 'env_profile_id' | 'expected_port' | 'startup_delay_ms' | 'readiness_timeout_ms'
+      'depends_on' | 'run_mode' | 'order' | 'env_profile_id' | 'expected_port' | 'startup_delay_ms' | 'readiness_timeout_ms'
     >>,
   ) {
     saveWorkspaces(storedWsRef.current.map(w => w.id === wsId ? {
@@ -982,6 +992,7 @@ export default function App() {
         service_id: service.id,
         cwd: service.repo_path,
         cmd: service.cmd,
+        depends_on: service.depends_on ?? [],
         run_mode: service.run_mode ?? "parallel" as const,
         order: service.order ?? index,
         environment,
@@ -1022,8 +1033,15 @@ export default function App() {
         setManagedServiceStatus(wsId, service_id, "failed");
         pushLog(service_id, error, "error");
       });
+      result.blocked.forEach(({ service_id, reason }) => {
+        setManagedServiceStatus(wsId, service_id, "blocked");
+        pushLog(service_id, reason, "warn");
+      });
       if (result.failed.length > 0) {
         toast(`${result.failed.length} service${result.failed.length === 1 ? '' : 's'} failed to start`, "error");
+      }
+      if (result.blocked.length > 0) {
+        toast(`${result.blocked.length} dependent service${result.blocked.length === 1 ? '' : 's'} blocked`, "info");
       }
       result.warnings.forEach(({ service_id, warning }) => {
         pushLog(service_id, warning, "warn");

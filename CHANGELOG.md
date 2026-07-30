@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added first-class workspace orchestration:
   - Create named workspaces containing services from multiple repositories.
   - Start services in parallel or sequential order.
+  - Define service prerequisites, validate missing/self/cyclic dependencies, and launch independent services in topological layers.
+  - Wait for configured prerequisite readiness before unlocking dependents, and report downstream services as blocked when a prerequisite fails.
   - Stop all services, inspect combined runtime state, and filter combined logs.
 - Added unified port and localhost URL detection:
   - Combines listening-socket inspection with URLs parsed from service output.

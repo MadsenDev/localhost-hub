@@ -1,4 +1,4 @@
-export type ServiceStatus = 'running' | 'starting' | 'stopped' | 'failed' | 'exited' | 'crashed' | 'restarting';
+export type ServiceStatus = 'running' | 'starting' | 'stopped' | 'failed' | 'blocked' | 'exited' | 'crashed' | 'restarting';
 
 export interface Service {
   id: string;
@@ -15,6 +15,7 @@ export interface Service {
   cpu: number;
   mem: number;
   framework: string;
+  depends_on?: string[];
   run_mode?: 'parallel' | 'sequential';
   order?: number;
   env_profile_id?: string | null;
@@ -234,6 +235,7 @@ export interface StoredService {
   repo_path: string;
   script: string;
   cmd: string;
+  depends_on?: string[];
   run_mode?: 'parallel' | 'sequential';
   order?: number;
   env_profile_id?: string | null;

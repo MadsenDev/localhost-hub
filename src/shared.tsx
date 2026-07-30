@@ -56,6 +56,6 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ s }: StatusBadgeProps) {
-  const cls = s === "running" ? "ok" : s === "starting" || s === "restarting" ? "warn" : s === "failed" || s === "crashed" ? "danger" : "";
+  const cls = s === "running" ? "ok" : s === "starting" || s === "restarting" || s === "blocked" ? "warn" : s === "failed" || s === "crashed" ? "danger" : "";
   return <span className={"tag " + cls}><StatusDot s={s as ServiceStatus} />{s}</span>;
 }
