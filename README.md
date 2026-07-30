@@ -211,7 +211,7 @@ Honest about what is not done:
 
 What is planned, in order, lives in [the implementation backlog](docs/IMPLEMENTATION_BACKLOG.md). The original product brief is kept as [PROJECT.md](PROJECT.md) for its intent; its architecture section describes the implementation Tauri replaced.
 
-Further out: SSH tunnelling and remote discovery, richer diffs and staging, pluggable script types such as Docker Compose and Make, and [Localhost Companion](docs/LOCALHOST_COMPANION.md) — a focused Android remote.
+Further out: SSH tunnelling and remote discovery, richer diffs and staging, pluggable script types such as Docker Compose and Make, and [Localhost Companion](docs/LOCALHOST_COMPANION.md) — a focused Android remote, whose [threat model and pairing design](docs/COMPANION_SECURITY.md) is written but not yet implemented.
 
 ---
 

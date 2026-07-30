@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added the Localhost Companion threat model and pairing design in
+  `docs/COMPANION_SECURITY.md`. Design only; no server, pairing or device credential code
+  exists yet. It is the fourth precondition the Companion plan sets for starting
+  implementation, and writing it first was deliberate: the feature puts a network
+  listener in front of process control, so the security model should be reviewable before
+  there is a socket to attack.
+  - Its central conclusion is a constraint on the future API: it must not proxy the Tauri
+    commands. `start_service` takes the command line, working directory and environment
+    variables from its caller, which is reasonable for a local webview and is remote code
+    execution over a socket. The Companion API therefore speaks in stored identifiers and
+    resolves commands from configuration, so nothing executable crosses the wire.
+  - Also settled: which of the 50 commands may ever be exposed and which may not, with
+    reasons; certificate pinning through the pairing QR code, so an attacker present
+    during pairing cannot become the permanent host; a pairing handshake whose transcript
+    is bound into its challenge; device credentials as phone-generated non-exportable
+    keypairs, leaving no authentication secret at rest on the desktop; revocation that
+    terminates live sessions rather than only blocking new ones; and the residual risks,
+    including that streamed service output can leak secrets Hub has no way to identify.
+
 - Added **Start at login**. Closing to the tray keeps Localhost Hub alive once it is
   running; this is what gets it running, launching it straight to the tray at login
   without putting a window on screen. It exists for the cases where something other
