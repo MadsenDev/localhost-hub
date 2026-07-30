@@ -16,6 +16,7 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use ts_rs::TS;
 
 /// Credential-store service name. Shares the bundle identifier so entries are
 /// attributable to this app in Keychain Access, Credential Manager, and Seahorse.
@@ -29,8 +30,9 @@ pub fn env_var_key(profile_id: &str, variable_key: &str) -> String {
     format!("env:{profile_id}:{variable_key}")
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum SecretBackend {
     /// The OS credential store; secrets are not on disk in readable form.
     Keyring,

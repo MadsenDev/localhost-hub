@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Generated the TypeScript types for every value crossing the command boundary from
+  the Rust structs themselves, using ts-rs, and re-exported them from the modules
+  that previously declared them by hand. The two sides were mirrored manually across
+  three separate files, so a renamed Rust field surfaced only at runtime as an
+  undefined value. A renamed field now fails typechecking, and continuous integration
+  fails if the committed bindings do not match the current Rust definitions.
+  Reconciling the two sides also corrected the stored run mode, which was an
+  unvalidated string rather than the same enumeration the workspace runner already
+  used, and one caller that relied on backend defaults instead of sending a complete
+  service definition.
+
 ### Security
 
 - Moved the GitHub access token and every environment variable marked secret out of

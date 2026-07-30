@@ -1,3 +1,39 @@
+
+// Git types owned by the Rust backend.
+//
+// Generated from the Rust structs by ts-rs (`cargo test` in src-tauri/).
+// Re-exported here so existing imports keep working while the compiler,
+// not a convention, keeps the two sides in agreement.
+import type { EnvProfile } from './generated/EnvProfile';
+import type { EnvVariable } from './generated/EnvVariable';
+import type { GitBranch } from './generated/GitBranch';
+import type { GitCommitResult } from './generated/GitCommitResult';
+import type { GitDiff } from './generated/GitDiff';
+import type { GitFileStatus } from './generated/GitFileStatus';
+import type { GitHistoryEntry } from './generated/GitHistoryEntry';
+import type { GitNetworkResult } from './generated/GitNetworkResult';
+import type { GitRemote } from './generated/GitRemote';
+import type { GitRepositoryInfo } from './generated/GitRepositoryInfo';
+import type { GitStatus } from './generated/GitStatus';
+import type { StoredService } from './generated/StoredService';
+import type { StoredWorkspace } from './generated/StoredWorkspace';
+
+export type {
+  EnvProfile,
+  EnvVariable,
+  GitBranch,
+  GitCommitResult,
+  GitDiff,
+  GitFileStatus,
+  GitHistoryEntry,
+  GitNetworkResult,
+  GitRemote,
+  GitRepositoryInfo,
+  GitStatus,
+  StoredService,
+  StoredWorkspace,
+};
+
 export type ServiceStatus = 'running' | 'starting' | 'stopped' | 'failed' | 'blocked' | 'exited' | 'crashed' | 'restarting';
 
 export interface Service {
@@ -44,21 +80,6 @@ export interface GitInfo {
   behind: number;
   changed: number;
   last: string;
-}
-
-export interface EnvVariable {
-  key: string;
-  value: string;
-  is_secret: boolean;
-}
-
-export interface EnvProfile {
-  id: string;
-  project_path: string;
-  name: string;
-  description: string;
-  is_default: boolean;
-  vars: EnvVariable[];
 }
 
 export interface EnvVar {
@@ -148,107 +169,6 @@ export interface Repo {
   running_port: number | null;
   cpu: number;
   mem: number;
-}
-
-export interface GitFileStatus {
-  path: string;
-  index_status: string | null;
-  worktree_status: string | null;
-  conflicted: boolean;
-}
-
-export interface GitStatus {
-  branch: string;
-  ahead: number;
-  behind: number;
-  changed: number;
-  staged: number;
-  unstaged: number;
-  untracked: number;
-  conflicted: number;
-  clean: boolean;
-  files: GitFileStatus[];
-  last_commit_message: string | null;
-  last_commit_hash: string | null;
-  last_commit_author: string | null;
-  last_commit_timestamp: number | null;
-}
-
-export interface GitDiff {
-  patch: string;
-  files_changed: number;
-  additions: number;
-  deletions: number;
-  truncated: boolean;
-}
-
-export interface GitCommitResult {
-  hash: string;
-  message: string;
-}
-
-export interface GitBranch {
-  name: string;
-  current: boolean;
-  remote: boolean;
-  upstream: string | null;
-  ahead: number;
-  behind: number;
-}
-
-export interface GitRemote {
-  name: string;
-  url: string | null;
-  push_url: string | null;
-}
-
-export interface GitHistoryEntry {
-  hash: string;
-  full_hash: string;
-  message: string;
-  author: string;
-  author_email: string | null;
-  timestamp: number;
-  parent_count: number;
-  files_changed: number;
-  additions: number;
-  deletions: number;
-}
-
-export interface GitRepositoryInfo {
-  branches: GitBranch[];
-  remotes: GitRemote[];
-  history: GitHistoryEntry[];
-}
-
-export interface GitNetworkResult {
-  operation: 'fetch' | 'pull' | 'push';
-  remote: string;
-  branch: string;
-  output: string;
-  status: GitStatus;
-}
-
-export interface StoredService {
-  id: string;
-  name: string;
-  repo_path: string;
-  script: string;
-  cmd: string;
-  depends_on?: string[];
-  run_mode?: 'parallel' | 'sequential';
-  order?: number;
-  env_profile_id?: string | null;
-  expected_port?: number | null;
-  startup_delay_ms?: number;
-  readiness_timeout_ms?: number;
-}
-
-export interface StoredWorkspace {
-  id: string;
-  name: string;
-  color: string;
-  services: StoredService[];
 }
 
 export interface HubDataShape {

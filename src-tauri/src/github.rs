@@ -1,6 +1,7 @@
 use git2::Repository;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 // Create an OAuth app with Device Authorization Flow enabled, then expose its
 // public client ID when building. Keeping this optional means local and CI
@@ -13,24 +14,31 @@ fn client_id() -> Result<&'static str, String> {
         .ok_or_else(|| "GitHub OAuth is not configured for this build.".to_string())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct DeviceCodeResponse {
     pub device_code: String,
     pub user_code: String,
     pub verification_uri: String,
     pub verification_uri_complete: Option<String>,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub expires_in: u64,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub interval: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitHubUser {
     pub login: String,
     pub name: Option<String>,
     pub avatar_url: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitHubRepo {
     pub name: String,
     pub full_name: String,
@@ -44,7 +52,8 @@ pub struct GitHubRepo {
     pub language: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitHubProjectRepository {
     pub name: String,
     pub full_name: String,
@@ -54,12 +63,17 @@ pub struct GitHubProjectRepository {
     pub fork: bool,
     pub description: Option<String>,
     pub default_branch: String,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub open_issues_count: u64,
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitHubPullRequest {
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub number: u64,
     pub title: String,
     pub html_url: String,
@@ -70,8 +84,11 @@ pub struct GitHubPullRequest {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitHubIssue {
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub number: u64,
     pub title: String,
     pub html_url: String,
@@ -80,13 +97,15 @@ pub struct GitHubIssue {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitHubLabel {
     pub name: String,
     pub color: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitHubCheckRun {
     pub name: String,
     pub status: String,
@@ -97,7 +116,8 @@ pub struct GitHubCheckRun {
     pub completed_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitHubProjectContext {
     pub repository: GitHubProjectRepository,
     pub remote_name: String,

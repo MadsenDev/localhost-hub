@@ -16,6 +16,8 @@ export default tseslint.config(
       'buildResources',
       // Generated at build time from public/logo-icons.
       'public/logo-icons',
+      // Generated from the Rust structs by ts-rs.
+      'src/generated',
     ],
   },
 

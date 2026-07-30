@@ -3,21 +3,24 @@ use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use ts_rs::TS;
 
 const QUIET_DAYS: u64 = 90;
 const STALE_DAYS: u64 = 180;
 const STALE_BRANCH_DAYS: u64 = 90;
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum RepositoryHealthStatus {
     Healthy,
     Attention,
     Risk,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum HealthSignalState {
     Good,
     Info,
@@ -25,7 +28,8 @@ pub enum HealthSignalState {
     Bad,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct HealthSignal {
     pub id: String,
     pub label: String,
@@ -33,15 +37,21 @@ pub struct HealthSignal {
     pub detail: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct StaleBranch {
     pub name: String,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub last_commit_timestamp: i64,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub days_since_commit: u64,
     pub merged_into_head: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct RepositoryHealth {
     pub path: String,
     pub score: u8,
@@ -51,10 +61,20 @@ pub struct RepositoryHealth {
     pub has_license: bool,
     pub has_ci: bool,
     pub dependency_manifests: Vec<String>,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub uncommitted_changes: usize,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number | null")]
     pub oldest_uncommitted_days: Option<u64>,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub unpushed_commits: usize,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number | null")]
     pub last_commit_timestamp: Option<i64>,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number | null")]
     pub days_since_last_commit: Option<u64>,
     pub stale_branches: Vec<StaleBranch>,
 }

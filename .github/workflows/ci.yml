@@ -72,3 +72,13 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+      # `cargo test` regenerates src/generated via ts-rs. If the committed
+      # bindings differ, the Rust types changed without the TypeScript side
+      # being updated, which is exactly the drift this replaces.
+      - name: Verify generated TypeScript bindings are current
+        run: |
+          if ! git diff --exit-code --stat -- src/generated; then
+            echo "::error::src/generated is stale. Run 'cargo test' in src-tauri/ and commit the result."
+            exit 1
+          fi

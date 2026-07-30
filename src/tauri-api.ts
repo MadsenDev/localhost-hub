@@ -14,6 +14,76 @@
  */
 import type { GitCommitResult, GitDiff, GitNetworkResult, GitRepositoryInfo, GitStatus } from "./types";
 
+// Types owned by the Rust backend.
+//
+// Generated from the Rust structs by ts-rs (`cargo test` in src-tauri/).
+// Re-exported here so existing imports keep working while the compiler,
+// not a convention, keeps the two sides in agreement.
+import type { CreateProjectPayload } from './generated/CreateProjectPayload';
+import type { CreateProjectResult } from './generated/CreateProjectResult';
+import type { DependencyKind } from './generated/DependencyKind';
+import type { DetectedProject } from './generated/DetectedProject';
+import type { EnvFileImport } from './generated/EnvFileImport';
+import type { EnvFileVariable } from './generated/EnvFileVariable';
+import type { GitHubProjectContext } from './generated/GitHubProjectContext';
+import type { GitHubRepo } from './generated/GitHubRepo';
+import type { HealthSignalState } from './generated/HealthSignalState';
+import type { LivePort } from './generated/LivePort';
+import type { ManagedServiceInfo } from './generated/ManagedServiceInfo';
+import type { PackageAction } from './generated/PackageAction';
+import type { PackageActionPayload } from './generated/PackageActionPayload';
+import type { PackageActionResult } from './generated/PackageActionResult';
+import type { PackageManager } from './generated/PackageManager';
+import type { ProcessInfo } from './generated/ProcessInfo';
+import type { ProjectLanguage } from './generated/ProjectLanguage';
+import type { ProjectPackage } from './generated/ProjectPackage';
+import type { ProjectPackages } from './generated/ProjectPackages';
+import type { ProjectTemplate } from './generated/ProjectTemplate';
+import type { RepositoryHealth } from './generated/RepositoryHealth';
+import type { RepositoryHealthStatus } from './generated/RepositoryHealthStatus';
+import type { SecretBackend } from './generated/SecretBackend';
+import type { ServiceEnvironment } from './generated/ServiceEnvironment';
+import type { ServiceEvent } from './generated/ServiceEvent';
+import type { SystemStats } from './generated/SystemStats';
+import type { WorkspaceGroup } from './generated/WorkspaceGroup';
+import type { WorkspaceRunResult } from './generated/WorkspaceRunResult';
+import type { WorkspaceServiceSpec } from './generated/WorkspaceServiceSpec';
+import type { WorkspaceStopSpec } from './generated/WorkspaceStopSpec';
+
+export type {
+  CreateProjectPayload,
+  CreateProjectResult,
+  DependencyKind,
+  DetectedProject,
+  EnvFileImport,
+  EnvFileVariable,
+  GitHubProjectContext,
+  GitHubRepo,
+  HealthSignalState,
+  LivePort,
+  ManagedServiceInfo,
+  PackageAction,
+  PackageActionPayload,
+  PackageActionResult,
+  PackageManager,
+  ProcessInfo,
+  ProjectLanguage,
+  ProjectPackage,
+  ProjectPackages,
+  ProjectTemplate,
+  RepositoryHealth,
+  RepositoryHealthStatus,
+  SecretBackend,
+  ServiceEnvironment,
+  ServiceEvent,
+  SystemStats,
+  WorkspaceGroup,
+  WorkspaceRunResult,
+  WorkspaceServiceSpec,
+  WorkspaceStopSpec,
+};
+
+
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -49,282 +119,6 @@ async function action<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 }
 
 // ── Types mirroring Rust structs ──────────────────────────────────────────────
-
-export interface LivePort {
-  port: number;
-  pid: number | null;
-  process_name: string | null;
-  protocol: string;
-  bind_address: string;
-  url: string;
-}
-
-export interface ProcessInfo {
-  pid: number;
-  name: string;
-  cmd: string[];
-  cwd: string | null;
-  cpu_usage: number;
-  memory_kb: number;
-  status: string;
-}
-
-export interface SystemStats {
-  cpu_usage: number;
-  memory_used_mb: number;
-  memory_total_mb: number;
-  load_avg: [number, number, number];
-}
-
-export interface DetectedProject {
-  id: string;
-  path: string;
-  name: string;
-  framework: string;
-  package_manager: string;
-  scripts: Array<{
-    name: string;
-    cmd: string;
-    raw_cmd: string;
-    runner: string;
-    description: string | null;
-  }>;
-  has_git: boolean;
-  git_root: string | null;
-  has_env: boolean;
-  env_files: string[];
-  manifests: string[];
-}
-
-export interface WorkspaceGroup {
-  id: string;
-  name: string;
-  path: string;
-  projects: DetectedProject[];
-}
-
-export interface EnvFileVariable {
-  key: string;
-  value: string;
-  is_secret: boolean;
-}
-
-export interface EnvFileImport {
-  path: string;
-  variables: EnvFileVariable[];
-}
-
-export interface ServiceEvent {
-  service_id: string;
-  kind: "starting" | "started" | "restarting" | "stdout" | "stderr" | "url" | "exited" | "error" | "stopped";
-  message: string;
-  pid: number | null;
-  code: number | null;
-}
-
-export interface ManagedServiceInfo {
-  service_id: string;
-  cwd: string;
-  cmd: string;
-  pid: number;
-  started_at_ms: number;
-  uptime_ms: number;
-  cpu_usage: number;
-  memory_mb: number;
-  ports: number[];
-  urls: string[];
-}
-
-export interface WorkspaceServiceSpec {
-  service_id: string;
-  cwd: string;
-  cmd: string;
-  depends_on: string[];
-  run_mode: "parallel" | "sequential";
-  order: number;
-  environment: ServiceEnvironment;
-  expected_ports: number[];
-  allow_port_conflicts: boolean;
-  startup_delay_ms: number;
-  readiness_timeout_ms: number;
-}
-
-export interface ServiceEnvironment {
-  inherit_system: boolean;
-  vars: Array<{ key: string; value: string }>;
-}
-
-export interface WorkspaceStopSpec {
-  service_id: string;
-  pid: number | null;
-}
-
-export interface WorkspaceRunResult {
-  workspace_id: string;
-  started: string[];
-  already_running: string[];
-  stopped: string[];
-  not_running: string[];
-  failed: Array<{ service_id: string; error: string }>;
-  warnings: Array<{ service_id: string; warning: string }>;
-  blocked: Array<{ service_id: string; reason: string }>;
-}
-
-export type SecretBackend = "keyring" | "file";
-
-export interface GitHubRepo {
-  name: string;
-  full_name: string;
-  html_url: string;
-  clone_url: string;
-  ssh_url: string;
-  private: boolean;
-  description: string | null;
-  default_branch: string;
-  updated_at: string;
-  language: string | null;
-}
-
-export interface GitHubProjectContext {
-  repository: {
-    name: string;
-    full_name: string;
-    html_url: string;
-    private: boolean;
-    archived: boolean;
-    fork: boolean;
-    description: string | null;
-    default_branch: string;
-    open_issues_count: number;
-    updated_at: string;
-  };
-  remote_name: string;
-  remote_url: string;
-  current_branch: string | null;
-  head_sha: string | null;
-  pull_requests: Array<{
-    number: number;
-    title: string;
-    html_url: string;
-    draft: boolean;
-    head_ref: string;
-    base_ref: string;
-    author: string;
-    updated_at: string;
-  }>;
-  issues: Array<{
-    number: number;
-    title: string;
-    html_url: string;
-    author: string;
-    labels: Array<{ name: string; color: string }>;
-    updated_at: string;
-  }>;
-  checks: Array<{
-    name: string;
-    status: string;
-    conclusion: string | null;
-    html_url: string | null;
-    app_name: string | null;
-    started_at: string | null;
-    completed_at: string | null;
-  }>;
-  warnings: string[];
-}
-
-export type ProjectTemplate = "empty" | "node-http" | "react-vite";
-export type ProjectLanguage = "javascript" | "typescript";
-export type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
-
-export interface CreateProjectPayload {
-  name: string;
-  directory: string;
-  description: string;
-  template: ProjectTemplate;
-  language: ProjectLanguage;
-  package_manager: PackageManager;
-  dependencies: string[];
-  dev_dependencies: string[];
-  scripts: Record<string, string>;
-  styling: "none" | "tailwind-v4";
-  icon_packs: string[];
-  include_readme: boolean;
-  readme_notes: string;
-  initialize_git: boolean;
-  install_dependencies: boolean;
-}
-
-export interface CreateProjectResult {
-  path: string;
-  files: string[];
-  git_initialized: boolean;
-  dependencies_installed: boolean;
-  warnings: string[];
-}
-
-export type RepositoryHealthStatus = "healthy" | "attention" | "risk";
-export type HealthSignalState = "good" | "info" | "warn" | "bad";
-
-export interface RepositoryHealth {
-  path: string;
-  score: number;
-  status: RepositoryHealthStatus;
-  signals: Array<{
-    id: string;
-    label: string;
-    state: HealthSignalState;
-    detail: string;
-  }>;
-  has_readme: boolean;
-  has_license: boolean;
-  has_ci: boolean;
-  dependency_manifests: string[];
-  uncommitted_changes: number;
-  oldest_uncommitted_days: number | null;
-  unpushed_commits: number;
-  last_commit_timestamp: number | null;
-  days_since_last_commit: number | null;
-  stale_branches: Array<{
-    name: string;
-    last_commit_timestamp: number;
-    days_since_commit: number;
-    merged_into_head: boolean;
-  }>;
-}
-
-export type DependencyKind = "dependency" | "dev_dependency" | "peer_dependency" | "optional_dependency";
-export type PackageAction = "install_all" | "add" | "remove" | "update" | "audit" | "outdated" | "regenerate_lockfile";
-
-export interface ProjectPackage {
-  name: string;
-  requested_version: string;
-  installed_version: string | null;
-  kind: DependencyKind;
-}
-
-export interface ProjectPackages {
-  package_manager: PackageManager;
-  packages: ProjectPackage[];
-  installed_count: number;
-  missing_count: number;
-}
-
-export interface PackageActionPayload {
-  project_path: string;
-  action: PackageAction;
-  package_name?: string | null;
-  version?: string | null;
-  dev?: boolean;
-}
-
-export interface PackageActionResult {
-  package_manager: PackageManager;
-  command: string;
-  success: boolean;
-  exit_code: number | null;
-  stdout: string;
-  stderr: string;
-}
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 

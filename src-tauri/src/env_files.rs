@@ -2,10 +2,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use ts_rs::TS;
 
 const MAX_ENV_FILE_BYTES: u64 = 1024 * 1024;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct EnvFileVariable {
     pub key: String,
     pub value: String,
@@ -13,7 +15,8 @@ pub struct EnvFileVariable {
     pub is_secret: bool,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct EnvFileImport {
     pub path: String,
     pub variables: Vec<EnvFileVariable>,

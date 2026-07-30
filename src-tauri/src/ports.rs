@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::process::{Command, Output};
 use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct LivePort {
     pub port: u16,
     pub pid: Option<u32>,
