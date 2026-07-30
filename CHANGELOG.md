@@ -193,6 +193,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stopped the Sessions view taking the whole application down with it. Its initial state
+  read `sessions[0].id`, so with no sessions recorded it threw, and because nothing
+  caught the error React unmounted everything — the window went blank, title bar and
+  sidebar included, with no message and no way to navigate out. Sessions now shows an
+  empty state, and a boundary around the view area keeps any future failure of one view
+  from blanking the rest; it resets when you switch views, so the application recovers
+  without a restart.
+
+- Switched off the platform webview's own button rendering once, globally, rather than
+  in each component. Buttons carry a fill, a border and a drop shadow until that is
+  explicitly reset, which left every component having to remember to override all of it.
+  The project page tabs did not, and rendered as pale filled boxes on the dark title
+  bar — the same defect as the window controls below. The reset is deliberately limited
+  to that decorative chrome: an earlier, broader version also normalised typography and
+  alignment, which left the Settings segmented controls with their labels shoved to the
+  left, so it now leaves both alone.
+
+- Fixed information being cut off in a narrow window:
+  - **Project overview cards** clipped `PACKAGE MANAGER` to `PACK…` and pushed the
+    values out of sight. These cards sit in a side column around 260px wide at *any*
+    window size, so the viewport breakpoint that was meant to collapse them never fired
+    when it mattered. They now respond to their own container's width instead, which is
+    the only thing that actually determines whether two columns fit.
+  - **Repository health rows** demanded roughly 710px against the ~630px available at
+    the 900px minimum window width, so `Active today` became `Activ` and the expand
+    chevron disappeared entirely. The repository path also wrapped to six lines because
+    it asked for an ellipsis without `white-space: nowrap`, which does nothing on its
+    own.
+  - **The Logs stream** pushed its level filters and the Unlock button off the right of
+    the window, and gave the whole page a horizontal scrollbar: its header could not
+    wrap and its grid track would not shrink below the header's width.
+  - **The project tab strip** ran GITHUB and HEALTH off the edge. The tabs now wrap onto
+    a second row, because a tab nobody can see is a tab nobody can reach.
+  - **Ports topology nodes** hung off the left edge with their labels cut to `port`. A
+    node is a fixed 168px box centred on its coordinate, but the first column was
+    pinned to a hardcoded 18% — only 83px across a narrow canvas, less than the node's
+    own half-width. Columns are now fractions of a band inset by half a node at each
+    end. A single workspace is also centred rather than pinned to the left, which the
+    old spread formula did by accident when dividing by `max(1, n - 1)`.
+
 - Fixed the window controls in the title bar, which were drawn by the platform webview
   rather than by the application. Their stylesheet never reset the default button
   appearance, so minimise, maximise and close rendered as three pale filled boxes with

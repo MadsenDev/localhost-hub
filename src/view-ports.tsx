@@ -12,22 +12,51 @@ interface PortsViewProps {
 }
 
 interface PortNode extends Port {
+  /** Position across the canvas as a fraction, 0 at the left edge and 1 at the right. */
   x: number;
+  /** Position down the canvas as a percentage, matching the tier labels. */
   y: number;
 }
+
+/** Width of a `.ports-node`, which `min-width` fixes in the stylesheet. */
+const NODE_WIDTH = 168;
+
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
+/**
+ * Turns a 0..1 fraction into a CSS length for a box centred on that point,
+ * keeping the box's edges inside the canvas however narrow it becomes.
+ */
+const bandPosition = (fraction: number) =>
+  `calc(${NODE_WIDTH / 2}px + ${clamp01(fraction)} * (100% - ${NODE_WIDTH}px))`;
 
 export function PortsView({ ports, edges, workspaces, services, onOpenUrl }: PortsViewProps) {
   const [hovered, setHovered] = React.useState<string | null>(null);
 
   const wsList = workspaces.map((w) => w.id);
   const groupOrder: Record<string, number> = { web: 0, edge: 0.4, api: 1.5, db: 2.8 };
-  const wsX: Record<string, number> = {};
-  wsList.forEach((id, i) => { wsX[id] = 18 + i * (76 / Math.max(1, wsList.length - 1)); });
+
+  // A node is a fixed-width box centred on its coordinate, so a coordinate
+  // expressed purely as a percentage clips as soon as the canvas gets narrow:
+  // the first column used to sit at a hardcoded 18%, which is only 83px across a
+  // 630px canvas — less than the node's own 84px half-width, so it hung off the
+  // left edge with its label cut to "port". Columns are therefore fractions of a
+  // band inset by half a node at each end, converted to a length below, which
+  // keeps every node inside the canvas at any width.
+  const wsFrac: Record<string, number> = {};
+  if (wsList.length === 1) {
+    // One workspace belongs in the middle, not pinned to the left. The old
+    // spread formula divided by `max(1, n - 1)`, which silently produced the
+    // left-most position instead of a centred one.
+    wsFrac[wsList[0]] = 0.5;
+  } else {
+    wsList.forEach((id, i) => { wsFrac[id] = i / (wsList.length - 1); });
+  }
 
   const nodes: PortNode[] = ports.map((p) => {
-    const xJitter = ((p.port % 7) - 3) * 1.6;
+    const xJitter = ((p.port % 7) - 3) * 0.02;
     const yJitter = ((p.port % 5) - 2) * 1.8;
-    const x = wsX[p.ws] + xJitter;
+    const x = clamp01((wsFrac[p.ws] ?? 0.5) + xJitter);
     const yBase = 14 + (groupOrder[p.group] ?? 1.5) * 22;
     const y = yBase + yJitter;
     return { ...p, x, y };
@@ -55,7 +84,7 @@ export function PortsView({ ports, edges, workspaces, services, onOpenUrl }: Por
       <div className="ports-map">
         <div className="ports-canvas">
           {workspaces.map((w) => (
-            <div key={w.id} style={{ position: "absolute", left: wsX[w.id] + "%", top: 14, transform: "translateX(-50%)", fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: "0.12em", display: "flex", alignItems: "center", gap: 6 }}>
+            <div key={w.id} style={{ position: "absolute", left: bandPosition(wsFrac[w.id] ?? 0.5), top: 14, transform: "translateX(-50%)", fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--fg-3)", textTransform: "uppercase", letterSpacing: "0.12em", display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, background: w.swatch }} />
               {w.name}
             </div>
@@ -80,8 +109,15 @@ export function PortsView({ ports, edges, workspaces, services, onOpenUrl }: Por
               if (!a || !b) return null;
               const aSvc = svcById[a.svc], bSvc = svcById[b.svc];
               const active = aSvc?.status === "running" && bSvc?.status === "running";
-              const x1 = a.x + "%", y1 = a.y + "%", x2 = b.x + "%", y2 = b.y + "%";
-              const mx = ((a.x + b.x) / 2) + "%", my = ((a.y + b.y) / 2 + 4) + "%";
+              // These connectors do not currently draw: SVG path data takes user
+              // units, not percentages, so every `d` below is rejected outright.
+              // Making them render needs the canvas measured in pixels so the
+              // curve endpoints can match the band the nodes are positioned in —
+              // its own change, tracked with the topology layout work in the
+              // README's status section. Percentages are kept here so the units
+              // stay consistent with `y` rather than mixing in a 0..1 fraction.
+              const x1 = a.x * 100 + "%", y1 = a.y + "%", x2 = b.x * 100 + "%", y2 = b.y + "%";
+              const mx = ((a.x + b.x) / 2) * 100 + "%", my = ((a.y + b.y) / 2 + 4) + "%";
               const d = `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`;
               return (
                 <g key={i}>
@@ -115,7 +151,7 @@ export function PortsView({ ports, edges, workspaces, services, onOpenUrl }: Por
               <div
                 key={n.id}
                 className={"ports-node" + (n.status === "failed" ? " conflict" : "") + (hovered === n.id ? " is-hover" : "")}
-                style={{ left: n.x + "%", top: n.y + "%", borderLeft: `3px solid ${w?.swatch ?? 'var(--line-1)'}` }}
+                style={{ left: bandPosition(n.x), top: n.y + "%", borderLeft: `3px solid ${w?.swatch ?? 'var(--line-1)'}` }}
                 onMouseEnter={() => setHovered(n.id)}
                 onMouseLeave={() => setHovered(null)}
                 onDoubleClick={() => onOpenUrl(url)}
