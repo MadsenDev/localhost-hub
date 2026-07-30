@@ -86,9 +86,10 @@ directory, written by `src-tauri/src/config.rs`:
 The GitHub access token and any variable marked secret are held in the operating
 system credential store rather than that file — see `src-tauri/src/secrets.rs`.
 
-> [!NOTE]
-> Run history, logs, and process state are **not** persisted. Everything about what ran
-> is lost when the app closes.
+Run history lives alongside it, under `history/`: a bounded index of past runs plus one
+append-only log per run. See the **Run history** view. Live process state is
+deliberately not persisted — the process table is in memory, so runs still marked
+running at startup are reported as interrupted rather than presented as live.
 
 ---
 

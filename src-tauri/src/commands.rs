@@ -57,6 +57,36 @@ pub fn secret_storage_backend() -> crate::secrets::SecretBackend {
     crate::secrets::backend()
 }
 
+// ── Run history ───────────────────────────────────────────────────────────────
+
+fn history_for(app: &AppHandle) -> Result<crate::history::History, String> {
+    let dir = tauri::Manager::path(app)
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    Ok(crate::history::History::new(&dir))
+}
+
+/// Past runs, newest first.
+#[tauri::command]
+pub fn list_run_history(app: AppHandle) -> Result<Vec<crate::history::RunRecord>, String> {
+    Ok(history_for(&app)?.list())
+}
+
+/// The stored output of one past run, at most `limit` lines from its tail.
+#[tauri::command]
+pub fn read_run_log(
+    app: AppHandle,
+    run_id: String,
+    limit: Option<usize>,
+) -> Result<crate::history::RunLog, String> {
+    history_for(&app)?.read_log(&run_id, limit.unwrap_or(2000))
+}
+
+#[tauri::command]
+pub fn clear_run_history(app: AppHandle) -> Result<(), String> {
+    history_for(&app)?.clear()
+}
+
 // ── GitHub OAuth (device flow) ────────────────────────────────────────────────
 
 #[tauri::command]

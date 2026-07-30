@@ -9,6 +9,7 @@ mod services;
 mod scaffold;
 mod secrets;
 mod health;
+mod history;
 mod packages;
 mod env_files;
 
@@ -23,6 +24,35 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // Run history needs the application data directory, which is only
+            // resolvable once the app is built.
+            match app.path().app_data_dir() {
+                Ok(dir) => {
+                    let history = history::History::new(&dir);
+                    // Anything still marked running belongs to a previous
+                    // session; the process table is in memory and did not
+                    // survive. Resolve those before the interface reads them.
+                    let interrupted = history.reconcile_interrupted_runs(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|value| value.as_millis())
+                            .unwrap_or(0),
+                    );
+                    if !interrupted.is_empty() {
+                        log::info!(
+                            "marked {} run(s) as interrupted from a previous session",
+                            interrupted.len()
+                        );
+                    }
+                    app.state::<services::ServiceManager>().attach_history(history);
+                }
+                Err(error) => {
+                    // Recording runs is a convenience; not being able to is not
+                    // a reason to refuse to start.
+                    log::warn!("run history is unavailable: {error}");
+                }
+            }
+
             let win = app.get_webview_window("main").unwrap();
             #[cfg(debug_assertions)]
             win.open_devtools();
@@ -68,6 +98,9 @@ pub fn run() {
             commands::get_system_stats,
             commands::load_config,
             commands::secret_storage_backend,
+            commands::list_run_history,
+            commands::read_run_log,
+            commands::clear_run_history,
             commands::save_config,
             commands::github_request_device_code,
             commands::github_poll_token,
