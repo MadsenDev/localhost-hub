@@ -30,6 +30,11 @@ The blocking problems are not in the Rust. They are in the **migration's integri
 Neither is hard to fix, but until they are, "verify feature parity before removing
 Electron" (UNIFICATION.md stage 10) is not an executable plan.
 
+> **Status: C1 and C2 were fixed in this branch.** See the *Resolution* notes under
+> each. Fixing C1 also surfaced a third defect that neither the audit nor CI could
+> have caught — `tsconfig.app.json` was typechecking only the top level of `src/`
+> (**F1** below). The findings are left in their original form for the record.
+
 ### Release-readiness verdict
 
 | Line | Status |
@@ -41,7 +46,7 @@ Electron" (UNIFICATION.md stage 10) is not an executable plan.
 
 | Check | Result |
 | --- | --- |
-| `npx tsc -p tsconfig.app.json --noEmit` | **Pass**, 0 errors |
+| `npx tsc -p tsconfig.app.json --noEmit` | **Pass**, 0 errors — but see **F1**: the config only covered the top level of `src/`, so this result was far narrower than it appears |
 | `npx vitest run` | **Pass**, 41/41 tests, 15 files, 6.6 s |
 | `npm run check:version` | **Pass**, `0.9.0-alpha.0` synchronized across all 5 manifests |
 | `cargo test --manifest-path src-tauri/Cargo.toml` | **Not run** — audit container lacks GTK (`gdk-3.0`) system libraries. Environment limitation, not a repo defect. CI installs these and does run it. 53 Rust tests counted statically. |
@@ -123,6 +128,29 @@ LOC) remain live-looking but unreachable from any UI.
 
 The second is likely the honest choice — but it should be a decision, not a drift.
 
+**Resolution (this branch): preserved the reference.** The Electron app shell had not
+been rewritten into the Tauri `App.tsx` — it was *replaced*, and the original was
+still in history at `0e4fd9f:src/App.tsx` (the last commit before
+`3a2cfc7 Begin Tauri unification`). It was recovered rather than reconstructed, so
+the reference is the real prior behavior and not an approximation:
+
+- `src/ElectronApp.tsx` — the recovered shell (1,855 lines), default export renamed
+  from `App` to `ElectronApp` to keep the two roots distinguishable.
+- `src/main.electron.tsx`, `index.electron.html` — a second entry mounting it.
+- `vite.config.ts` — electron mode builds `index.electron.html` as its input; the
+  Tauri build is untouched.
+- `electron/main.ts` — loads `index.electron.html` in both dev and packaged paths.
+
+One genuine bug surfaced in the recovered code: it read `plugin.launch.projectAction`,
+but the manifest type had since become `projectActions?: PluginProjectAction[]`. The
+shell was adapted to the current type. This is exactly the drift that having no
+runnable reference allows to accumulate.
+
+Verified: the two bundles are cleanly separated — the Electron bundle has 30
+`electronAPI` references and 0 Tauri internals; the Tauri bundle is the reverse (0
+and 7). Both dev entries resolve (`/` → `src/main.tsx`, `/index.electron.html` →
+`src/main.electron.tsx`).
+
 ### C2 — `invoke()` violates its own type signatures and crashes the app
 
 `src/tauri-api.ts:15-22`:
@@ -173,6 +201,57 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 and let TypeScript surface the call sites that need handling. The second is more
 work but converts a runtime crash class into compile-time errors. Add a test that
 renders `App` with `isTauri === false`.
+
+**Resolution (this branch):** the single `invoke` was split by how each command can
+*honestly* degrade, so no signature lies any more:
+
+- **`query<T>(cmd, args, fallback)`** — the 11 reads that the polling and startup
+  paths depend on. Each supplies a type-correct empty value (arrays → `[]`,
+  `getSystemStats` → a zeroed `SystemStats`, `getGitStatus` → `null`, which its
+  signature already permitted). Browser dev mode now renders an empty state instead
+  of crashing.
+- **`action<T>(cmd, args)`** — the other 29: mutations, plus one-shot reads with no
+  meaningful empty value. These **reject** with
+  `"Localhost Hub's native backend is unavailable outside the desktop app (<cmd>)"`,
+  so a caller cannot mistake a missing backend for success.
+
+All four affected one-shot-read call sites already had `try`/`catch` or `.catch()`
+that surface `error.message` to the UI, so rejection is handled. Notably
+`packages-panel.tsx:37` carried a hand-written
+`if (!packages) throw new Error('Package inspection is available in the desktop app.')`
+— a workaround for exactly this bug, now redundant.
+
+Regression coverage added in `src/__tests__/TauriApiFallbacks.test.ts` (6 tests),
+including one that reproduces the original crash path and asserts it no longer
+throws.
+
+### F1 — `tsconfig.app.json` typechecked only the top level of `src/`
+
+Surfaced while fixing C1, and not visible to the original audit: the config's
+`include` was
+
+```json
+"include": ["src/*.ts", "src/*.tsx", "src/assets"]
+```
+
+`src/*.tsx` is **not recursive**. TypeScript additionally pulls in whatever those
+files import — and because nothing at the top level imported the Electron UI (C1),
+`src/components/**`, `src/hooks/**`, `src/plugins/**`, and `src/utils/**` were
+**never typechecked at all**. That is ~9,800 lines outside the compiler's reach, and
+it is why the "typecheck passes, 0 errors" result above was much weaker than it read.
+
+The tree had silently accumulated 11 type errors — 10 in `LoadingScreen.tsx` (unannotated
+`Variants` locals widening `ease: 'easeInOut'` to `string`) plus the
+`projectAction`/`projectActions` drift in the recovered shell. Adding the Electron
+entry point pulled them all in at once.
+
+Both defects compound: dead code is not typechecked, so it rots; and because it rots,
+reviving it looks harder than it is.
+
+**Fixed:** `include` is now `["src/**/*.ts", "src/**/*.tsx", "src/assets"]` and the
+full tree — application code and tests — typechecks clean. Worth keeping recursive
+even if C1 is later resolved by deleting Electron, so the next unreferenced module
+cannot drift out of the compiler's view.
 
 ---
 

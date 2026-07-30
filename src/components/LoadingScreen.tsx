@@ -1,13 +1,13 @@
-import { motion } from 'framer-motion';
+import { motion, type Variants } from 'framer-motion';
 
 export function LoadingScreen() {
-  const containerVariants = {
+  const containerVariants: Variants = {
     initial: { opacity: 0 },
     animate: { opacity: 1 },
     exit: { opacity: 0 }
   };
 
-  const logoVariants = {
+  const logoVariants: Variants = {
     initial: { scale: 0.8, opacity: 0 },
     animate: {
       scale: 1,
@@ -20,7 +20,7 @@ export function LoadingScreen() {
   };
 
   // Circle pulse animation - more pronounced
-  const circlePulse = {
+  const circlePulse: Variants = {
     animate: {
       scale: [1, 1.4, 1],
       transition: {
@@ -32,7 +32,7 @@ export function LoadingScreen() {
   };
 
   // Staggered circle animations - more pronounced
-  const circleVariants = (delay: number) => ({
+  const circleVariants = (delay: number): Variants => ({
     animate: {
       scale: [1, 1.3, 1],
       transition: {
@@ -45,7 +45,7 @@ export function LoadingScreen() {
   });
 
   // Path drawing animation for the main ring - more pronounced
-  const pathVariants = {
+  const pathVariants: Variants = {
     initial: { pathLength: 0, opacity: 0 },
     animate: {
       pathLength: [0, 1, 0, 1],
@@ -57,7 +57,7 @@ export function LoadingScreen() {
     }
   };
 
-  const textVariants = {
+  const textVariants: Variants = {
     initial: { opacity: 0, y: 20 },
     animate: {
       opacity: 1,
@@ -70,7 +70,7 @@ export function LoadingScreen() {
     }
   };
 
-  const dotsVariants = {
+  const dotsVariants: Variants = {
     animate: {
       transition: {
         staggerChildren: 0.2,
@@ -79,7 +79,7 @@ export function LoadingScreen() {
     }
   };
 
-  const dotVariants = {
+  const dotVariants: Variants = {
     animate: {
       y: [0, -10, 0],
       opacity: [0.3, 1, 0.3],

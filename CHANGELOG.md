@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Restored the Electron parity reference so it can actually be run. The Electron UI
+  had no entry point: `index.html` was the only one and it mounts the Tauri
+  application, so both `npm run dev:electron` and the packaged Electron build
+  rendered the Tauri interface against a backend that was not there. The original
+  Electron shell was recovered from history and is now mounted by
+  `index.electron.html` → `src/main.electron.tsx` → `src/ElectronApp.tsx`, with the
+  Electron build and main process pointed at that entry.
+- Stopped the Tauri command wrapper from resolving `null` in violation of its own
+  type signatures. Read commands used by the polling and startup paths now return
+  type-correct empty values, and commands that cannot be completed without the
+  native backend reject with an explicit error instead of appearing to succeed.
+  Previously every call resolved `null` outside Tauri, which crashed the first
+  refresh tick in browser development.
+- Corrected `tsconfig.app.json` to typecheck the whole `src/` tree. The `include`
+  patterns were not recursive, so `src/components`, `src/hooks`, `src/plugins`, and
+  `src/utils` were never checked; the resulting type errors are fixed.
+
 ### Added
 
 - Added the animated Localhost Hub brand lockup to first-run onboarding, with a reduced-motion fallback.

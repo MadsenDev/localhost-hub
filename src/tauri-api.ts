@@ -1,8 +1,16 @@
 /**
- * Thin wrapper around Tauri invoke calls with browser fallbacks.
+ * Thin wrapper around Tauri invoke calls.
  * Import and call these instead of directly using @tauri-apps/api.
- * In a browser (vite dev without tauri), all calls return empty/null
- * so the app works in both environments.
+ *
+ * Outside Tauri (plain `vite` dev in a browser, or the Electron shell) there is
+ * no native backend. Commands are split by how they can honestly degrade:
+ *
+ * - `query` — reads that the polling and startup paths depend on. These return a
+ *   type-correct empty value so the interface renders an empty state instead of
+ *   crashing. Never returns null for a non-nullable type.
+ * - `action` — mutations, and one-shot reads with no meaningful empty value.
+ *   These reject, so the caller surfaces a real error rather than silently
+ *   appearing to succeed.
  */
 import type { GitCommitResult, GitDiff, GitNetworkResult, GitRepositoryInfo, GitStatus } from "./types";
 
@@ -12,13 +20,32 @@ const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
 
 let _invoke: InvokeFn | null = null;
 
-async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isTauri) return Promise.resolve(null as T);
+async function rawInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!_invoke) {
     const mod = await import("@tauri-apps/api/core");
     _invoke = mod.invoke as InvokeFn;
   }
   return _invoke<T>(cmd, args);
+}
+
+/** Read-only command with a type-correct fallback when no backend is present. */
+async function query<T>(
+  cmd: string,
+  args: Record<string, unknown> | undefined,
+  fallback: T,
+): Promise<T> {
+  if (!isTauri) return fallback;
+  return rawInvoke<T>(cmd, args);
+}
+
+/** Command that cannot be faked without a backend, so it rejects instead. */
+async function action<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  if (!isTauri) {
+    throw new Error(
+      `Localhost Hub's native backend is unavailable outside the desktop app (${cmd}).`,
+    );
+  }
+  return rawInvoke<T>(cmd, args);
 }
 
 // ── Types mirroring Rust structs ──────────────────────────────────────────────
@@ -300,14 +327,14 @@ export interface PackageActionResult {
 // ── Commands ──────────────────────────────────────────────────────────────────
 
 export const tauriApi = {
-  scanPorts: () => invoke<LivePort[]>("scan_ports"),
+  scanPorts: () => query<LivePort[]>("scan_ports", undefined, []),
 
   checkPortConflicts: (expectedPorts: number[]) =>
-    invoke<LivePort[]>("check_port_conflicts", { expectedPorts }),
+    query<LivePort[]>("check_port_conflicts", { expectedPorts }, []),
 
-  getProcesses: () => invoke<ProcessInfo[]>("get_processes"),
+  getProcesses: () => query<ProcessInfo[]>("get_processes", undefined, []),
 
-  killProcess: (pid: number) => invoke<void>("kill_process", { pid }),
+  killProcess: (pid: number) => action<void>("kill_process", { pid }),
 
   startService: (
     serviceId: string,
@@ -316,7 +343,7 @@ export const tauriApi = {
     environment: ServiceEnvironment,
     expectedPorts: number[],
     allowPortConflicts = false,
-  ) => invoke<number>("start_service", {
+  ) => action<number>("start_service", {
     serviceId,
     cwd,
     cmd,
@@ -326,104 +353,109 @@ export const tauriApi = {
   }),
 
   stopManagedService: (serviceId: string) =>
-    invoke<void>("stop_service", { serviceId }),
+    action<void>("stop_service", { serviceId }),
 
   restartManagedService: (serviceId: string) =>
-    invoke<number>("restart_service", { serviceId }),
+    action<number>("restart_service", { serviceId }),
 
   listManagedServices: () =>
-    invoke<ManagedServiceInfo[]>("list_managed_services"),
+    query<ManagedServiceInfo[]>("list_managed_services", undefined, []),
 
   startWorkspace: (workspaceId: string, workspaceServices: WorkspaceServiceSpec[]) =>
-    invoke<WorkspaceRunResult>("start_workspace", { workspaceId, workspaceServices }),
+    action<WorkspaceRunResult>("start_workspace", { workspaceId, workspaceServices }),
 
   stopWorkspace: (workspaceId: string, workspaceServices: WorkspaceStopSpec[]) =>
-    invoke<WorkspaceRunResult>("stop_workspace", { workspaceId, workspaceServices }),
+    action<WorkspaceRunResult>("stop_workspace", { workspaceId, workspaceServices }),
 
-  getSystemStats: () => invoke<SystemStats>("get_system_stats"),
+  getSystemStats: () => query<SystemStats>("get_system_stats", undefined, {
+    cpu_usage: 0,
+    memory_used_mb: 0,
+    memory_total_mb: 0,
+    load_avg: [0, 0, 0],
+  }),
 
-  getGitStatus: (path: string) => invoke<GitStatus | null>("get_git_status", { path }),
+  getGitStatus: (path: string) => query<GitStatus | null>("get_git_status", { path }, null),
 
   getGitDiff: (path: string, filePath: string | null, staged: boolean) =>
-    invoke<GitDiff>("get_git_diff", { path, filePath, staged }),
+    action<GitDiff>("get_git_diff", { path, filePath, staged }),
 
   stageGitFiles: (path: string, files: string[]) =>
-    invoke<GitStatus>("stage_git_files", { path, files }),
+    action<GitStatus>("stage_git_files", { path, files }),
 
   unstageGitFiles: (path: string, files: string[]) =>
-    invoke<GitStatus>("unstage_git_files", { path, files }),
+    action<GitStatus>("unstage_git_files", { path, files }),
 
   commitGitChanges: (path: string, message: string) =>
-    invoke<GitCommitResult>("commit_git_changes", { path, message }),
+    action<GitCommitResult>("commit_git_changes", { path, message }),
 
   getGitRepositoryInfo: (path: string, historyLimit = 30) =>
-    invoke<GitRepositoryInfo>("get_git_repository_info", { path, historyLimit }),
+    action<GitRepositoryInfo>("get_git_repository_info", { path, historyLimit }),
 
   createGitBranch: (path: string, name: string) =>
-    invoke<GitStatus>("create_git_branch", { path, name }),
+    action<GitStatus>("create_git_branch", { path, name }),
 
   checkoutGitBranch: (path: string, name: string) =>
-    invoke<GitStatus>("checkout_git_branch", { path, name }),
+    action<GitStatus>("checkout_git_branch", { path, name }),
 
   deleteGitBranch: (path: string, name: string) =>
-    invoke<void>("delete_git_branch", { path, name }),
+    action<void>("delete_git_branch", { path, name }),
 
   addGitRemote: (path: string, name: string, url: string) =>
-    invoke<GitRepositoryInfo>("add_git_remote", { path, name, url }),
+    action<GitRepositoryInfo>("add_git_remote", { path, name, url }),
 
   renameGitRemote: (path: string, currentName: string, newName: string) =>
-    invoke<GitRepositoryInfo>("rename_git_remote", { path, currentName, newName }),
+    action<GitRepositoryInfo>("rename_git_remote", { path, currentName, newName }),
 
   removeGitRemote: (path: string, name: string) =>
-    invoke<GitRepositoryInfo>("remove_git_remote", { path, name }),
+    action<GitRepositoryInfo>("remove_git_remote", { path, name }),
 
   fetchGitRemote: (path: string, remote: string) =>
-    invoke<GitNetworkResult>("fetch_git_remote", { path, remote }),
+    action<GitNetworkResult>("fetch_git_remote", { path, remote }),
 
   pullGitRemote: (path: string, remote: string) =>
-    invoke<GitNetworkResult>("pull_git_remote", { path, remote }),
+    action<GitNetworkResult>("pull_git_remote", { path, remote }),
 
   pushGitRemote: (path: string, remote: string) =>
-    invoke<GitNetworkResult>("push_git_remote", { path, remote }),
+    action<GitNetworkResult>("push_git_remote", { path, remote }),
 
-  listGitHubRepos: () => invoke<GitHubRepo[]>("github_list_repos"),
+  listGitHubRepos: () => query<GitHubRepo[]>("github_list_repos", undefined, []),
 
   getGitHubProjectContext: (path: string) =>
-    invoke<GitHubProjectContext>("github_get_project_context", { path }),
+    action<GitHubProjectContext>("github_get_project_context", { path }),
 
   openGitHubUrl: (url: string) =>
-    invoke<void>("open_github_url", { url }),
+    action<void>("open_github_url", { url }),
 
   scanWorkspaces: (root: string, maxDepth?: number, ignorePatterns?: string[]) =>
-    invoke<DetectedProject[]>("scan_workspaces", { root, maxDepth, ignorePatterns }),
+    query<DetectedProject[]>("scan_workspaces", { root, maxDepth, ignorePatterns }, []),
 
   scanWorkspaceGroups: (roots: string[], maxDepth?: number, ignorePatterns?: string[]) =>
-    invoke<WorkspaceGroup[]>("scan_workspace_groups", { roots, maxDepth, ignorePatterns }),
+    query<WorkspaceGroup[]>("scan_workspace_groups", { roots, maxDepth, ignorePatterns }, []),
 
   findDefaultWorkspaceRoots: () =>
-    invoke<string[]>("find_default_workspace_roots"),
+    query<string[]>("find_default_workspace_roots", undefined, []),
 
   createProject: (payload: CreateProjectPayload) =>
-    invoke<CreateProjectResult>("create_project", { payload }),
+    action<CreateProjectResult>("create_project", { payload }),
 
   analyzeRepositoryHealth: (paths: string[]) =>
-    invoke<RepositoryHealth[]>("analyze_repository_health", { paths }),
+    query<RepositoryHealth[]>("analyze_repository_health", { paths }, []),
 
   getProjectPackages: (path: string) =>
-    invoke<ProjectPackages>("get_project_packages", { path }),
+    action<ProjectPackages>("get_project_packages", { path }),
 
   runPackageAction: (payload: PackageActionPayload) =>
-    invoke<PackageActionResult>("run_package_action", { payload }),
+    action<PackageActionResult>("run_package_action", { payload }),
 
-  openInEditor: (path: string) => invoke<void>("open_in_editor", { path }),
+  openInEditor: (path: string) => action<void>("open_in_editor", { path }),
 
-  openUrl: (url: string) => invoke<void>("open_url", { url }),
+  openUrl: (url: string) => action<void>("open_url", { url }),
 
   importEnvFile: (path: string) =>
-    invoke<EnvFileImport>("import_env_file", { path }),
+    action<EnvFileImport>("import_env_file", { path }),
 
   exportEnvFile: (path: string, variables: EnvFileVariable[]) =>
-    invoke<void>("export_env_file", { path, variables }),
+    action<void>("export_env_file", { path, variables }),
 };
 
 export async function listenToServiceEvents(handler: (event: ServiceEvent) => void): Promise<() => void> {

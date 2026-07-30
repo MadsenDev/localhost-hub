@@ -339,13 +339,16 @@ function createWindow() {
     }
   });
 
+  // Electron renders the parity-reference UI (index.electron.html), not the
+  // Tauri entry. Both are built from the same src/ tree but mount different
+  // roots: ElectronApp talks to window.electronAPI, App talks to Tauri invoke.
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
-    window.loadURL(devServerUrl);
+    window.loadURL(new URL('index.electron.html', devServerUrl).toString());
     window.webContents.openDevTools({ mode: 'detach' });
   } else {
-    const rendererPath = join(__dirname, '../renderer/index.html');
-    const distRendererPath = join(__dirname, '../dist/renderer/index.html');
+    const rendererPath = join(__dirname, '../renderer/index.electron.html');
+    const distRendererPath = join(__dirname, '../dist/renderer/index.electron.html');
     const loadPath = existsSync(rendererPath) ? rendererPath : distRendererPath;
     window.loadFile(loadPath);
   }
