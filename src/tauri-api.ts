@@ -112,6 +112,7 @@ export interface WorkspaceServiceSpec {
   service_id: string;
   cwd: string;
   cmd: string;
+  depends_on: string[];
   run_mode: "parallel" | "sequential";
   order: number;
   environment: ServiceEnvironment;
@@ -139,6 +140,7 @@ export interface WorkspaceRunResult {
   not_running: string[];
   failed: Array<{ service_id: string; error: string }>;
   warnings: Array<{ service_id: string; warning: string }>;
+  blocked: Array<{ service_id: string; reason: string }>;
 }
 
 export interface GitHubRepo {

@@ -21,6 +21,7 @@ export interface StoredService {
   repo_path: string;
   script: string;
   cmd: string;
+  depends_on?: string[];
   run_mode?: 'parallel' | 'sequential';
   order?: number;
   env_profile_id?: string | null;

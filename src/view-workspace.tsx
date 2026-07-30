@@ -27,6 +27,7 @@ interface WorkspaceViewProps {
       expected_port?: number | null;
       startup_delay_ms?: number;
       readiness_timeout_ms?: number;
+      depends_on?: string[];
     },
   ) => void;
   onAddService: () => void;
@@ -241,54 +242,83 @@ export function WorkspaceView({
                         .filter(profile => profile.project_path === s.repo_path)
                         .map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
                     </select>
-                    {s.run_mode === 'sequential' && (
-                      <>
-                        <label
-                          title="Wait before launching this service"
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--fg-4)', fontSize: 10 }}
+                    {w.services.length > 1 && (
+                      <details className="dependency-picker">
+                        <summary
+                          className="btn sm ghost"
+                          title="Select services that must start and become ready before this service"
                         >
-                          Delay
-                          <input
-                            className="input mono"
-                            aria-label={`${s.name} startup delay seconds`}
-                            inputMode="numeric"
-                            value={Math.round((s.startup_delay_ms ?? 0) / 1000)}
-                            onChange={event => {
-                              const seconds = Number(event.target.value);
-                              onUpdateService(w.id, s.id, {
-                                startup_delay_ms: Number.isInteger(seconds) && seconds >= 0 && seconds <= 120
-                                  ? seconds * 1000
-                                  : 0,
-                              });
-                            }}
-                            style={{ width: 45, height: 26, fontSize: 10.5 }}
-                          />
-                          s
-                        </label>
-                        <label
-                          title="Wait for all expected ports before starting the next sequential service; zero disables readiness waiting"
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--fg-4)', fontSize: 10 }}
-                        >
-                          Ready
-                          <input
-                            className="input mono"
-                            aria-label={`${s.name} readiness timeout seconds`}
-                            inputMode="numeric"
-                            value={Math.round((s.readiness_timeout_ms ?? 0) / 1000)}
-                            onChange={event => {
-                              const seconds = Number(event.target.value);
-                              onUpdateService(w.id, s.id, {
-                                readiness_timeout_ms: Number.isInteger(seconds) && seconds >= 0 && seconds <= 300
-                                  ? seconds * 1000
-                                  : 0,
-                              });
-                            }}
-                            style={{ width: 45, height: 26, fontSize: 10.5 }}
-                          />
-                          s
-                        </label>
-                      </>
+                          Depends{(s.depends_on ?? []).length > 0 ? ` (${s.depends_on!.length})` : ''}
+                        </summary>
+                        <div className="dependency-menu" aria-label={`${s.name} dependencies`}>
+                          {w.services
+                            .filter(candidate => candidate.id !== s.id)
+                            .map(candidate => (
+                              <label key={candidate.id}>
+                                <input
+                                  type="checkbox"
+                                  checked={(s.depends_on ?? []).includes(candidate.id)}
+                                  onChange={event => {
+                                    const dependencies = new Set(s.depends_on ?? []);
+                                    if (event.target.checked) dependencies.add(candidate.id);
+                                    else dependencies.delete(candidate.id);
+                                    onUpdateService(w.id, s.id, {
+                                      depends_on: w.services
+                                        .filter(service => dependencies.has(service.id))
+                                        .map(service => service.id),
+                                    });
+                                  }}
+                                />
+                                {candidate.name}
+                              </label>
+                            ))}
+                        </div>
+                      </details>
                     )}
+                    <label
+                      title="Wait before launching this service"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--fg-4)', fontSize: 10 }}
+                    >
+                      Delay
+                      <input
+                        className="input mono"
+                        aria-label={`${s.name} startup delay seconds`}
+                        inputMode="numeric"
+                        value={Math.round((s.startup_delay_ms ?? 0) / 1000)}
+                        onChange={event => {
+                          const seconds = Number(event.target.value);
+                          onUpdateService(w.id, s.id, {
+                            startup_delay_ms: Number.isInteger(seconds) && seconds >= 0 && seconds <= 120
+                              ? seconds * 1000
+                              : 0,
+                          });
+                        }}
+                        style={{ width: 45, height: 26, fontSize: 10.5 }}
+                      />
+                      s
+                    </label>
+                    <label
+                      title="Wait for all expected ports before unlocking dependent services; zero disables readiness waiting"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--fg-4)', fontSize: 10 }}
+                    >
+                      Ready
+                      <input
+                        className="input mono"
+                        aria-label={`${s.name} readiness timeout seconds`}
+                        inputMode="numeric"
+                        value={Math.round((s.readiness_timeout_ms ?? 0) / 1000)}
+                        onChange={event => {
+                          const seconds = Number(event.target.value);
+                          onUpdateService(w.id, s.id, {
+                            readiness_timeout_ms: Number.isInteger(seconds) && seconds >= 0 && seconds <= 300
+                              ? seconds * 1000
+                              : 0,
+                          });
+                        }}
+                        style={{ width: 45, height: 26, fontSize: 10.5 }}
+                      />
+                      s
+                    </label>
                   </div>
                 </div>
                 <div className="svc-port">
