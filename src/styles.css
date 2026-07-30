@@ -2271,6 +2271,7 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
   display: grid;
   gap: 7px;
   min-width: 0;
+  align-content: start;
 }
 .settings-field label {
   color: var(--fg-3);
@@ -2291,11 +2292,19 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
 .settings-field > div > label { margin-bottom: 5px; }
 .settings-segmented {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Sized from however many options it is given rather than a hardcoded three,
+     which left a two-option control — "On window close" — with a dead third
+     column. */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   padding: 2px;
   border-radius: var(--r-2);
   background: var(--bg-inset);
   border: 1px solid var(--line-1);
+  /* Stops the control stretching to the height of whatever shares its grid row.
+     Beside a paragraph of explanation it grew to nearly twice the height of the
+     identical controls above it. */
+  align-self: start;
 }
 .settings-segmented button {
   appearance: none;

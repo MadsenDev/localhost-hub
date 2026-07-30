@@ -80,7 +80,8 @@ Uncommitted work that has been sitting too long, unpushed commits, branches nobo
 - **Packages** — dependency inspection, audit, and outdated checks across npm, pnpm, yarn, and Bun.
 - **New project** — a scaffolder for a starter with the scripts, dependencies, and styling you actually want.
 - **Environment profiles** — named sets of variables per project, applied per service, with secret values held in your operating system's credential store rather than a file.
-- **Close to the tray** — optionally keep supervised services running when you close the window, and reopen from the tray icon.
+- **Close to the tray** — optionally keep supervised services running when you close the window, and reopen from the tray icon. Quitting stops everything it started.
+- **Start at login** — optionally launch straight to the tray, for when something other than the window needs Hub running: a workspace booted before you sit down, or a remote such as [Localhost Companion](docs/LOCALHOST_COMPANION.md).
 
 ![The Settings view: workspace folders, appearance, and window behaviour](./docs/screenshots/settings.png)
 
@@ -131,6 +132,8 @@ src-tauri/src/                The backend
   health.rs                   Repository health signals
   config.rs / secrets.rs      Persistence; credential store
   history.rs                  Run history and stored output
+  tray.rs / autostart.rs      System tray; the login item
+  lifetime.rs                 Whether Hub stays running with no window
 ```
 
 **The boundary is checked by the compiler.** Every type crossing it is generated from the Rust struct by [ts-rs](https://github.com/Aleph-Alpha/ts-rs), so renaming a Rust field breaks the build at each call site that reads it instead of surfacing as an `undefined` at runtime. Continuous integration fails if the committed bindings drift from the Rust definitions.
@@ -145,7 +148,8 @@ Everything sits under your platform's application data directory — `~/.local/s
 
 | Path | Holds |
 | --- | --- |
-| `config.json` | Scan folders, workspaces, environment profiles, appearance, window behaviour |
+| `config.json` | Scan folders, workspaces, environment profiles, appearance, window behaviour, start-at-login intent |
+| OS login item | A `.desktop` entry, launch agent or registry value, owned by the OS rather than by Hub |
 | `history/runs.json` | The last 200 runs, with timing and outcome |
 | `history/logs/*.log` | One append-only log per run, capped at 2 MiB |
 | OS credential store | The GitHub token and any variable marked secret |

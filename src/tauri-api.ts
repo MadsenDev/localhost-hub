@@ -224,6 +224,15 @@ export const tauriApi = {
   secretStorageBackend: () =>
     query<SecretBackend>("secret_storage_backend", undefined, "file"),
 
+  // Read from the operating system, not from the saved preference: a login item
+  // can be removed outside Localhost Hub, so the stored value records intent
+  // rather than state. Both of these return what the OS reports afterwards, so a
+  // refusal shows as the toggle not moving.
+  getStartAtLogin: () => query<boolean>("get_start_at_login", undefined, false),
+
+  setStartAtLogin: (enabled: boolean) =>
+    action<boolean>("set_start_at_login", { enabled }),
+
   listRunHistory: () => query<RunRecord[]>("list_run_history", undefined, []),
 
   readRunLog: (runId: string, limit?: number) =>

@@ -162,6 +162,14 @@ impl EventSink for TauriEventSink {
     }
 }
 
+/// Drops events. Used while shutting down, where there is no interface left to
+/// deliver them to.
+struct NoopEventSink;
+
+impl EventSink for NoopEventSink {
+    fn emit(&self, _event: ServiceEvent) {}
+}
+
 impl ServiceManager {
     // The parameter list mirrors the start_service IPC payload; grouping it into
     // a struct would only move the same fields behind another name.
@@ -229,6 +237,39 @@ impl ServiceManager {
             service_id,
             true,
         )
+    }
+
+    /// Stops every supervised service, for use when Localhost Hub is exiting.
+    ///
+    /// Without this, exiting orphaned everything Hub had started: the child
+    /// processes were reparented to init and carried on serving, so ports stayed
+    /// bound with nothing supervising them, and the next launch marked those runs
+    /// interrupted while they were in fact still alive. Verified by closing Hub
+    /// with three servers running — all three still answered on their ports
+    /// afterwards.
+    ///
+    /// Returns the ids it stopped. Errors are collected per service rather than
+    /// aborting: a service that refuses to die must not prevent the rest from
+    /// being cleaned up, and by this point the process is leaving anyway.
+    ///
+    /// Emits nothing, because there is no interface left to receive it.
+    pub fn stop_all(&self) -> Vec<String> {
+        let ids: Vec<String> = match self.children.lock() {
+            Ok(children) => children.keys().cloned().collect(),
+            Err(error) => {
+                log::warn!("could not enumerate supervised services to stop: {error}");
+                return Vec::new();
+            }
+        };
+        let sink: Arc<dyn EventSink> = Arc::new(NoopEventSink);
+        let mut stopped = Vec::new();
+        for service_id in ids {
+            match self.stop_with_sink(sink.clone(), service_id.clone(), false) {
+                Ok(()) => stopped.push(service_id),
+                Err(error) => log::warn!("could not stop {service_id} while exiting: {error}"),
+            }
+        }
+        stopped
     }
 
     pub fn list(&self) -> Result<Vec<ManagedServiceInfo>, String> {

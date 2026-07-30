@@ -443,3 +443,30 @@ pub fn import_env_file(path: String) -> Result<EnvFileImport, String> {
 pub fn export_env_file(path: String, variables: Vec<EnvFileVariable>) -> Result<(), String> {
     write_env_file(path, variables)
 }
+
+// ── Start at login ────────────────────────────────────────────────────────────
+
+/// Whether a login item is registered, read from the operating system rather
+/// than from the stored preference, which can go stale if the user removes the
+/// entry outside Localhost Hub.
+#[tauri::command]
+pub fn get_start_at_login(app: AppHandle) -> bool {
+    crate::autostart::is_enabled(&app)
+}
+
+/// Registers or removes the login item and records the intent in the config.
+///
+/// Returns the state read back from the operating system, so a refusal shows up
+/// as the toggle not moving rather than as an interface that disagrees with the
+/// system. The config is only updated to match what actually happened.
+#[tauri::command]
+pub fn set_start_at_login(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    let actual = crate::autostart::set_enabled(&app, enabled)?;
+    if let Ok(Some(mut config)) = crate::config::load(&app) {
+        if config.start_at_login != actual {
+            config.start_at_login = actual;
+            crate::config::save(&app, &config)?;
+        }
+    }
+    Ok(actual)
+}
