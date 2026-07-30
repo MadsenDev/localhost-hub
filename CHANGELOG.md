@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Moved the GitHub access token and every environment variable marked secret out of
+  `config.json` and into the operating system credential store: Keychain on macOS,
+  Credential Manager on Windows, and the Secret Service on Linux. A token with
+  repository scope in a plaintext file was readable by any process running as the
+  user, which includes the tooling in every project the application scans. Existing
+  configurations are migrated on first load and the file is rewritten without them.
+  Where no credential store is available, such as a Linux session without a Secret
+  Service provider, the values fall back to a file restricted to the current user
+  account — including a proper access control list on Windows, which the previous
+  code left to inherit from its parent directory — and the settings panel states
+  which of the two is in use rather than implying the credential store always is.
 - Enabled a Content Security Policy for the desktop window, which was previously
   disabled. The policy allows only same-origin scripts and styles, restricts images
   to the application, data URLs, and GitHub avatars, and blocks objects and frames

@@ -33,8 +33,8 @@ Electron" (UNIFICATION.md stage 10) is not an executable plan.
 > **Status: C1, C2, H1, H3, H4, H5, M1 (partly), M3, and M7 were fixed in this
 > branch**, plus three defects the audit could not have seen because no gate covered
 > the code they live in (**F1**, **F2**, **F3** below). Each finding keeps its original
-> text, with a *Resolution* note appended where work landed. Still open: **H2**
-> (secrets at rest), **M2**, **M4**, **M5**, **M6**, **M8**.
+> text, with a *Resolution* note appended where work landed. Still open: **M2**,
+> **M4**, **M5**, **M6**, **M8** — every High-severity finding is now closed.
 
 ### Release-readiness verdict
 
@@ -390,6 +390,44 @@ files — good. But:
 `keyring-rs` (Keychain / DPAPI-backed Credential Manager / libsecret), leaving
 non-sensitive config in JSON. At minimum, restrict the Windows ACL and document that
 `is_secret` is cosmetic.
+
+**Resolution (this branch):** a new `secrets.rs` stores the OAuth token and every
+`is_secret` value in the OS credential store via `keyring` 3.6 — Keychain on macOS,
+Credential Manager on Windows, Secret Service on Linux. `config.json` keeps the
+variable *keys* (not sensitive) and holds an empty string in place of each value.
+
+`config.rs` gained four pieces around this:
+
+- `redacted` — the on-disk form, with the token dropped and secret values blanked.
+- `persist_secrets` / `hydrate_secrets` — write to and read from the store on every
+  save and load, so `commands.rs` still works with `cfg.github_token` unchanged.
+- `migrate_plaintext_secrets` — moves anything an older build left in the file, then
+  `load` rewrites the file without it. An existing stored value wins, so re-reading a
+  stale file cannot clobber a newer token. Migration is reported so the rewrite happens
+  once rather than on every launch.
+- `forget_removed_secrets` — diffs the incoming config against the file to delete
+  values whose variable or profile is gone, so removing a secret in the interface also
+  removes it from the store rather than orphaning it.
+
+**On the fallback.** A credential store is not universal: a headless Linux session
+without gnome-keyring or KWallet has none, and neither do most CI containers. Refusing
+to save a token there would be worse than the status quo, so the module probes once and
+falls back to a file with the tightest permissions the platform allows — mode `0600` on
+Unix, and on Windows an `icacls /inheritance:r` ACL granting only the current user,
+which closes the Windows gap this finding raised. A `secret_storage_backend` command
+reports which backend is live, and the settings panel says so plainly instead of
+implying the credential store is always in use.
+
+**Nine tests**, all against the file backend, since that is the path that must work in
+CI and on headless Linux. The load-bearing one asserts the serialized config contains
+neither the token nor the secret value while keeping non-secret settings intact; the
+others cover round-tripping, permission mode, per-profile key scoping, migration,
+stale-file precedence, sign-out clearing the store, and orphan cleanup.
+
+*Limitation:* the keyring path itself is not exercised here — this environment has no
+Secret Service provider, so `cargo test` runs the fallback. The keyring branch is thin
+(construct an `Entry`, get/set/delete) but it is unverified by execution and wants a
+manual check on each desktop platform before `1.0`.
 
 ### H3 — `sh -lc` undermines `inherit_system: false`
 
