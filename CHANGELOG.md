@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added **Start at login**. Closing to the tray keeps Localhost Hub alive once it is
+  running; this is what gets it running, launching it straight to the tray at login
+  without putting a window on screen. It exists for the cases where something other
+  than the window needs Hub present — a workspace booted before sitting down at the
+  computer, or a remote such as Localhost Companion having a host to reach.
+  - The operating system owns the truth. A login item can be removed in System
+    Settings, Task Manager or a desktop environment's startup panel, entirely outside
+    Hub, so the setting is read back from the OS rather than trusted from the config
+    file. The stored value records intent, and is re-applied at startup if the two
+    have drifted apart. Toggling reports back whatever the OS actually did, so a
+    refusal shows as the control not moving rather than as an interface that disagrees
+    with the system.
+  - Starting at login while closing the window still quits is a half-measure, so
+    Settings says so rather than silently changing the other setting.
+
 - Added a system tray icon and an option to close to it. Localhost Hub supervises
   long-running development servers, so closing the window usually means getting it out
   of the way rather than killing everything it is running. With **On window close** set
@@ -192,6 +207,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   brief, since its product intent and entity model outlived its architecture section.
 
 ### Fixed
+
+- Exiting no longer orphans supervised services. Every child process Localhost Hub had
+  started outlived it: reparented to init, still holding its port, with nothing left to
+  manage it — and the next launch marked those runs interrupted while they were in fact
+  still alive and serving. Confirmed by closing Hub with three servers running, then
+  finding all three still answering HTTP 200 with no Hub process anywhere. Hub started
+  them, so Hub stops them on the way out. Closing to the tray is the option that keeps
+  them running, and it is unaffected.
+
+- Hiding the window now requires a tray that can actually be reached. A successful tray
+  build was taken as proof one existed, but building the icon succeeded on a session
+  with no message bus and no panel at all, so Hub could hide itself somewhere with no
+  window and no icon. On Linux the icon is published over the session bus, so a missing
+  bus now counts as no tray. This is a necessary condition rather than a sufficient one —
+  a bus can exist with nothing hosting the icon — but it rules out the case that
+  actually strands the application.
+
+- Fixed the Settings segmented controls sizing themselves to a hardcoded three options,
+  which left the two-option **On window close** with a dead third column, and stretching
+  to the height of whatever shared their grid row, which made one control nearly twice
+  the height of the identical ones above it.
 
 - Stopped the Sessions view taking the whole application down with it. Its initial state
   read `sessions[0].id`, so with no sessions recorded it threw, and because nothing

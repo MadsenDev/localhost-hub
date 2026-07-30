@@ -229,3 +229,32 @@ Companion implementation begins only after:
 3. Logs/events can be subscribed to without depending on React or Tauri window
    state.
 4. The threat model and device-revocation flow are documented.
+
+## Host Lifetime
+
+Companion is useless without a host to reach, and the desktop originally had no
+way to be one: the window was Hub's whole existence. Two pieces of that are now
+in place.
+
+**Hub can survive its window.** With **On window close** set to keep it in the
+tray, closing hides the window and leaves supervised services running. Quitting
+still means quitting — and now genuinely stops what Hub started, which it did not
+before: exiting used to orphan every child process to init, leaving ports bound
+with nothing supervising them.
+
+**Hub can be running before the user is.** **Start at login** registers an OS
+login item that launches Hub straight to the tray, which is what the "start a
+full workspace before sitting down at the computer" moment above actually
+requires. Hiding on login is refused when no tray is reachable, because a hidden
+Hub with no icon cannot be reached at all.
+
+The decision "should Hub stay running with no window" lives in one place,
+`src-tauri/src/lifetime.rs`. The Companion server adds a clause there — a paired
+device connected is another reason to stay resident — rather than introducing a
+second switch that could silently contradict the first and drop a phone's host.
+
+Still missing, and needed before any of the above matters to a phone: the server
+itself, mDNS advertisement, pairing, device credentials and per-device
+permissions. Note also that the tray-reachability check is a necessary condition
+rather than a sufficient one on Linux — it rules out sessions with no message
+bus, but cannot tell whether a panel is actually hosting the icon.

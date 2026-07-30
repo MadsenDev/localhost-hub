@@ -42,6 +42,7 @@ const defaultConfig = (): AppConfig => ({
   user_workspaces: [],
   env_profiles: [],
   close_to_tray: false,
+  start_at_login: false,
   appearance: {
     theme: 'charcoal',
     accent: '#4a78c4',
@@ -65,14 +66,33 @@ export function SettingsView({
   const [roots, setRoots] = React.useState<string[]>([]);
   const [auth, setAuth] = React.useState<AuthState>(githubUser ? { phase: 'connected', user: githubUser } : { phase: 'idle' });
   const [secretBackend, setSecretBackend] = React.useState<SecretBackend | null>(null);
+  // Held separately from `config` because the operating system owns this, not the
+  // config file: the login item can be removed outside Localhost Hub.
+  const [startAtLogin, setStartAtLogin] = React.useState(false);
+  const [loginItemError, setLoginItemError] = React.useState('');
 
   React.useEffect(() => {
     let cancelled = false;
     tauriApi.secretStorageBackend()
       .then((backend) => { if (!cancelled) setSecretBackend(backend); })
       .catch(() => {});
+    tauriApi.getStartAtLogin()
+      .then((enabled) => { if (!cancelled) setStartAtLogin(enabled); })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  async function applyStartAtLogin(enabled: boolean) {
+    setLoginItemError('');
+    try {
+      // Reflects what the OS reports back, so a refusal leaves the control where
+      // it was rather than showing a state that is not real.
+      setStartAtLogin(await tauriApi.setStartAtLogin(enabled));
+    } catch (reason) {
+      setStartAtLogin(await tauriApi.getStartAtLogin().catch(() => !enabled));
+      setLoginItemError(String(reason).replace(/^Error:\s*/, ''));
+    }
+  }
   const [editingWs, setEditingWs] = React.useState<string | null>(null);
   const [nameInput, setNameInput] = React.useState('');
   const [rootError, setRootError] = React.useState('');
@@ -337,13 +357,40 @@ export function SettingsView({
               ]}
               onChange={(value) => void saveConfig({ close_to_tray: value === 'tray' })}
             />
+            <Segmented
+              label="Start at login"
+              value={startAtLogin ? 'on' : 'off'}
+              options={[
+                { value: 'off', label: 'Off' },
+                { value: 'on', label: 'Start hidden' },
+              ]}
+              onChange={(value) => void applyStartAtLogin(value === 'on')}
+            />
             <div className="settings-field">
               <div>
-                <label>Closing to the tray</label>
+                <label>Running without a window</label>
                 <span>
-                  Keeps supervised services running when the window closes. Reopen from the tray
-                  icon, or quit from its menu.
+                  Keeping Hub in the tray leaves supervised services running when the window
+                  closes; reopen from the tray icon, or quit from its menu. Quitting stops
+                  everything Hub started.
                 </span>
+                <span style={{ display: 'block', marginTop: 6 }}>
+                  Starting at login launches Hub straight to the tray, for when something other
+                  than the window needs it — a workspace booted before you sit down, or a remote
+                  such as Localhost Companion.
+                </span>
+                {startAtLogin && !config?.close_to_tray ? (
+                  <span style={{ display: 'block', marginTop: 6, color: 'var(--warn)' }}>
+                    Hub will start at login, but closing the window still quits it. Set
+                    <strong> On window close</strong> to keep it in the tray for it to stay
+                    running all day.
+                  </span>
+                ) : null}
+                {loginItemError ? (
+                  <span style={{ display: 'block', marginTop: 6, color: 'var(--danger)' }}>
+                    The login item could not be changed: {loginItemError}
+                  </span>
+                ) : null}
               </div>
             </div>
             <div className="settings-field">

@@ -10,4 +10,17 @@ export type AppConfig = { onboarding_complete: boolean, github_token: string | n
  * services keep running. Defaults off: exiting on close is what a window is
  * expected to do until asked otherwise.
  */
-close_to_tray: boolean, };
+close_to_tray: boolean, 
+/**
+ * Start Localhost Hub when the user logs in, hidden to the tray.
+ *
+ * This exists for the cases where something other than the window needs Hub
+ * to be running — starting a workspace before sitting down at the computer,
+ * or a remote such as Localhost Companion having a host to reach. Closing to
+ * the tray keeps Hub alive once launched; this is what launches it.
+ *
+ * Defaults off. Whether the operating system actually honours it is not
+ * stored here: the registration lives with the OS, and `start_at_login` is
+ * read back from there rather than trusted from this file.
+ */
+start_at_login: boolean, };
