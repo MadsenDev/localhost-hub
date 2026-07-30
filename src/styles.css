@@ -214,9 +214,8 @@ html[data-sidebar="wide"] .titlebar:not(.tb-v2) { grid-template-columns: 280px 1
   font-family: var(--font-ui);
   font-weight: 600;
   font-size: 12.5px;
-  letter-spacing: 0.02em;
-}
-.tb-brand-name .v { color: var(--fg-3); font-weight: 500; margin-left: 6px; font-family: var(--font-mono); font-size: 11px; }
+  letter-spacing: 0.02em; white-space: nowrap; }
+.tb-brand-name .v { color: var(--fg-3); font-weight: 500; margin-left: 6px; font-family: var(--font-mono); font-size: 11px; white-space: nowrap; }
 
 /* Workspace context pill — sits just right of the brand */
 .tb-context { display: flex; align-items: center; padding: 0 12px; height: 100%; border-right: 1px solid var(--line-soft); }
@@ -455,10 +454,14 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
   margin-top: auto;
   padding: 10px 14px 4px;
   display: flex; align-items: center; justify-content: space-between;
+  gap: 8px;
   color: var(--fg-4);
   font-family: var(--font-mono);
   font-size: 10.5px;
 }
+/* A prerelease version is long enough to wrap the footer onto two lines. */
+.sb-foot > span:last-child { white-space: nowrap; }
+.sb-foot > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ─── Common atoms ──────────────────────────────────── */
 .panel {

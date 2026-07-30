@@ -81,8 +81,8 @@ export function Sidebar({ view, setView, ws, setWs, workspaces, runningByWs, onC
       ))}
 
       <div className="sb-foot">
-        <span>local · sqlite</span>
-        <span>v2.0.0</span>
+        <span>local-first</span>
+        <span>v{__APP_VERSION__}</span>
       </div>
     </aside>
   );

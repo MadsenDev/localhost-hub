@@ -139,6 +139,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Rewrote the README around what the application actually does, with screenshots taken
+  from a real run against real scanned projects. Removed two pieces of guidance that no
+  longer applied: a Minimize animations setting that went with the Electron interface,
+  and two Chromium environment variables that do nothing under WebKitGTK, replaced with
+  the WebKit equivalents.
+
 - Drove desktop packaging from Releases instead of from pull requests. The previous
   trigger listed the application sources, so publishing installers for all three
   platforms plus an Arch container build ran on very nearly every pull request.
@@ -186,6 +192,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   brief, since its product intent and entity model outlived its architecture section.
 
 ### Fixed
+
+- Corrected version and storage labels in the interface. The title bar and sidebar
+  showed a hardcoded `v2.0`, and the sidebar described local storage as `sqlite`, which
+  left with the Electron implementation. Both now reflect reality: the version comes
+  from `package.json` at build time, so it cannot drift again. Also stopped a
+  prerelease version string from wrapping the title bar and sidebar footer onto two
+  lines.
 
 - Pinned the Rust toolchain so Clippy's `-D warnings` gate is reproducible. Because
   continuous integration tracked the floating stable channel, Rust 1.97 introduced

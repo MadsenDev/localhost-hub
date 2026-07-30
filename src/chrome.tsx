@@ -68,7 +68,7 @@ export function TitleBar({
         <HubLogo size={20} accent="var(--blue)" body="var(--fg-1)" />
         <div className="tb-brand-name">
           Localhost Hub
-          <span className="v">v2.0</span>
+          <span className="v">v{__APP_VERSION__}</span>
         </div>
       </div>
 
