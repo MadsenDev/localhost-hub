@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Enabled a Content Security Policy for the desktop window, which was previously
+  disabled. The policy allows only same-origin scripts and styles, restricts images
+  to the application, data URLs, and GitHub avatars, and blocks objects and frames
+  outright. Inline styles remain permitted because the interface animates through
+  them. Verified by loading the production bundle in a browser with the policy
+  enforced and confirming no violations.
+- Made environment profiles that do not inherit the system environment behave
+  predictably. The service command previously ran through a login shell, which
+  sources the user's profile files and re-exported the environment that clearing it
+  was meant to remove, so what a service saw depended on the user's dotfiles. A
+  non-inheriting profile now runs without the login shell over a documented minimal
+  baseline. The same correction was applied to the Electron script runner, which
+  passed an entirely empty environment and therefore left no `PATH` for the command
+  to resolve against.
+
 ### Changed
 
 - Added ESLint (TypeScript, React Hooks) and wired lint, typechecking, and Clippy
@@ -34,7 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `shell` option, which expects a shell path.
 - Stopped `tsc -p tsconfig.json` from emitting JavaScript beside every source file
   by marking that project typecheck-only.
-
 - Restored the Electron parity reference so it can actually be run. The Electron UI
   had no entry point: `index.html` was the only one and it mounts the Tauri
   application, so both `npm run dev:electron` and the packaged Electron build

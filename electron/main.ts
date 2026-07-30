@@ -129,6 +129,49 @@ const stoppedProcesses = new Set<string>();
 const workspaceRunMap = new Map<number, Set<string>>();
 const runWorkspaceMap = new Map<string, { workspaceId: number; itemId?: number; runMode: 'parallel' | 'sequential' }>();
 
+// Variables kept when "Inherit System Environment" is off.
+//
+// An entirely empty environment is not useful: with no PATH, spawning `npm` or
+// any other tool fails outright. This is the narrow set a shell and ordinary
+// developer tooling need to function, mirroring the Rust service manager's
+// baseline so the two implementations behave the same.
+const BASELINE_ENV_KEYS =
+  process.platform === 'win32'
+    ? [
+        'PATH',
+        'PATHEXT',
+        'SYSTEMROOT',
+        'SYSTEMDRIVE',
+        'WINDIR',
+        'COMSPEC',
+        'TEMP',
+        'TMP',
+        'USERPROFILE',
+        'NUMBER_OF_PROCESSORS',
+        'PROCESSOR_ARCHITECTURE'
+      ]
+    : ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TZ', 'LANG'];
+
+const FALLBACK_PATH = '/usr/local/bin:/usr/bin:/bin';
+
+function baselineEnvironment(): Record<string, string> {
+  const baseline: Record<string, string> = {};
+  for (const key of BASELINE_ENV_KEYS) {
+    // Windows environment names are case-insensitive; Node preserves the casing
+    // the OS reported, so fall back to a case-insensitive lookup.
+    const value =
+      process.env[key] ??
+      Object.entries(process.env).find(([name]) => name.toLowerCase() === key.toLowerCase())?.[1];
+    if (value) {
+      baseline[key] = value;
+    }
+  }
+  if (process.platform !== 'win32' && !baseline.PATH) {
+    baseline.PATH = FALLBACK_PATH;
+  }
+  return baseline;
+}
+
 const DEFAULT_ENV_FILES = ['.env', '.env.local', '.env.development', '.env.production', '.env.test'];
 
 async function createAskPassScript() {
@@ -609,7 +652,7 @@ async function launchScriptProcess(options: LaunchScriptOptions) {
   }
 
   const inheritSystemEnv = getSetting('inheritSystemEnv') !== 'false';
-  const env = inheritSystemEnv ? { ...process.env } : {};
+  const env = inheritSystemEnv ? { ...process.env } : baselineEnvironment();
   if (options.envOverrides) {
     for (const [key, value] of Object.entries(options.envOverrides)) {
       if (key) {

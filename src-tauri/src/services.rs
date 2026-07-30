@@ -378,9 +378,12 @@ impl ServiceManager {
             code: None,
         });
 
-        let mut command = shell_command(&cmd);
+        let mut command = shell_command(&cmd, environment.inherit_system);
         if !environment.inherit_system {
             command.env_clear();
+            for (key, value) in baseline_environment() {
+                command.env(key, value);
+            }
         }
         for variable in &environment.vars {
             command.env(&variable.key, &variable.value);
@@ -613,15 +616,77 @@ fn validate_environment(environment: &ServiceEnvironment) -> Result<(), String> 
     Ok(())
 }
 
+/// Variables kept when a profile asks not to inherit the system environment.
+///
+/// A truly empty environment is not useful: without `PATH` the shell cannot find
+/// any external program, so every real command fails. These are the variables a
+/// shell and ordinary developer tooling need in order to function at all —
+/// deliberately narrow, and never anything project- or secret-shaped.
 #[cfg(unix)]
-fn shell_command(command: &str) -> Command {
+const BASELINE_ENVIRONMENT_KEYS: &[&str] = &["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "TZ", "LANG"];
+
+#[cfg(windows)]
+const BASELINE_ENVIRONMENT_KEYS: &[&str] = &[
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "SYSTEMDRIVE",
+    "WINDIR",
+    "COMSPEC",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "NUMBER_OF_PROCESSORS",
+    "PROCESSOR_ARCHITECTURE",
+];
+
+/// A `PATH` to fall back on when the parent process has none, so a non-inheriting
+/// profile still resolves ordinary system binaries.
+#[cfg(unix)]
+const FALLBACK_PATH: &str = "/usr/local/bin:/usr/bin:/bin";
+
+fn baseline_environment() -> Vec<(String, String)> {
+    let mut baseline = Vec::new();
+    for key in BASELINE_ENVIRONMENT_KEYS {
+        // Windows environment names are case-insensitive but `var` is not, so try
+        // the canonical spelling first and fall back to a case-insensitive match.
+        let value = std::env::var(key).ok().or_else(|| {
+            std::env::vars().find_map(|(name, value)| name.eq_ignore_ascii_case(key).then_some(value))
+        });
+        if let Some(value) = value {
+            if !value.is_empty() {
+                baseline.push(((*key).to_string(), value));
+            }
+        }
+    }
+    #[cfg(unix)]
+    if !baseline.iter().any(|(key, _)| key == "PATH") {
+        baseline.push(("PATH".to_string(), FALLBACK_PATH.to_string()));
+    }
+    baseline
+}
+
+/// Builds the shell invocation for a service command.
+///
+/// `inherit_system` decides whether this is a *login* shell. That matters more
+/// than it looks: `sh -l` sources `/etc/profile` and the user's profile, which
+/// re-export `PATH` and version-manager shims. That is what makes an inheriting
+/// profile pick up nvm, rbenv, and friends — and it is also why pairing `-l`
+/// with a cleared environment could not deliver isolation, since the profile put
+/// the user's environment straight back. A non-inheriting profile therefore uses
+/// a plain `sh -c` over an explicit baseline, so what a service sees is
+/// predictable rather than dependent on the user's dotfiles.
+#[cfg(unix)]
+fn shell_command(command: &str, inherit_system: bool) -> Command {
     let mut shell = Command::new("sh");
-    shell.args(["-lc", command]);
+    shell.args([if inherit_system { "-lc" } else { "-c" }, command]);
     shell
 }
 
+/// `cmd /S /C` does not source any profile, so the inheriting and
+/// non-inheriting forms are identical on Windows.
 #[cfg(windows)]
-fn shell_command(command: &str) -> Command {
+fn shell_command(command: &str, _inherit_system: bool) -> Command {
     let mut shell = Command::new("cmd");
     shell.args(["/S", "/C", command]);
     shell
@@ -1172,6 +1237,121 @@ mod tests {
         manager
             .stop_for_test(sink, "restart")
             .expect("cleanup");
+    }
+
+    /// Runs `cmd` under the given inheritance mode and returns its stdout lines.
+    fn run_with_inheritance(
+        service_id: &str,
+        cmd: &str,
+        inherit_system: bool,
+        vars: Vec<ServiceEnvironmentVariable>,
+    ) -> Vec<String> {
+        let manager = ServiceManager::default();
+        let sink = Arc::new(TestSink::default());
+        manager
+            .start_with_sink(
+                sink.clone(),
+                service_id.to_string(),
+                "/tmp".to_string(),
+                cmd.to_string(),
+                ServiceEnvironment {
+                    inherit_system,
+                    vars,
+                },
+                Vec::new(),
+                false,
+            )
+            .expect("start");
+        wait_until(|| sink.has(ServiceEventKind::Exited));
+        sink.messages(ServiceEventKind::Stdout)
+    }
+
+    #[test]
+    fn a_non_inheriting_profile_hides_the_parent_environment() {
+        // Safety: single-threaded within this test's own key, and the value is
+        // only read by the child process it launches.
+        std::env::set_var("LOCALHOST_HUB_LEAK_PROBE", "leaked");
+
+        let messages = run_with_inheritance(
+            "isolated",
+            "printf '%s\\n' \"${LOCALHOST_HUB_LEAK_PROBE:-absent}\"",
+            false,
+            Vec::new(),
+        );
+
+        assert!(
+            messages.iter().any(|message| message == "absent"),
+            "parent variable leaked into a non-inheriting profile: {messages:?}"
+        );
+        std::env::remove_var("LOCALHOST_HUB_LEAK_PROBE");
+    }
+
+    #[test]
+    fn an_inheriting_profile_still_sees_the_parent_environment() {
+        std::env::set_var("LOCALHOST_HUB_INHERIT_PROBE", "inherited");
+
+        let messages = run_with_inheritance(
+            "inheriting",
+            "printf '%s\\n' \"${LOCALHOST_HUB_INHERIT_PROBE:-absent}\"",
+            true,
+            Vec::new(),
+        );
+
+        assert!(
+            messages.iter().any(|message| message == "inherited"),
+            "inheriting profile lost the parent environment: {messages:?}"
+        );
+        std::env::remove_var("LOCALHOST_HUB_INHERIT_PROBE");
+    }
+
+    #[test]
+    fn a_non_inheriting_profile_can_still_run_external_programs() {
+        // Clearing the environment outright leaves no PATH, which would make
+        // every external command fail. The baseline exists to prevent that.
+        let messages = run_with_inheritance(
+            "baseline",
+            "env printf '%s\\n' resolved-external-binary",
+            false,
+            Vec::new(),
+        );
+
+        assert!(
+            messages.iter().any(|m| m == "resolved-external-binary"),
+            "a non-inheriting profile could not resolve a program on PATH: {messages:?}"
+        );
+    }
+
+    #[test]
+    fn profile_variables_apply_on_top_of_a_non_inheriting_baseline() {
+        let messages = run_with_inheritance(
+            "overlay",
+            "printf '%s\\n' \"$LOCALHOST_HUB_OVERLAY\"",
+            false,
+            vec![ServiceEnvironmentVariable {
+                key: "LOCALHOST_HUB_OVERLAY".to_string(),
+                value: "from-profile".to_string(),
+            }],
+        );
+
+        assert!(
+            messages.iter().any(|message| message == "from-profile"),
+            "profile variable was not applied: {messages:?}"
+        );
+    }
+
+    #[test]
+    fn the_baseline_carries_path_and_no_unexpected_extras() {
+        let baseline = baseline_environment();
+        assert!(
+            baseline.iter().any(|(key, value)| key == "PATH" && !value.is_empty()),
+            "baseline must always provide a PATH"
+        );
+        for (key, _) in &baseline {
+            assert!(
+                BASELINE_ENVIRONMENT_KEYS.contains(&key.as_str()),
+                "unexpected key in baseline: {key}"
+            );
+        }
     }
 
     #[test]

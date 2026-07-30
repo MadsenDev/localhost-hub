@@ -30,11 +30,11 @@ The blocking problems are not in the Rust. They are in the **migration's integri
 Neither is hard to fix, but until they are, "verify feature parity before removing
 Electron" (UNIFICATION.md stage 10) is not an executable plan.
 
-> **Status: C1, C2, H4, H5, M1 (partly), M3, and M7 were fixed in this branch**, plus
-> three defects the audit could not have seen because no gate covered the code they
-> live in (**F1**, **F2**, **F3** below). Each finding keeps its original text, with a
-> *Resolution* note appended where work landed. Still open: **H1** (CSP), **H2**
-> (secrets at rest), **H3** (`sh -lc`), **M2**, **M4**, **M5**, **M6**, **M8**.
+> **Status: C1, C2, H1, H3, H4, H5, M1 (partly), M3, and M7 were fixed in this
+> branch**, plus three defects the audit could not have seen because no gate covered
+> the code they live in (**F1**, **F2**, **F3** below). Each finding keeps its original
+> text, with a *Resolution* note appended where work landed. Still open: **H2**
+> (secrets at rest), **M2**, **M4**, **M5**, **M6**, **M8**.
 
 ### Release-readiness verdict
 
@@ -335,6 +335,38 @@ remote code execution with full `fs` and shell reach.
 `"csp": "default-src 'self'; img-src 'self' asset: https://avatars.githubusercontent.com data:; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost"`.
 Tune against the GitHub avatar loads and Tauri's IPC transport, then keep it.
 
+**Resolution (this branch):**
+
+```
+default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+img-src 'self' data: https://avatars.githubusercontent.com; font-src 'self' data:;
+connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; frame-src 'none';
+base-uri 'self'; form-action 'none'
+```
+
+Derived from what the bundle actually loads, not from a template. `script-src` needs no
+`'unsafe-inline'` because the built `index.html` contains no inline script with a body.
+`style-src` does, because `tweaks-panel.tsx` injects a `<style>` element and 32 files
+animate through inline `style={{…}}`. `connect-src` needs only IPC, since the renderer
+makes **no** `fetch`, `XMLHttpRequest`, `WebSocket`, or `EventSource` call — every
+GitHub request goes through Rust. The one remote resource anywhere in the renderer is
+the GitHub avatar in `view-settings.tsx`.
+
+**Verified in a browser, not by inspection.** The production bundle was served with the
+policy applied as a real `Content-Security-Policy` response header and loaded in
+Chromium, collecting console violations, blocked requests, and page errors: **0
+violations, 0 console errors**, with the interface rendering — which incidentally also
+demonstrates the C2 fix, since the shell renders with no backend instead of crashing.
+
+That check caught a directive a source read had missed: `@fontsource` inlines several
+font faces as `data:` URIs, so `font-src 'self'` alone blocked **9** font loads. `data:`
+was added.
+
+*Limitation:* the check exercises the shell and the first-run view. Deeper views are
+unreachable without a backend, so a directive triggered only by a later view would not
+appear. Residual risk is small — the avatar is the only remote resource in the tree —
+but this is a smoke test, not proof.
+
 ### H2 — OAuth token and "secret" env vars stored in plaintext
 
 `config.rs` writes `config.json` containing:
@@ -377,6 +409,37 @@ version managers). The bug is pairing it with a promise of a clean environment.
 **Fix:** use `sh -c` when `inherit_system` is false, or drop the option and document
 that the service environment always extends the user's login shell. Add a test
 asserting which variables survive.
+
+**Resolution (this branch):** `shell_command` now takes the inheritance flag. An
+inheriting profile keeps `sh -lc`, which is what picks up nvm/rbenv shims. A
+non-inheriting profile uses plain `sh -c`, so no profile file runs and the result no
+longer depends on the user's dotfiles.
+
+That exposed a second problem the audit did not anticipate: `env_clear()` on its own
+leaves **no `PATH`**, so no external program resolves and every real command fails. The
+login shell had been quietly papering over this — which is precisely why the
+contradiction went unnoticed. "Do not inherit" therefore now means *a documented minimal
+baseline*, not *empty*: `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TMPDIR`, `TZ`,
+`LANG` on Unix (plus a `PATH` fallback), and the equivalent set on Windows, carried from
+the parent and nothing else. Profile variables layer on top. `cmd /S /C` sources no
+profile, so Windows behavior is unchanged.
+
+Five tests assert the behavior rather than assuming it: a parent variable does **not**
+reach a non-inheriting profile, it **does** reach an inheriting one, a non-inheriting
+profile can still resolve a program on `PATH`, profile variables still apply over the
+baseline, and the baseline carries a `PATH` and nothing outside the allowlist.
+
+Two things worth recording about scope:
+
+- **The Tauri UI cannot currently reach this path.** `env-profiles.ts:30` hardcodes
+  `inherit_system: true` and no control exposes it. The flag is part of the config
+  schema and the IPC contract, so it is reachable by editing config or by future UI —
+  the fix hardens a real path, but not one today's UI exercises.
+- **Electron had the same defect, worse.** `electron/main.ts` used
+  `inheritSystemEnv ? { ...process.env } : {}` and then `spawn`ed `npm` against that
+  empty environment, so turning the setting off broke script running outright. Fixed
+  with a baseline mirroring the Rust one, so the parity reference behaves the same —
+  which is the whole point of keeping it runnable.
 
 ### H4 — Log streaming dies permanently on non-UTF-8 output
 
