@@ -36,12 +36,21 @@ export function ReposView({ repos, workspaces, onAddToWorkspace, onCreateWorkspa
     if (!picker || !pickerWs) return;
     const repo = repos.find(r => r.id === picker.repoId);
     if (!repo) return;
+    // Sent complete rather than relying on the backend's serde defaults, so the
+    // shape matches what Rust hands back on the next read.
     onAddToWorkspace(pickerWs, {
       id: `svc-${Date.now()}`,
       name: pickerName || repo.name,
       repo_path: repo.path,
       script: picker.script,
       cmd: picker.cmd,
+      depends_on: [],
+      run_mode: 'parallel',
+      order: 0,
+      env_profile_id: null,
+      expected_port: null,
+      startup_delay_ms: 0,
+      readiness_timeout_ms: 0,
     });
     setPicker(null);
   }

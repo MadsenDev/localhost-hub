@@ -57,8 +57,11 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      # Pinned to match src-tauri/rust-toolchain.toml. Clippy runs with
+      # -D warnings, so a floating channel lets a new Rust release fail CI on
+      # untouched code.
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.97.0
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
@@ -72,3 +75,13 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+      # `cargo test` regenerates src/generated via ts-rs. If the committed
+      # bindings differ, the Rust types changed without the TypeScript side
+      # being updated, which is exactly the drift this replaces.
+      - name: Verify generated TypeScript bindings are current
+        run: |
+          if ! git diff --exit-code --stat -- src/generated; then
+            echo "::error::src/generated is stale. Run 'cargo test' in src-tauri/ and commit the result."
+            exit 1
+          fi

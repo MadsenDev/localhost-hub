@@ -7,26 +7,30 @@ use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::timeout;
+use ts_rs::TS;
 
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(600);
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "kebab-case")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum ProjectTemplate {
     Empty,
     NodeHttp,
     ReactVite,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum ProjectLanguage {
     Javascript,
     Typescript,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum PackageManager {
     Npm,
     Pnpm,
@@ -70,14 +74,16 @@ impl PackageManager {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "kebab-case")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum StylingPreset {
     None,
     TailwindV4,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct CreateProjectPayload {
     pub name: String,
     pub directory: String,
@@ -105,7 +111,8 @@ pub struct CreateProjectPayload {
     pub install_dependencies: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct CreateProjectResult {
     pub path: String,
     pub files: Vec<String>,

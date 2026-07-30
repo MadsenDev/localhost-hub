@@ -186,8 +186,9 @@ GitHub Actions builds and retains:
 - A universal macOS DMG/app for Intel and Apple Silicon
 - Windows MSI and NSIS installers
 
-Pull requests exercise the native package matrix. Manual workflow runs produce
-downloadable artifacts, while matching `v*` tags create a draft GitHub release.
+Publishing a GitHub release builds all three platforms and attaches the installers
+to it. Manual workflow runs produce downloadable artifacts, and pull requests build
+Linux only when they change the packaging definition itself.
 See [Desktop Distribution](docs/DISTRIBUTION.md) for distro coverage, versioning,
 and current signing limitations.
 

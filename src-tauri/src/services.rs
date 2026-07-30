@@ -12,6 +12,7 @@ use std::{
 };
 use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
 use tauri::{AppHandle, Emitter};
+use ts_rs::TS;
 
 /// Largest line buffered before it is forced out as its own log event.
 const MAX_LOG_LINE_BYTES: usize = 8 * 1024;
@@ -38,13 +39,15 @@ struct ManagedProcess {
     detected_urls: Arc<Mutex<Vec<String>>>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct ServiceEnvironmentVariable {
     pub key: String,
     pub value: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct ServiceEnvironment {
     #[serde(default = "default_true")]
     pub inherit_system: bool,
@@ -65,22 +68,30 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct ManagedServiceInfo {
     pub service_id: String,
     pub cwd: String,
     pub cmd: String,
     pub pid: u32,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub started_at_ms: u128,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub uptime_ms: u128,
     pub cpu_usage: f32,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub memory_mb: u64,
     pub ports: Vec<u16>,
     pub urls: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum ServiceEventKind {
     Starting,
     Started,
@@ -93,7 +104,8 @@ pub enum ServiceEventKind {
     Stopped,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct ServiceEvent {
     pub service_id: String,
     pub kind: ServiceEventKind,

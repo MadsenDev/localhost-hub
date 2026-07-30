@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::process::{Command, Output};
 use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct LivePort {
     pub port: u16,
     pub pid: Option<u32>,
@@ -227,10 +229,8 @@ pub fn extract_local_urls(line: &str) -> Vec<String> {
 pub fn normalize_local_url(candidate: &str) -> Option<String> {
     let (scheme, remainder) = if let Some(remainder) = candidate.strip_prefix("http://") {
         ("http", remainder)
-    } else if let Some(remainder) = candidate.strip_prefix("https://") {
-        ("https", remainder)
     } else {
-        return None;
+        ("https", candidate.strip_prefix("https://")?)
     };
 
     let authority_end = remainder

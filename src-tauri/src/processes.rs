@@ -1,13 +1,17 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use sysinfo::{MemoryRefreshKind, ProcessRefreshKind, RefreshKind, System};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct ProcessInfo {
     pub pid: u32,
     pub name: String,
     pub cmd: Vec<String>,
     pub cwd: Option<String>,
     pub cpu_usage: f32,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub memory_kb: u64,
     pub status: String,
 }
@@ -47,10 +51,15 @@ pub fn get_dev_processes() -> Vec<ProcessInfo> {
         .collect()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct SystemStats {
     pub cpu_usage: f32,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub memory_used_mb: u64,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub memory_total_mb: u64,
     pub load_avg: [f64; 3],
 }

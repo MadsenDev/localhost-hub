@@ -1,9 +1,9 @@
 # Desktop Distribution
 
 Localhost Hub is built natively for Linux, macOS, and Windows by GitHub Actions.
-Every desktop packaging run keeps its installers as downloadable workflow
-artifacts. A version tag also creates a draft GitHub release and attaches the
-same packages.
+Packaging is driven by Releases: publishing a GitHub release builds every platform
+and attaches the installers to that release. Every run also keeps its installers as
+downloadable workflow artifacts.
 
 ## Supported Packages
 
@@ -40,13 +40,21 @@ test and maintain those channels.
 
 `.github/workflows/desktop-builds.yml` runs:
 
-- for pull requests that change desktop code or packaging;
-- manually through **Actions → Desktop builds → Run workflow**;
-- for tags matching `v*`.
+- when a GitHub release is **published** — all three platforms, with the installers
+  attached to that release;
+- manually through **Actions → Desktop builds → Run workflow** — all three
+  platforms, workflow artifacts only;
+- for pull requests that change the packaging definition itself, meaning the bundle
+  configuration, build resources, distro packaging, or icon generation — Linux only,
+  workflow artifacts only.
 
-Pull-request and manual runs produce workflow artifacts without publishing a
-release. Version tags must exactly match the synchronized application version,
-for example:
+A pull request that only touches application code does not trigger packaging;
+`ci.yml` covers those. Building one platform on packaging changes is enough to catch
+a broken bundle definition without spending three runners per pull request.
+
+The release tag must exactly match the synchronized application version. The version
+check runs before anything is attached, so a mistagged release fails rather than
+publishing mismatched installers:
 
 ```text
 package.json                 0.9.0-alpha.0
@@ -61,8 +69,10 @@ platform-specific Tauri configuration therefore uses the numeric MSI version
 `0.9.0.0`. The synchronization check derives and validates this mapping; it
 does not change the public application version.
 
-Tag builds create or update a **draft** GitHub release. This leaves room for
-release notes, signing checks, and manual smoke testing before publication.
+Because builds attach to a release rather than create one, the ordering is: draft the
+release with its notes, publish it, and the installers arrive as the matrix finishes.
+Keeping it a draft until the packages land leaves room for signing checks and manual
+smoke testing before anyone can download it.
 
 ## Signing
 

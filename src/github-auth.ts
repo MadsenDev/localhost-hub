@@ -1,71 +1,26 @@
 import { invoke } from '@tauri-apps/api/core';
 
-export interface DeviceCodeResponse {
-  device_code: string;
-  user_code: string;
-  verification_uri: string;
-  verification_uri_complete?: string | null;
-  expires_in: number;
-  interval: number;
-}
+// Types owned by the Rust backend — see src/generated.
+// Previously duplicated here, which let this file drift from the Rust
+// definitions without anything noticing.
+import type { AppConfig } from './generated/AppConfig';
+import type { DeviceCodeResponse } from './generated/DeviceCodeResponse';
+import type { EnvProfile } from './generated/EnvProfile';
+import type { EnvVariable } from './generated/EnvVariable';
+import type { GitHubUser } from './generated/GitHubUser';
+import type { StoredService } from './generated/StoredService';
+import type { StoredWorkspace } from './generated/StoredWorkspace';
 
-export interface GitHubUser {
-  login: string;
-  name: string | null;
-  avatar_url: string;
-}
+export type {
+  AppConfig,
+  DeviceCodeResponse,
+  EnvProfile,
+  EnvVariable,
+  GitHubUser,
+  StoredService,
+  StoredWorkspace,
+};
 
-export interface StoredService {
-  id: string;
-  name: string;
-  repo_path: string;
-  script: string;
-  cmd: string;
-  depends_on?: string[];
-  run_mode?: 'parallel' | 'sequential';
-  order?: number;
-  env_profile_id?: string | null;
-  expected_port?: number | null;
-  startup_delay_ms?: number;
-  readiness_timeout_ms?: number;
-}
-
-export interface EnvVariable {
-  key: string;
-  value: string;
-  is_secret: boolean;
-}
-
-export interface EnvProfile {
-  id: string;
-  project_path: string;
-  name: string;
-  description: string;
-  is_default: boolean;
-  vars: EnvVariable[];
-}
-
-export interface StoredWorkspace {
-  id: string;
-  name: string;
-  color: string;
-  services: StoredService[];
-}
-
-export interface AppConfig {
-  onboarding_complete: boolean;
-  github_token: string | null;
-  github_user: GitHubUser | null;
-  workspace_roots: string[];
-  user_workspaces: StoredWorkspace[];
-  env_profiles: EnvProfile[];
-  appearance: {
-    theme: string;
-    accent: string;
-    density: string;
-    sidebar: string;
-  };
-}
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 

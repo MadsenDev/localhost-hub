@@ -1,0 +1,16 @@
+# Pins the toolchain used to build and lint the Rust side.
+#
+# Clippy runs with `-D warnings` in CI, so a floating `stable` channel means any
+# Rust release can turn a new lint into a build failure on code nobody touched —
+# which is exactly what happened when 1.97 added lints that 1.94 did not have.
+# Pinning keeps local checks and CI on the same compiler and makes a clippy
+# upgrade a deliberate change with its own diff.
+#
+# Keep in step with the toolchain named in .github/workflows/ci.yml and
+# .github/workflows/desktop-builds.yml.
+#
+# This is the build toolchain, not the minimum supported version; that stays in
+# Cargo.toml as `rust-version`.
+[toolchain]
+channel = "1.97.0"
+components = ["clippy", "rustfmt"]

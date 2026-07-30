@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
+use ts_rs::TS;
 
 const DEFAULT_MAX_DEPTH: usize = 4;
 const READINESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -27,7 +28,8 @@ const DEFAULT_IGNORED_DIRS: &[&str] = &[
     "vendor",
 ];
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct WorkspaceGroup {
     pub id: String,
     pub name: String,
@@ -35,7 +37,8 @@ pub struct WorkspaceGroup {
     pub projects: Vec<DetectedProject>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct DetectedProject {
     pub id: String,
     pub path: String,
@@ -50,7 +53,8 @@ pub struct DetectedProject {
     pub manifests: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct ScriptEntry {
     pub name: String,
     /// A command that can be executed directly in the project directory.
@@ -61,15 +65,17 @@ pub struct ScriptEntry {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum WorkspaceRunMode {
     #[default]
     Parallel,
     Sequential,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct WorkspaceServiceSpec {
     pub service_id: String,
     pub cwd: String,
@@ -79,6 +85,8 @@ pub struct WorkspaceServiceSpec {
     #[serde(default)]
     pub run_mode: WorkspaceRunMode,
     #[serde(default)]
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub order: usize,
     #[serde(default)]
     pub environment: ServiceEnvironment,
@@ -87,36 +95,45 @@ pub struct WorkspaceServiceSpec {
     #[serde(default)]
     pub allow_port_conflicts: bool,
     #[serde(default)]
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub startup_delay_ms: u64,
     #[serde(default)]
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub readiness_timeout_ms: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct WorkspaceServiceFailure {
     pub service_id: String,
     pub error: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct WorkspaceServiceWarning {
     pub service_id: String,
     pub warning: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct WorkspaceServiceBlocked {
     pub service_id: String,
     pub reason: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct WorkspaceStopSpec {
     pub service_id: String,
     pub pid: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct WorkspaceRunResult {
     pub workspace_id: String,
     pub started: Vec<String>,

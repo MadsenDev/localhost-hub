@@ -2,10 +2,13 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::PathBuf;
 use tauri::Manager;
+use ts_rs::TS;
 
 pub use crate::github::GitHubUser;
+use crate::workspace::WorkspaceRunMode;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct AppConfig {
     pub onboarding_complete: bool,
     pub github_token: Option<String>,
@@ -20,7 +23,8 @@ pub struct AppConfig {
     pub env_profiles: Vec<EnvProfile>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct EnvProfile {
     pub id: String,
     pub project_path: String,
@@ -33,7 +37,8 @@ pub struct EnvProfile {
     pub vars: Vec<EnvVariable>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct EnvVariable {
     pub key: String,
     pub value: String,
@@ -41,7 +46,8 @@ pub struct EnvVariable {
     pub is_secret: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct AppearanceConfig {
     pub theme: String,
     pub accent: String,
@@ -60,7 +66,8 @@ impl Default for AppearanceConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct StoredWorkspace {
     pub id: String,
     pub name: String,
@@ -68,7 +75,8 @@ pub struct StoredWorkspace {
     pub services: Vec<StoredService>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct StoredService {
     pub id: String,
     pub name: String,
@@ -77,22 +85,37 @@ pub struct StoredService {
     pub cmd: String,
     #[serde(default)]
     pub depends_on: Vec<String>,
-    #[serde(default = "default_run_mode")]
-    pub run_mode: String,
+    #[serde(default, deserialize_with = "deserialize_run_mode")]
+    pub run_mode: WorkspaceRunMode,
     #[serde(default)]
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub order: usize,
     #[serde(default)]
     pub env_profile_id: Option<String>,
     #[serde(default)]
     pub expected_port: Option<u16>,
     #[serde(default)]
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub startup_delay_ms: u64,
     #[serde(default)]
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub readiness_timeout_ms: u64,
 }
 
-fn default_run_mode() -> String {
-    "parallel".to_string()
+/// Accepts an unrecognized run mode and falls back to the default rather than
+/// failing the whole config, since this file can be edited by hand.
+fn deserialize_run_mode<'de, D>(deserializer: D) -> Result<WorkspaceRunMode, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = Option::<String>::deserialize(deserializer)?;
+    Ok(match raw.as_deref() {
+        Some("sequential") => WorkspaceRunMode::Sequential,
+        _ => WorkspaceRunMode::Parallel,
+    })
 }
 
 fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -488,7 +511,7 @@ mod tests {
         .expect("deserialize old service");
 
         assert_eq!(service.expected_port, None);
-        assert_eq!(service.run_mode, "parallel");
+        assert_eq!(service.run_mode, WorkspaceRunMode::Parallel);
         assert!(service.depends_on.is_empty());
         assert_eq!(service.startup_delay_ms, 0);
         assert_eq!(service.readiness_timeout_ms, 0);

@@ -4,12 +4,14 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::timeout;
+use ts_rs::TS;
 
 const PACKAGE_ACTION_TIMEOUT: Duration = Duration::from_secs(600);
 const MAX_OUTPUT_BYTES: usize = 256 * 1024;
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum PackageManager {
     Npm,
     Pnpm,
@@ -40,8 +42,9 @@ impl PackageManager {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum DependencyKind {
     Dependency,
     DevDependency,
@@ -49,7 +52,8 @@ pub enum DependencyKind {
     OptionalDependency,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct ProjectPackage {
     pub name: String,
     pub requested_version: String,
@@ -57,16 +61,22 @@ pub struct ProjectPackage {
     pub kind: DependencyKind,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct ProjectPackages {
     pub package_manager: PackageManager,
     pub packages: Vec<ProjectPackage>,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub installed_count: usize,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub missing_count: usize,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum PackageAction {
     InstallAll,
     Add,
@@ -77,7 +87,8 @@ pub enum PackageAction {
     RegenerateLockfile,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct PackageActionPayload {
     pub project_path: String,
     pub action: PackageAction,
@@ -87,7 +98,8 @@ pub struct PackageActionPayload {
     pub dev: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct PackageActionResult {
     pub package_manager: PackageManager,
     pub command: String,

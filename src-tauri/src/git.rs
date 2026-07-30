@@ -7,11 +7,13 @@ use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::timeout;
+use ts_rs::TS;
 
 const MAX_DIFF_BYTES: usize = 2 * 1024 * 1024;
 const GIT_NETWORK_TIMEOUT: Duration = Duration::from_secs(120);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitFileStatus {
     pub path: String,
     pub index_status: Option<String>,
@@ -19,79 +21,123 @@ pub struct GitFileStatus {
     pub conflicted: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitStatus {
     pub branch: String,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub ahead: usize,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub behind: usize,
     /// Number of unique paths with any index or worktree change.
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub changed: usize,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub staged: usize,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub unstaged: usize,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub untracked: usize,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub conflicted: usize,
     pub clean: bool,
     pub files: Vec<GitFileStatus>,
     pub last_commit_message: Option<String>,
     pub last_commit_hash: Option<String>,
     pub last_commit_author: Option<String>,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number | null")]
     pub last_commit_timestamp: Option<i64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitDiff {
     pub patch: String,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub files_changed: usize,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub additions: usize,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub deletions: usize,
     pub truncated: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitCommitResult {
     pub hash: String,
     pub message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitBranch {
     pub name: String,
     pub current: bool,
     pub remote: bool,
     pub upstream: Option<String>,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub ahead: usize,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub behind: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitRemote {
     pub name: String,
     pub url: Option<String>,
     pub push_url: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitHistoryEntry {
     pub hash: String,
     pub full_hash: String,
     pub message: String,
     pub author: String,
     pub author_email: Option<String>,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub timestamp: i64,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub parent_count: usize,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub files_changed: usize,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub additions: usize,
+    // Tauri serializes through serde_json, so this arrives as a JSON number.
+    #[ts(type = "number")]
     pub deletions: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitRepositoryInfo {
     pub branches: Vec<GitBranch>,
     pub remotes: Vec<GitRemote>,
     pub history: Vec<GitHistoryEntry>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct GitNetworkResult {
     pub operation: String,
     pub remote: String,
