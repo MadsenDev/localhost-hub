@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a system tray icon and an option to close to it. Localhost Hub supervises
+  long-running development servers, so closing the window usually means getting it out
+  of the way rather than killing everything it is running. With **On window close** set
+  to keep the application in the tray, closing hides the window and leaves services
+  running; the tray icon reopens it, and its menu quits properly. The default is still
+  to quit, since that is what closing a window is expected to do until asked otherwise.
+  The window is only ever hidden when a tray icon actually exists, so a platform
+  without one cannot leave the application running with no way to reach it.
 - Added persisted run history. Nothing about a run previously outlived the process:
   closing the application discarded every record of what had run, when, and whether it
   succeeded. Each service run is now recorded with its command, working directory,

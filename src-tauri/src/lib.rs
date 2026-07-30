@@ -6,6 +6,7 @@ mod workspace;
 mod config;
 mod github;
 mod services;
+mod tray;
 mod scaffold;
 mod secrets;
 mod health;
@@ -53,10 +54,15 @@ pub fn run() {
                 }
             }
 
+            tray::init(app.handle());
+
             let win = app.get_webview_window("main").unwrap();
             #[cfg(debug_assertions)]
             win.open_devtools();
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            tray::handle_window_event(window.app_handle(), event);
         })
         .invoke_handler(tauri::generate_handler![
             commands::scan_ports,

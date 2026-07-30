@@ -4,4 +4,10 @@ import type { EnvProfile } from "./EnvProfile";
 import type { GitHubUser } from "./GitHubUser";
 import type { StoredWorkspace } from "./StoredWorkspace";
 
-export type AppConfig = { onboarding_complete: boolean, github_token: string | null, github_user: GitHubUser | null, workspace_roots: Array<string>, user_workspaces: Array<StoredWorkspace>, appearance: AppearanceConfig, env_profiles: Array<EnvProfile>, };
+export type AppConfig = { onboarding_complete: boolean, github_token: string | null, github_user: GitHubUser | null, workspace_roots: Array<string>, user_workspaces: Array<StoredWorkspace>, appearance: AppearanceConfig, env_profiles: Array<EnvProfile>, 
+/**
+ * Closing the window hides it to the tray instead of exiting, so supervised
+ * services keep running. Defaults off: exiting on close is what a window is
+ * expected to do until asked otherwise.
+ */
+close_to_tray: boolean, };
