@@ -122,7 +122,13 @@ export function HealthView({ repos }: HealthViewProps) {
                   style={{
                     width: '100%',
                     display: 'grid',
-                    gridTemplateColumns: 'minmax(180px, 1.2fr) 86px minmax(220px, 1.5fr) 120px 20px',
+                    // Floors of 180px and 220px on the flexible tracks meant the row
+                    // demanded ~710px. Inside the panel at the 900px minimum window
+                    // width there are only ~630px, so the last two columns were cut
+                    // off — "Active today" became "Activ" and the chevron vanished.
+                    // A floor of 0 lets them give way, and the text inside ellipsizes
+                    // or wraps instead.
+                    gridTemplateColumns: 'minmax(0, 1.2fr) 86px minmax(0, 1.5fr) minmax(0, 110px) 20px',
                     alignItems: 'center',
                     gap: 14,
                     padding: '13px 15px',
@@ -140,18 +146,21 @@ export function HealthView({ repos }: HealthViewProps) {
                         {repo?.name ?? health.path.split(/[\\/]/).pop()}
                       </span>
                     </span>
-                    <span style={{ display: 'block', marginTop: 3, color: 'var(--fg-4)', fontSize: 10.5, fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {/* `textOverflow: ellipsis` does nothing without `nowrap`, so this
+                        path wrapped to six lines in a narrow window instead of being
+                        truncated to one. */}
+                    <span style={{ display: 'block', marginTop: 3, color: 'var(--fg-4)', fontSize: 10.5, fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {health.path}
                     </span>
                   </span>
                   <span style={{ color: STATUS_COLOR[health.status], fontFamily: 'var(--font-mono)', fontSize: 19, fontWeight: 650 }}>
                     {health.score}<span style={{ fontSize: 10, color: 'var(--fg-4)' }}>/100</span>
                   </span>
-                  <span style={{ color: important.length ? 'var(--fg-2)' : 'var(--fg-3)', fontSize: 11.5 }}>
+                  <span style={{ color: important.length ? 'var(--fg-2)' : 'var(--fg-3)', fontSize: 11.5, minWidth: 0 }}>
                     {important[0]?.detail ?? 'No immediate health warnings'}
                     {important.length > 1 && <span style={{ color: 'var(--fg-4)' }}> · +{important.length - 1} more</span>}
                   </span>
-                  <span style={{ color: 'var(--fg-4)', fontSize: 11, textAlign: 'right' }}>
+                  <span style={{ color: 'var(--fg-4)', fontSize: 11, textAlign: 'right', minWidth: 0 }}>
                     {health.days_since_last_commit == null
                       ? 'No commits'
                       : health.days_since_last_commit === 0

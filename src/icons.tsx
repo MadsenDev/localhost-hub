@@ -59,6 +59,16 @@ export const Ic = {
   Min:      wrap(<><path d="M3.5 12h9"/></>),
   Square:   wrap(<><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></>),
   Restore:  wrap(<><rect x="5" y="3" width="8" height="8" rx="1"/><path d="M3 5v8a1 1 0 0 0 1 1h8"/></>),
+
+  // Window controls. Kept separate from the glyphs above because they have to
+  // agree with each other: all four are drawn inside the same box, centred on
+  // (8, 8), so rendered at one size they share a stroke weight and optical
+  // width. Reusing the general-purpose glyphs meant three different sizes and
+  // therefore three different stroke weights sitting side by side.
+  WinMin:     wrap(<><path d="M3 8h10"/></>),
+  WinMax:     wrap(<><rect x="3.25" y="3.25" width="9.5" height="9.5" rx="0.5"/></>),
+  WinRestore: wrap(<><rect x="5.5" y="2.5" width="8" height="8" rx="1"/><path d="M2.5 5.5v7a1 1 0 0 0 1 1h7"/></>),
+  WinClose:   wrap(<><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></>),
   Db:       wrap(<><ellipse cx="8" cy="4" rx="5" ry="1.5"/><path d="M3 4v8c0 .8 2.2 1.5 5 1.5s5-.7 5-1.5V4"/><path d="M3 8c0 .8 2.2 1.5 5 1.5s5-.7 5-1.5"/></>),
   Globe:    wrap(<><circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11"/><path d="M8 2.5c2 2 2 9 0 11M8 2.5c-2 2-2 9 0 11"/></>),
   Cpu:      wrap(<><rect x="4" y="4" width="8" height="8" rx="1"/><rect x="6.5" y="6.5" width="3" height="3"/><path d="M6 2v2M10 2v2M6 12v2M10 12v2M2 6h2M2 10h2M12 6h2M12 10h2"/></>),

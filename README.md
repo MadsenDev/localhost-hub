@@ -202,7 +202,7 @@ Honest about what is not done:
 
 - **Packages are unsigned.** macOS Gatekeeper and Windows SmartScreen will warn until signing credentials are in place. Blocking for `1.0`.
 - **Linux is the best-tested platform.** The Windows and macOS paths — process trees, port inspection, the credential store, the tray — need real use on those systems.
-- **The Ports topology diagram has a layout bug** that clips nodes at the left edge. The Active ports table below it is correct.
+- **The Ports topology diagram is unfinished.** Nodes no longer clip at the canvas edge, but they can still overlap each other — the layout jitters them apart rather than resolving collisions — and the connector lines between them do not draw at all. The Active ports table below it is correct.
 - **No Docker integration yet**, despite the Containers entry in the sidebar.
 
 What is planned, in order, lives in [the implementation backlog](docs/IMPLEMENTATION_BACKLOG.md). The original product brief is kept as [PROJECT.md](PROJECT.md) for its intent; its architecture section describes the implementation Tauri replaced.

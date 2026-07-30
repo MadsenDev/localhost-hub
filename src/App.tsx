@@ -21,6 +21,7 @@ import { listenToServiceEvents, tauriApi, type WorkspaceGroup, type ProcessInfo,
 import { Ic } from './icons';
 import { formatDuration } from './utils';
 import { CreateProjectDialog } from './create-project-dialog';
+import { ViewErrorBoundary } from './error-boundary';
 import {
   buildProjectRuntimeServices,
   directProjectServiceId,
@@ -1344,7 +1345,9 @@ export default function App() {
           runningByWs={runningByWs}
           onCreateWorkspace={createWorkspace}
         />
-        <div className="main-pane">{activeView}</div>
+        <div className="main-pane">
+          <ViewErrorBoundary resetKey={view}>{activeView}</ViewErrorBoundary>
+        </div>
       </div>
 
       <CommandPalette

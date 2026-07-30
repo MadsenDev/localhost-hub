@@ -103,6 +103,26 @@ html[data-density="dense"]      { --row-h: 26px; --pad-3: 12px; --pad-4: 16px; }
 
 * { box-sizing: border-box; }
 
+/* Buttons carry the platform webview's own rendering — a light fill, a border and
+   a drop shadow — until it is switched off. That left every component having to
+   remember to override each part of it, and several did not: the title bar window
+   controls and the project tabs both shipped looking like default platform buttons
+   sitting on a dark surface. Switch it off once, here, so a component only has to
+   say what it wants rather than what it does not.
+   Every rule below this one is more specific, so anything a component already sets
+   still wins. */
+button {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+  color: inherit;
+  cursor: pointer;
+}
+
 html, body, #root {
   height: 100%;
   margin: 0;
@@ -341,17 +361,38 @@ html[data-sidebar="wide"] .titlebar:not(.tb-v2) { grid-template-columns: 280px 1
 }
 .tb-icon-btn:hover { background: var(--bg-2); color: var(--fg-1); }
 
-.win-controls { display: inline-flex; gap: 4px; margin-left: 6px; padding-right: 8px; }
+/* Window controls.
+   These must reset the button appearance explicitly. Without `appearance: none`
+   the platform webview draws its own button — a light fill, a border and a drop
+   shadow — under the glyph, which on a dark title bar renders three pale boxes
+   with a barely visible mark inside each. */
+.win-controls { display: inline-flex; gap: 2px; }
 .win-controls .wc {
-  width: 26px; height: 26px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  width: 30px; height: 26px;
   display: grid; place-items: center;
-  border-radius: 4px;
+  border-radius: var(--r-1);
   color: var(--fg-3);
   cursor: default;
-  transition: background 100ms, color 100ms;
+  transition: background 120ms, color 120ms;
 }
+.win-controls .wc svg { display: block; }
 .win-controls .wc:hover { background: var(--bg-2); color: var(--fg-1); }
+.win-controls .wc:active { background: var(--bg-3); }
+.win-controls .wc:focus-visible {
+  outline: none;
+  border-color: var(--blue);
+  color: var(--fg-1);
+}
 .win-controls .wc.close:hover { background: oklch(0.55 0.19 25); color: white; }
+.win-controls .wc.close:active { background: oklch(0.47 0.17 25); color: white; }
 
 /* ─── Sidebar ────────────────────────────────────────── */
 .sidebar {
@@ -469,6 +510,10 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
   border: 1px solid var(--line-1);
   border-radius: var(--r-3);
   overflow: hidden;
+  /* Lets the contents respond to the panel's own width. A panel in a narrow side
+     column needs to lay out differently from the same panel spanning a page, and
+     the window width does not tell them apart. */
+  container-type: inline-size;
 }
 /* Opt-out for panels that contain floating tooltips/popovers above their content */
 .panel.allow-overflow,
@@ -1048,7 +1093,10 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
 /* ─── Logs view ─────────────────────────────────────── */
 .logs-shell {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  /* `1fr` refuses to shrink past its contents' minimum width, and the stream's
+     header was unwrappable, so at a narrow window the whole panel pushed off the
+     right edge of the page. `minmax(0, 1fr)` lets the track give way. */
+  grid-template-columns: 240px minmax(0, 1fr);
   gap: 14px;
   height: 100%;
 }
@@ -1110,12 +1158,18 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
 }
 .logs-head {
   display: flex; align-items: center; justify-content: space-between;
+  /* The counts on the left and the level filters on the right do not fit one line
+     in a narrow window. Wrapping keeps every filter reachable — they used to run
+     off the edge, taking the Unlock button with them. */
+  flex-wrap: wrap;
+  gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--line-soft);
   font-family: var(--font-mono); font-size: 11px; color: var(--fg-3);
 }
-.logs-head .left { display: inline-flex; gap: 14px; align-items: center; }
-.logs-head .right { display: inline-flex; gap: 6px; align-items: center; }
+.logs-head .left { display: inline-flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.logs-head .right { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.log-level-filters { flex-wrap: wrap; }
 .log-level-filters {
   display: inline-flex;
   align-items: center;
@@ -1486,11 +1540,9 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
     padding: 12px 20px;
   }
 
-  /* KV grid: stack k over v, force single column */
-  .kv-grid { grid-template-columns: 1fr !important; }
-  .kv { grid-template-columns: 1fr; gap: 4px; padding: 10px 14px; border-right: 0 !important; }
-  .kv .v { word-break: break-word; }
-
+  /* `.kv-grid` used to collapse here. It now responds to its own container
+     instead — see the @container rules beside its base styles — because these
+     cards are narrow in a side column at any window width. */
   /* Dashboard grid → single column on tight widths */
   .dash-grid { grid-template-columns: 1fr; }
   .dash-row { grid-template-columns: 1fr 1fr 1fr; }
@@ -1619,12 +1671,18 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
   margin-top: 4px;
 }
 .proj-sub .sep { color: var(--fg-4); }
+/* Nine tabs do not fit a narrow window on one line. They wrap onto a second row
+   rather than running off the edge, because a tab the user cannot see is a tab
+   they cannot reach — the previous behaviour pushed GITHUB and HEALTH out of the
+   window and gave the whole page a horizontal scrollbar. */
 .proj-tabs {
   display: flex;
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--line-1);
   margin-bottom: 18px;
 }
 .proj-tab {
+  flex: 0 0 auto;
   padding: 9px 14px;
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -1654,15 +1712,38 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
 }
 .kv {
   display: grid;
-  grid-template-columns: 140px 1fr;
+  grid-template-columns: minmax(0, 140px) minmax(0, 1fr);
+  gap: 10px;
   align-items: center;
   padding: 10px 14px;
+  min-width: 0;
   border-bottom: 1px solid var(--line-soft);
   border-right: 1px solid var(--line-soft);
 }
 .kv:nth-child(2n) { border-right: none; }
-.kv .k { font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.12em; }
-.kv .v { font-family: var(--font-mono); font-size: 12px; color: var(--fg-1); }
+
+/* How many columns this grid can afford depends on the box it sits in, not on the
+   window. On the project overview these cards live in a side column roughly 260px
+   wide at every window size, so a viewport breakpoint got it wrong in both
+   directions: at 1100px the window looked roomy while the card did not, and the
+   two-column grid clipped "PACKAGE MANAGER" down to "PACK…" with the values
+   pushed out of sight.
+   Asking the container is the only way to get this right, and it keeps the
+   two-column rules above exact rather than guessing at a column count. */
+/* 540px, not something smaller: a single cell needs its 140px key, room for the
+   value and 28px of padding, so two of them side by side want ~540px. Measured at
+   430px the grid did fit two columns, and then broke "Node.js" across two lines
+   and "Repository" into "Repos itory". */
+@container (max-width: 540px) {
+  .kv-grid { grid-template-columns: 1fr; }
+  .kv { border-right: none; }
+}
+@container (max-width: 240px) {
+  /* Too narrow for a key beside its value: stack them. */
+  .kv { grid-template-columns: 1fr; gap: 3px; }
+}
+.kv .k { font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.12em; min-width: 0; }
+.kv .v { font-family: var(--font-mono); font-size: 12px; color: var(--fg-1); min-width: 0; overflow-wrap: anywhere; }
 
 .script-row {
   display: grid;
@@ -2202,6 +2283,12 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
   color: var(--fg-4);
   font-size: 11.5px;
 }
+/* Some fields wrap their label and hint in a plain div, which puts them outside
+   the field's own grid gap. Both are inline, so without this they run together
+   on one line as "CLOSING TO THE TRAYKeeps supervised services…". */
+.settings-field > div > label,
+.settings-field > div > span { display: block; }
+.settings-field > div > label { margin-bottom: 5px; }
 .settings-segmented {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
