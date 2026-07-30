@@ -97,6 +97,7 @@ export function OnboardingView({ onComplete }: OnboardingProps) {
       onboarding_complete: true,
       github_token: null,
       github_user: user,
+      close_to_tray: false,
       workspace_roots: workspaceRoots,
       user_workspaces: [],
       env_profiles: [],

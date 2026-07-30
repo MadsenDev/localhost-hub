@@ -41,6 +41,7 @@ const defaultConfig = (): AppConfig => ({
   workspace_roots: [],
   user_workspaces: [],
   env_profiles: [],
+  close_to_tray: false,
   appearance: {
     theme: 'charcoal',
     accent: '#4a78c4',
@@ -327,6 +328,24 @@ export function SettingsView({
               ]}
               onChange={(value) => setTweak('sidebar', value)}
             />
+            <Segmented
+              label="On window close"
+              value={config?.close_to_tray ? 'tray' : 'quit'}
+              options={[
+                { value: 'quit', label: 'Quit' },
+                { value: 'tray', label: 'Keep in tray' },
+              ]}
+              onChange={(value) => void saveConfig({ close_to_tray: value === 'tray' })}
+            />
+            <div className="settings-field">
+              <div>
+                <label>Closing to the tray</label>
+                <span>
+                  Keeps supervised services running when the window closes. Reopen from the tray
+                  icon, or quit from its menu.
+                </span>
+              </div>
+            </div>
             <div className="settings-field">
               <div>
                 <label>Accent</label>

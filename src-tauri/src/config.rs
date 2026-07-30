@@ -21,6 +21,11 @@ pub struct AppConfig {
     pub appearance: AppearanceConfig,
     #[serde(default)]
     pub env_profiles: Vec<EnvProfile>,
+    /// Closing the window hides it to the tray instead of exiting, so supervised
+    /// services keep running. Defaults off: exiting on close is what a window is
+    /// expected to do until asked otherwise.
+    #[serde(default)]
+    pub close_to_tray: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -318,6 +323,7 @@ mod tests {
             workspace_roots: vec!["/code".to_string()],
             user_workspaces: Vec::new(),
             appearance: AppearanceConfig::default(),
+            close_to_tray: false,
             env_profiles: vec![EnvProfile {
                 id: "profile-1".to_string(),
                 project_path: "/code/app".to_string(),

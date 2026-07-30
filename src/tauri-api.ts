@@ -41,6 +41,9 @@ import type { ProjectPackages } from './generated/ProjectPackages';
 import type { ProjectTemplate } from './generated/ProjectTemplate';
 import type { RepositoryHealth } from './generated/RepositoryHealth';
 import type { RepositoryHealthStatus } from './generated/RepositoryHealthStatus';
+import type { RunLog } from './generated/RunLog';
+import type { RunOutcome } from './generated/RunOutcome';
+import type { RunRecord } from './generated/RunRecord';
 import type { SecretBackend } from './generated/SecretBackend';
 import type { ServiceEnvironment } from './generated/ServiceEnvironment';
 import type { ServiceEvent } from './generated/ServiceEvent';
@@ -73,6 +76,9 @@ export type {
   ProjectTemplate,
   RepositoryHealth,
   RepositoryHealthStatus,
+  RunLog,
+  RunOutcome,
+  RunRecord,
   SecretBackend,
   ServiceEnvironment,
   ServiceEvent,
@@ -82,7 +88,6 @@ export type {
   WorkspaceServiceSpec,
   WorkspaceStopSpec,
 };
-
 
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -117,8 +122,6 @@ async function action<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   }
   return rawInvoke<T>(cmd, args);
 }
-
-// ── Types mirroring Rust structs ──────────────────────────────────────────────
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 
@@ -220,6 +223,13 @@ export const tauriApi = {
   // available, so the interface should say so rather than imply otherwise.
   secretStorageBackend: () =>
     query<SecretBackend>("secret_storage_backend", undefined, "file"),
+
+  listRunHistory: () => query<RunRecord[]>("list_run_history", undefined, []),
+
+  readRunLog: (runId: string, limit?: number) =>
+    query<RunLog>("read_run_log", { runId, limit }, { run_id: runId, lines: [], truncated: false }),
+
+  clearRunHistory: () => action<void>("clear_run_history"),
 
   getGitHubProjectContext: (path: string) =>
     action<GitHubProjectContext>("github_get_project_context", { path }),

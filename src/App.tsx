@@ -11,6 +11,7 @@ import { HealthView } from './view-health';
 import { PortsView } from './view-ports';
 import { LogsView } from './view-logs';
 import { SessionsView } from './view-sessions';
+import { HistoryView } from './view-history';
 import { ProjectView } from './view-project';
 import { CommandPalette } from './view-palette';
 import { OnboardingView } from './view-onboarding';
@@ -1240,6 +1241,7 @@ export default function App() {
         onJumpToLogs={(t: number, s: Session) => { setView("logs"); toast(`Jumped to logs @ +${formatDuration(t * s.duration)}`, "info"); }}
       />
     );
+    if (view === "history") return <HistoryView />;
     if (view === "project") {
       const proj = repos.find((repo) => repo.id === project) ?? repos[0];
       if (!proj) return null;

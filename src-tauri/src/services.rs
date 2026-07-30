@@ -1,3 +1,4 @@
+use crate::history::{History, RunLogWriter, RunOutcome};
 use crate::ports::{
     extract_local_urls, find_port_conflicts, port_from_local_url, scan_all_live_ports,
     scan_live_ports, LivePort,
@@ -7,7 +8,10 @@ use std::{
     collections::{HashMap, HashSet},
     io::{BufReader, Read},
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
@@ -24,6 +28,22 @@ const FORCE_STOP_ATTEMPTS: usize = 20;
 #[derive(Default)]
 pub struct ServiceManager {
     children: Arc<Mutex<HashMap<String, ManagedProcess>>>,
+    /// Set once at startup. `None` leaves runs unrecorded but otherwise working.
+    history: Mutex<Option<History>>,
+}
+
+impl ServiceManager {
+    /// Attaches run history. Called during setup, once the application data
+    /// directory is known.
+    pub fn attach_history(&self, history: History) {
+        if let Ok(mut slot) = self.history.lock() {
+            *slot = Some(history);
+        }
+    }
+
+    fn history(&self) -> Option<History> {
+        self.history.lock().ok().and_then(|slot| slot.clone())
+    }
 }
 
 #[derive(Clone)]
@@ -37,6 +57,21 @@ struct ManagedProcess {
     pid: u32,
     started_at_ms: u128,
     detected_urls: Arc<Mutex<Vec<String>>>,
+    /// Present when this run is being recorded.
+    run: Option<RunHandle>,
+}
+
+/// Ties a live process to its history record.
+///
+/// Exactly one writer closes a run: the exit watcher. Stopping a service sets
+/// `stopping` and lets the watcher record the outcome, because `terminate_child`
+/// waits for the process to die and the watcher therefore observes the exit
+/// first. Two closers racing would make the recorded outcome a coin toss.
+#[derive(Clone)]
+struct RunHandle {
+    run_id: String,
+    log: Arc<RunLogWriter>,
+    stopping: Arc<AtomicBool>,
 }
 
 #[derive(Clone, Debug, Deserialize, TS)]
@@ -417,6 +452,28 @@ impl ServiceManager {
         let started_at_ms = now_ms();
         let detected_urls = Arc::new(Mutex::new(Vec::new()));
 
+        // Recorded only after a successful spawn, so the history holds runs that
+        // really started. A failure here leaves `run` as None and the service
+        // unaffected.
+        let history = self.history();
+        let run = history.as_ref().and_then(|history| {
+            let run_id = crate::history::new_run_id(started_at_ms);
+            history
+                .begin_run(
+                    run_id.clone(),
+                    service_id.clone(),
+                    cwd.clone(),
+                    cmd.clone(),
+                    pid,
+                    started_at_ms,
+                )
+                .map(|log| RunHandle {
+                    run_id,
+                    log,
+                    stopping: Arc::new(AtomicBool::new(false)),
+                })
+        });
+
         self.children
             .lock()
             .map_err(|e| e.to_string())?
@@ -432,6 +489,7 @@ impl ServiceManager {
                     pid,
                     started_at_ms,
                     detected_urls: detected_urls.clone(),
+                    run: run.clone(),
                 },
             );
 
@@ -450,6 +508,7 @@ impl ServiceManager {
                 stdout,
                 ServiceEventKind::Stdout,
                 detected_urls.clone(),
+                run.as_ref().map(|run| run.log.clone()),
             );
         }
         if let Some(stderr) = stderr {
@@ -459,10 +518,11 @@ impl ServiceManager {
                 stderr,
                 ServiceEventKind::Stderr,
                 detected_urls,
+                run.as_ref().map(|run| run.log.clone()),
             );
         }
 
-        spawn_exit_watcher(sink, self.children.clone(), service_id, child, pid);
+        spawn_exit_watcher(sink, self.children.clone(), service_id, child, pid, history, run);
         Ok(pid)
     }
 
@@ -479,12 +539,22 @@ impl ServiceManager {
             .remove(&service_id)
             .ok_or_else(|| "service is not managed by Localhost Hub".to_string())?;
 
+        // Announced before terminating, so the exit watcher knows the exit it is
+        // about to observe was deliberate.
+        if let Some(run) = &managed.run {
+            run.stopping.store(true, Ordering::SeqCst);
+        }
+
         let result = {
             let mut child = managed.child.lock().map_err(|e| e.to_string())?;
             terminate_child(&mut child)
         };
 
         if let Err(error) = result {
+            // Still running after all, so withdraw the claim.
+            if let Some(run) = &managed.run {
+                run.stopping.store(false, Ordering::SeqCst);
+            }
             self.children
                 .lock()
                 .map_err(|e| e.to_string())?
@@ -812,6 +882,7 @@ fn spawn_reader<R>(
     reader: R,
     kind: ServiceEventKind,
     detected_urls: Arc<Mutex<Vec<String>>>,
+    log: Option<Arc<RunLogWriter>>,
 ) where
     R: std::io::Read + Send + 'static,
 {
@@ -845,21 +916,23 @@ fn spawn_reader<R>(
             for &byte in &chunk[..read] {
                 if saw_carriage_return {
                     saw_carriage_return = false;
-                    emit_log_line(&sink, &service_id, &kind, &detected_urls, &mut line);
+                    emit_log_line(&sink, &service_id, &kind, &detected_urls, &log, &mut line);
                     if byte == b'\n' {
                         continue;
                     }
                 }
                 match byte {
                     b'\r' => saw_carriage_return = true,
-                    b'\n' => emit_log_line(&sink, &service_id, &kind, &detected_urls, &mut line),
+                    b'\n' => {
+                        emit_log_line(&sink, &service_id, &kind, &detected_urls, &log, &mut line)
+                    }
                     _ => {
                         line.push(byte);
                         // Flush rather than buffer without bound: some tools emit
                         // very long single lines, and progress output may never
                         // send a terminator at all.
                         if line.len() >= MAX_LOG_LINE_BYTES {
-                            emit_log_line(&sink, &service_id, &kind, &detected_urls, &mut line);
+                            emit_log_line(&sink, &service_id, &kind, &detected_urls, &log, &mut line);
                         }
                     }
                 }
@@ -868,7 +941,7 @@ fn spawn_reader<R>(
 
         // Surface whatever the process wrote without a trailing terminator.
         if !line.is_empty() {
-            emit_log_line(&sink, &service_id, &kind, &detected_urls, &mut line);
+            emit_log_line(&sink, &service_id, &kind, &detected_urls, &log, &mut line);
         }
     });
 }
@@ -884,10 +957,17 @@ fn emit_log_line(
     service_id: &str,
     kind: &ServiceEventKind,
     detected_urls: &Arc<Mutex<Vec<String>>>,
+    log: &Option<Arc<RunLogWriter>>,
     line: &mut Vec<u8>,
 ) {
     let message = String::from_utf8_lossy(line).into_owned();
     line.clear();
+
+    // Persisted before emitting, so a line the interface shows is a line the
+    // history has, not the other way round.
+    if let Some(log) = log {
+        log.append(&message);
+    }
 
     for url in extract_local_urls(&message) {
         let is_new = detected_urls
@@ -946,12 +1026,15 @@ fn is_descendant_or_self(system: &System, candidate: Pid, root: Pid) -> bool {
     false
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_exit_watcher(
     sink: Arc<dyn EventSink>,
     children: Arc<Mutex<HashMap<String, ManagedProcess>>>,
     service_id: String,
     child: Arc<Mutex<Child>>,
     pid: u32,
+    history: Option<History>,
+    run: Option<RunHandle>,
 ) {
     std::thread::spawn(move || loop {
         let status = {
@@ -981,6 +1064,24 @@ fn spawn_exit_watcher(
                     .lock()
                     .map(|mut children| remove_if_current(&mut children, &service_id, pid))
                     .unwrap_or(true);
+                // Closed regardless of `should_emit`: a restart supersedes the
+                // event but the finished run still needs its outcome recorded.
+                let stopped_deliberately = run
+                    .as_ref()
+                    .map(|run| run.stopping.load(Ordering::SeqCst))
+                    .unwrap_or(false);
+                let outcome = if stopped_deliberately {
+                    RunOutcome::Stopped
+                } else if code.unwrap_or(0) == 0 {
+                    // A process reporting no code was terminated by a signal,
+                    // which for our purposes is an ordinary exit.
+                    RunOutcome::Exited
+                } else {
+                    RunOutcome::Failed
+                };
+                // A stop's exit status is an artefact of the signal, not a result.
+                let recorded_code = if stopped_deliberately { None } else { code };
+                finish_run(&history, &run, outcome, recorded_code);
                 if should_emit {
                     sink.emit(ServiceEvent {
                         service_id,
@@ -1000,6 +1101,7 @@ fn spawn_exit_watcher(
                     .lock()
                     .map(|mut children| remove_if_current(&mut children, &service_id, pid))
                     .unwrap_or(true);
+                finish_run(&history, &run, RunOutcome::Failed, None);
                 if should_emit {
                     sink.emit(ServiceEvent {
                         service_id,
@@ -1014,6 +1116,21 @@ fn spawn_exit_watcher(
             None => std::thread::sleep(Duration::from_millis(100)),
         }
     });
+}
+
+/// Closes a run's log and records its outcome. A no-op when the run was never
+/// recorded, which is the case whenever history is unavailable.
+fn finish_run(
+    history: &Option<History>,
+    run: &Option<RunHandle>,
+    outcome: RunOutcome,
+    exit_code: Option<i32>,
+) {
+    let (Some(history), Some(run)) = (history, run) else {
+        return;
+    };
+    run.log.finish();
+    history.end_run(&run.run_id, outcome, exit_code, now_ms(), run.log.is_truncated());
 }
 
 fn remove_if_current(
@@ -1093,6 +1210,7 @@ mod tests {
             std::io::Cursor::new(bytes.to_vec()),
             kind.clone(),
             urls,
+            None,
         );
         // A Cursor hits EOF immediately so the total is deterministic; waiting
         // for `expected` avoids sampling a partially-drained stream.
@@ -1154,6 +1272,7 @@ mod tests {
             std::io::Cursor::new(b"ready on http://localhost:4321/\r".to_vec()),
             ServiceEventKind::Stdout,
             urls.clone(),
+            None,
         );
         wait_until(|| !sink.messages(ServiceEventKind::Url).is_empty());
 
@@ -1161,6 +1280,132 @@ mod tests {
             sink.messages(ServiceEventKind::Url),
             vec!["http://localhost:4321/"]
         );
+    }
+
+    fn history_dir(label: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "localhost-hub-svc-history-{label}-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    /// End-to-end: the unit tests in `history` prove the store works, this proves
+    /// the service lifecycle is actually wired to it.
+    #[test]
+    fn a_completed_run_and_its_output_are_recorded() {
+        let dir = history_dir("recorded");
+        let manager = ServiceManager::default();
+        manager.attach_history(History::new(&dir));
+        let sink = Arc::new(TestSink::default());
+
+        manager
+            .start_for_test(sink.clone(), "recorded", "/tmp", "printf 'hello from the run\\n'")
+            .expect("start");
+        wait_until(|| sink.has(ServiceEventKind::Exited));
+
+        let history = History::new(&dir);
+        // The exit watcher writes the outcome from its own thread.
+        wait_until(|| {
+            history
+                .list()
+                .first()
+                .map(|record| record.outcome != crate::history::RunOutcome::Running)
+                .unwrap_or(false)
+        });
+
+        let records = history.list();
+        assert_eq!(records.len(), 1, "one run should be recorded: {records:?}");
+        let record = &records[0];
+        assert_eq!(record.service_id, "recorded");
+        assert_eq!(record.cwd, "/tmp");
+        assert_eq!(record.outcome, crate::history::RunOutcome::Exited);
+        assert_eq!(record.exit_code, Some(0));
+        assert!(record.ended_at_ms.is_some());
+
+        let log = history.read_log(&record.run_id, 100).expect("log");
+        assert!(
+            log.lines.iter().any(|line| line == "hello from the run"),
+            "the run's output should be persisted: {:?}",
+            log.lines
+        );
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_failing_run_is_recorded_as_failed_with_its_status() {
+        let dir = history_dir("failed");
+        let manager = ServiceManager::default();
+        manager.attach_history(History::new(&dir));
+        let sink = Arc::new(TestSink::default());
+
+        manager
+            .start_for_test(sink.clone(), "failing", "/tmp", "exit 3")
+            .expect("start");
+        wait_until(|| sink.has(ServiceEventKind::Exited));
+
+        let history = History::new(&dir);
+        wait_until(|| {
+            history
+                .list()
+                .first()
+                .map(|record| record.outcome == crate::history::RunOutcome::Failed)
+                .unwrap_or(false)
+        });
+        assert_eq!(history.list()[0].exit_code, Some(3));
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn stopping_records_a_stop_rather_than_the_exit_it_causes() {
+        let dir = history_dir("stopped");
+        let manager = ServiceManager::default();
+        manager.attach_history(History::new(&dir));
+        let sink = Arc::new(TestSink::default());
+
+        manager
+            .start_for_test(sink.clone(), "long", "/tmp", "sleep 30")
+            .expect("start");
+        manager.stop_for_test(sink.clone(), "long").expect("stop");
+
+        let history = History::new(&dir);
+        wait_until(|| {
+            history
+                .list()
+                .first()
+                .map(|record| record.outcome != crate::history::RunOutcome::Running)
+                .unwrap_or(false)
+        });
+
+        // Give the exit watcher a chance to try overwriting it.
+        std::thread::sleep(Duration::from_millis(400));
+        assert_eq!(
+            history.list()[0].outcome,
+            crate::history::RunOutcome::Stopped,
+            "the deliberate stop must survive the exit it triggered"
+        );
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_service_runs_normally_when_history_is_unavailable() {
+        // No history attached: runs must be unaffected, just unrecorded.
+        let manager = ServiceManager::default();
+        let sink = Arc::new(TestSink::default());
+        manager
+            .start_for_test(sink.clone(), "unrecorded", "/tmp", "printf 'still works\\n'")
+            .expect("start");
+        wait_until(|| sink.has(ServiceEventKind::Stdout));
+        wait_until(|| sink.has(ServiceEventKind::Exited));
+        assert!(sink
+            .messages(ServiceEventKind::Stdout)
+            .iter()
+            .any(|message| message == "still works"));
     }
 
     #[test]

@@ -7,23 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Removed
-
-- Removed the Electron implementation, completing the migration to Tauri. This takes
-  out the Electron main and preload processes, its IPC contracts, the `sql.js` storage
-  layer, the Electron interface and its hooks and plugin gallery, the Electron entry
-  point, and `electron-builder` with its configuration: roughly 15,300 lines of source.
-  Ten development dependencies went with it, removing 386 packages from the install
-  tree. The package no longer declares an Electron entry point and is now ESM rather
-  than CommonJS, which only Electron required.
-- Deleted `TODO.md`. Every remaining item in it described the Electron implementation
-  and cited files that no longer exist, so a contributor following it would have
-  rebuilt shipped features. `docs/IMPLEMENTATION_BACKLOG.md` already tracks planned
-  work against the current architecture. `PROJECT.md` is kept, marked as the original
-  brief, since its product intent and entity model outlived its architecture section.
-
 ### Added
 
+- Added a system tray icon and an option to close to it. Localhost Hub supervises
+  long-running development servers, so closing the window usually means getting it out
+  of the way rather than killing everything it is running. With **On window close** set
+  to keep the application in the tray, closing hides the window and leaves services
+  running; the tray icon reopens it, and its menu quits properly. The default is still
+  to quit, since that is what closing a window is expected to do until asked otherwise.
+  The window is only ever hidden when a tray icon actually exists, so a platform
+  without one cannot leave the application running with no way to reach it.
+- Added persisted run history. Nothing about a run previously outlived the process:
+  closing the application discarded every record of what had run, when, and whether it
+  succeeded. Each service run is now recorded with its command, working directory,
+  process identifier, timing, and outcome, and its output is written to a per-run log
+  file. A new Run history view lists past runs newest first and loads a run's stored
+  output on demand.
+  - History is bounded: the newest two hundred runs are kept and each log stops at two
+    megabytes, with truncation stated rather than left to look like silence.
+  - Runs still marked running at startup belonged to a previous session, since the
+    process table lives in memory. Those are marked interrupted and the interface says
+    so, rather than presenting a dead process as live. Adopting a process by its
+    recorded identifier is deliberately not attempted, because identifiers are recycled
+    and claiming to manage an unrelated process would be worse than admitting the
+    outcome is unknown.
+  - Recording is best effort. A service that cannot write its history still runs.
 - Added the animated Localhost Hub brand lockup to first-run onboarding, with a reduced-motion fallback.
 - Began the `0.9.x` Tauri unification in the canonical `localhost-hub` repository:
   - Ported the newer Localhost Hub V2 interface to React 19, Vite 7, and the Tauri 2 desktop shell.
@@ -161,6 +169,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Kept Git and GitHub as separate product domains: local repository operations use `git2`; remote platform information uses the GitHub integration.
 - Reworked the Repos view around detected local projects, runnable scripts, native Git controls, and workspace service creation.
 - Set the migration version line to `0.9.0-alpha`, preserving `0.8.x` as the final Electron-first line and reserving `1.0.0` for the unified production release.
+
+### Removed
+
+- Removed the Electron implementation, completing the migration to Tauri. This takes
+  out the Electron main and preload processes, its IPC contracts, the `sql.js` storage
+  layer, the Electron interface and its hooks and plugin gallery, the Electron entry
+  point, and `electron-builder` with its configuration: roughly 15,300 lines of source.
+  Ten development dependencies went with it, removing 386 packages from the install
+  tree. The package no longer declares an Electron entry point and is now ESM rather
+  than CommonJS, which only Electron required.
+- Deleted `TODO.md`. Every remaining item in it described the Electron implementation
+  and cited files that no longer exist, so a contributor following it would have
+  rebuilt shipped features. `docs/IMPLEMENTATION_BACKLOG.md` already tracks planned
+  work against the current architecture. `PROJECT.md` is kept, marked as the original
+  brief, since its product intent and entity model outlived its architecture section.
 
 ### Fixed
 

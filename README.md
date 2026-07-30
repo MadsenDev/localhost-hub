@@ -34,6 +34,7 @@ Localhost Hub is a local-first desktop control center for development projects. 
 - **New project scaffolding** – step-based creator with templates, dependencies, script planner, Tailwind presets (4.x Oxide or classic 3.4 stack), icon packs, README/git automation, and optional dependency installs.
 - **Tauri migration** – the new interface is backed by Rust commands for project scanning, managed services, live process events, ports, Git status, settings, and GitHub authentication.
 - **Cross-platform packaging** – Tauri builds AppImage, DEB, RPM, Arch, DMG, MSI, and NSIS packages from one codebase.
+- **Stays out of the way** – close to the system tray to keep supervised services running, and reopen from the tray icon.
 
 ---
 
@@ -86,9 +87,10 @@ directory, written by `src-tauri/src/config.rs`:
 The GitHub access token and any variable marked secret are held in the operating
 system credential store rather than that file — see `src-tauri/src/secrets.rs`.
 
-> [!NOTE]
-> Run history, logs, and process state are **not** persisted. Everything about what ran
-> is lost when the app closes.
+Run history lives alongside it, under `history/`: a bounded index of past runs plus one
+append-only log per run. See the **Run history** view. Live process state is
+deliberately not persisted — the process table is in memory, so runs still marked
+running at startup are reported as interrupted rather than presented as live.
 
 ---
 
