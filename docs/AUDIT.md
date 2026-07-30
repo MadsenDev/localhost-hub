@@ -30,11 +30,16 @@ The blocking problems are not in the Rust. They are in the **migration's integri
 Neither is hard to fix, but until they are, "verify feature parity before removing
 Electron" (UNIFICATION.md stage 10) is not an executable plan.
 
-> **Status: C1, C2, H1, H3, H4, H5, M1 (partly), M3, and M7 were fixed in this
-> branch**, plus three defects the audit could not have seen because no gate covered
-> the code they live in (**F1**, **F2**, **F3** below). Each finding keeps its original
-> text, with a *Resolution* note appended where work landed. Still open: **M2**,
-> **M4**, **M5**, **M6**, **M8** — every High-severity finding is now closed.
+> **Status: every Critical and High finding is closed**, along with **M2**, **M3**,
+> **M4**, **M7**, **M8**, and **M1** in part, plus three defects the audit could not
+> have seen because no gate covered the code they live in (**F1**, **F2**, **F3**).
+> Each finding keeps its original text, with a *Resolution* note appended where work
+> landed. Still open: **M5** (polling cost), **M6** (unused locales), and the
+> `commands.rs` half of **M4**.
+>
+> C1 was ultimately resolved twice: first by making the Electron reference runnable,
+> then — once parity had been compared against it — by removing Electron entirely,
+> which completed `UNIFICATION.md` stage 10 and retired **M2** with it.
 
 ### Release-readiness verdict
 
@@ -128,6 +133,10 @@ LOC) remain live-looking but unreachable from any UI.
   was verified by other means (tests + manual QA) rather than by A/B comparison.
 
 The second is likely the honest choice — but it should be a decision, not a drift.
+
+**Both were done, in order.** The reference was restored first so parity could actually
+be compared (below), and once it had been, Electron was removed — which is the sequence
+the migration plan called for and could not previously execute.
 
 **Resolution (this branch): preserved the reference.** The Electron app shell had not
 been rewritten into the Tauri `App.tsx` — it was *replaced*, and the original was
@@ -765,6 +774,12 @@ A contributor reading `TODO.md` would rebuild shipped features. Either rewrite i
 against the Tauri implementation or delete it and let `CHANGELOG.md` +
 `docs/IMPLEMENTATION_BACKLOG.md` carry the load — `CHANGELOG.md` is already accurate,
 so the duplication has no upside.
+
+**Resolution (this branch): deleted.** Removing Electron invalidated every remaining
+citation in it. `docs/IMPLEMENTATION_BACKLOG.md` is current and Tauri-oriented, so the
+file was pure duplication. `PROJECT.md` was kept but marked as the historical brief,
+since its product intent and entity model still have value even though its
+architecture section describes the implementation that was just removed.
 
 `README.md` and `docs/UNIFICATION.md` are otherwise accurate and well written; their
 only defect is describing the Electron parity path as viable (C1).

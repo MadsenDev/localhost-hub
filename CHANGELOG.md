@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the Electron implementation, completing the migration to Tauri. This takes
+  out the Electron main and preload processes, its IPC contracts, the `sql.js` storage
+  layer, the Electron interface and its hooks and plugin gallery, the Electron entry
+  point, and `electron-builder` with its configuration: roughly 15,300 lines of source.
+  Ten development dependencies went with it, removing 386 packages from the install
+  tree. The package no longer declares an Electron entry point and is now ESM rather
+  than CommonJS, which only Electron required.
+- Deleted `TODO.md`. Every remaining item in it described the Electron implementation
+  and cited files that no longer exist, so a contributor following it would have
+  rebuilt shipped features. `docs/IMPLEMENTATION_BACKLOG.md` already tracks planned
+  work against the current architecture. `PROJECT.md` is kept, marked as the original
+  brief, since its product intent and entity model outlived its architecture section.
+
 ### Added
 
 - Added the animated Localhost Hub brand lockup to first-run onboarding, with a reduced-motion fallback.

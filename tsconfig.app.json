@@ -11,6 +11,7 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
+    "composite": true,
     "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": false,

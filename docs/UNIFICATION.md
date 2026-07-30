@@ -10,8 +10,8 @@ The target combines:
 - the mature behavior from the Electron application;
 - selected GitHub and repository-health capabilities from the former V2 effort.
 
-The original Electron implementation is the behavioral reference. It must not
-be removed until the Tauri implementation has verified feature parity.
+**Status: complete.** Tauri is the only shell. The Electron implementation served as
+the behavioral reference through stages 2 to 9 and was removed in stage 10.
 
 ## Architecture boundary
 
@@ -24,6 +24,8 @@ orchestration.
 Local Git operations remain independent from GitHub platform features.
 
 ## Migration stages
+
+Every stage below is done.
 
 1. **Tauri shell and new UI**
    - Port the newer interface into the canonical repository.
@@ -45,12 +47,18 @@ Local Git operations remain independent from GitHub platform features.
    - OAuth, repository metadata, pull requests, issues, CI, and workflow failures.
 9. **Repository health**
    - Useful local/remote maintenance signals after core parity.
-10. **Electron removal**
-    - Remove Electron, its IPC contracts, and its packaging dependencies only after parity.
+10. **Electron removal** — done
+    - Removed `electron/`, the Electron interface under `src/components` and
+      `src/hooks`, the plugin gallery, the Electron entry point, and
+      `electron-builder` with its configuration: about 15,300 lines.
+    - Dropped ten development dependencies, which removed 386 packages from the
+      install tree, and the `sql.js` storage layer along with them.
+    - `main` and the `electron-builder` block are gone from `package.json`, and the
+      package is now ESM rather than CommonJS, which only Electron required.
 
 ## Versioning
 
-- `0.8.x`: final Electron-first line;
+- `0.8.x`: final Electron-first line (closed);
 - `0.9.0-alpha`: Tauri and new-UI migration;
 - `0.9.x`: parity and stabilization;
 - `1.0.0`: first production-quality unified release.

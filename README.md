@@ -3,7 +3,7 @@
 Localhost Hub is a local-first desktop control center for development projects. Discover projects, run services, inspect logs and ports, manage Git, and keep your local development environment under control from one app.
 
 > [!IMPORTANT]
-> The canonical project is migrating from Electron to Tauri 2 on the `0.9.x` line. The new UI and Rust backend have landed, while the Electron implementation remains as the behavioral reference until feature parity is verified. See [the unification plan](docs/UNIFICATION.md).
+> The migration from Electron to Tauri 2 is complete on the `0.9.x` line: Tauri is the only shell, and the Electron implementation has been removed. See [the unification plan](docs/UNIFICATION.md) for what the migration covered.
 
 ![Localhost Hub hero](./public/logo.svg)
 
@@ -33,7 +33,7 @@ Localhost Hub is a local-first desktop control center for development projects. 
 - **Git awareness** – branch, dirty/ahead/behind status, last commit summary, and change lists right from the project header/tab.
 - **New project scaffolding** – step-based creator with templates, dependencies, script planner, Tailwind presets (4.x Oxide or classic 3.4 stack), icon packs, README/git automation, and optional dependency installs.
 - **Tauri migration** – the new interface is backed by Rust commands for project scanning, managed services, live process events, ports, Git status, settings, and GitHub authentication.
-- **Cross-platform packaging** – the Electron `0.8.x` path remains available during migration; Tauri becomes the production packaging path once parity is complete.
+- **Cross-platform packaging** – Tauri builds AppImage, DEB, RPM, Arch, DMG, MSI, and NSIS packages from one codebase.
 
 ---
 
@@ -53,54 +53,61 @@ npm run tauri:dev
 
 Set `GITHUB_CLIENT_ID` at build time to enable the optional GitHub OAuth device flow. The app still builds and its local features remain available without it.
 
-The migration branch also retains the Electron path for parity work:
-
-```bash
-npm run dev:electron
-```
-
-The two shells have separate entry points and separate UIs, so parity can be compared
-side by side:
-
-| Entry | Renders | Backend |
-| --- | --- | --- |
-| `index.html` → `src/main.tsx` | `src/App.tsx` | Tauri commands (`src/tauri-api.ts`) |
-| `index.electron.html` → `src/main.electron.tsx` | `src/ElectronApp.tsx` | Electron IPC (`window.electronAPI`) |
-
-Running `npm run dev` on its own serves the Tauri entry in a plain browser, where no
-native backend exists. Read commands return empty values so the interface still
-renders; anything that mutates state rejects with a clear error rather than appearing
-to succeed.
+Running `npm run dev` serves the interface in a plain browser, without the native
+backend. Read commands return empty values so the interface still renders; anything
+that mutates state rejects with a clear error rather than appearing to succeed. Use
+`npm run tauri:dev` for the real thing.
 
 ---
 
 ## Project Scanner & Data Model
 
-Localhost Hub stores metadata in `electron/database.ts` (sqlite via sql.js). Each scan populates:
-
-| Table | Purpose |
-| --- | --- |
-| `projects` | Basic id/name/path/type info |
-| `project_scripts` / `scripts` | Normalized script definitions |
-| `workspaces`, `workspace_items` | Multi-project runbooks |
-| `env_profiles`, `env_vars` | Project-specific environment sets |
-| `settings` | UI + behavior preferences |
+Discovery is stateless: `scan_workspace_groups` walks the configured roots on demand
+and returns what it finds, so nothing can go stale between a rescan and the interface.
 
 Scanner highlights:
 - Depth-limited recursion with ignore patterns.
-- Tagging for frameworks (Vite, Next.js, etc.) based on `package.json`.
-- Scripts persisted so workspaces keep referencing them even if rescans happen.
+- Detects JavaScript/TypeScript, Rust, Go, Python, Ruby, and PHP projects from their
+  manifests, along with frameworks, package managers, runnable scripts, Git roots, and
+  environment files.
+
+What *is* persisted lives in `config.json` under the platform application data
+directory, written by `src-tauri/src/config.rs`:
+
+| Stored | Purpose |
+| --- | --- |
+| `workspace_roots` | Directories to scan |
+| `user_workspaces` | Named workspaces and their service definitions |
+| `env_profiles` | Per-project environment sets |
+| `appearance` | Theme, accent, density, sidebar |
+| `onboarding_complete` | First-run state |
+| `github_user` | Connected account, for display |
+
+The GitHub access token and any variable marked secret are held in the operating
+system credential store rather than that file — see `src-tauri/src/secrets.rs`.
+
+> [!NOTE]
+> Run history, logs, and process state are **not** persisted. Everything about what ran
+> is lost when the app closes.
 
 ---
 
 ## Script Runner & Workspaces
 
-- Individual scripts run via `scripts:run` IPC, spawning child processes with environment overrides and streaming logs back to the renderer.
+- Services are started, stopped, and restarted by the Rust service manager
+  (`src-tauri/src/services.rs`), which spawns each command in its own process group
+  and streams stdout, stderr, lifecycle events, and detected URLs to the interface.
 - Workspace sequencing:
-  - **Parallel**: slight stagger to avoid race conditions on port binding.
-  - **Sequential**: fire-and-forget order (does **not** wait for termination—ideal for dev servers).
-- Logs, exit/error events, and history entries always carry the originating `projectId`, allowing the UI to display cross-workspace output correctly.
-- **Terminal modal**: open any running process in a floating terminal with pause/scroll controls.
+  - **Parallel**: independent services launch together.
+  - **Sequential**: ordered start for services that need it.
+  - **Dependencies**: `depends_on` is validated for missing, self-referential, and
+    cyclic entries, then launched in topological layers, waiting for prerequisite
+    readiness before unlocking dependents and reporting downstream services as blocked
+    when a prerequisite fails.
+- Environment profiles apply per service, either extending the login shell environment
+  or running over a documented minimal baseline.
+- Stopping escalates from SIGTERM to SIGKILL across the whole process group, so a dev
+  server's children do not survive it.
 
 ---
 
@@ -139,29 +146,37 @@ Backend scaffolding handles:
 ```
 .
 ├── src-tauri/
-│   └── src/             # Projects, services, ports, Git, GitHub, storage
-├── electron/
-│   ├── main.ts          # Main process, IPC handlers, process runner
-│   ├── preload.ts       # Secure bridge exposing limited API surface
-│   ├── database.ts      # sql.js schema + CRUD helpers
-│   └── utils/           # project scanning, lookup helpers, etc.
+│   ├── src/
+│   │   ├── commands.rs      # Every command the interface can invoke
+│   │   ├── workspace.rs     # Discovery and workspace orchestration
+│   │   ├── services.rs      # Process lifecycle, output streaming
+│   │   ├── git.rs           # Local Git via git2, plus network operations
+│   │   ├── github.rs        # Device-flow auth and repository context
+│   │   ├── ports.rs         # Listening sockets and localhost URL parsing
+│   │   ├── packages.rs      # Package manager detection and actions
+│   │   ├── scaffold.rs      # Project creation
+│   │   ├── health.rs        # Repository health signals
+│   │   ├── config.rs        # Persistence
+│   │   └── secrets.rs       # Credential store, with a restricted-file fallback
+│   └── rust-toolchain.toml  # Pinned build toolchain
 ├── src/
 │   ├── App.tsx          # React root, state orchestration
-│   ├── components/      # Sidebar, panels, modals, toasts, etc.
-│   ├── hooks/           # Data hooks (projects, workspaces, settings…)
-│   └── types/           # Global TypeScript definitions
-├── scripts/             # Build helpers (icon generation, cache clearing)
+│   ├── view-*.tsx       # Top-level views
+│   ├── tauri-api.ts     # The command wrapper; the only path to the backend
+│   └── generated/       # TypeScript types generated from the Rust structs
+├── scripts/             # Build helpers (icon generation, version sync)
 ├── public/              # Icons, wordmarks
 ├── buildResources/      # Packaged app icons, entitlements
-└── .github/workflows/   # CI and cross-platform Tauri packaging
+└── .github/workflows/   # CI and Release-driven packaging
 ```
 
 Key tech:
 - **Renderer**: React 19 + Vite
 - **Native backend**: Tauri 2 + Rust + Tokio
 - **Animations**: Framer Motion
-- **DB**: sql.js (SQLite compiled to WASM)
-- **Bridge**: typed Tauri commands/events; legacy Electron IPC remains during parity work
+- **Persistence**: JSON config plus the OS credential store for secrets
+- **Bridge**: typed Tauri commands and events, with the TypeScript types generated
+  from the Rust structs so the two cannot drift
 - **Testing**: Vitest + Testing Library + jsdom
 
 ---
