@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Drove desktop packaging from Releases instead of from pull requests. The previous
+  trigger listed the application sources, so publishing installers for all three
+  platforms plus an Arch container build ran on very nearly every pull request.
+  Publishing a GitHub release now builds every platform and attaches the installers
+  to that release, manual runs still produce artifacts on demand, and pull requests
+  build Linux only when they change the packaging definition itself.
+
 - Generated the TypeScript types for every value crossing the command boundary from
   the Rust structs themselves, using ts-rs, and re-exported them from the modules
   that previously declared them by hand. The two sides were mirrored manually across

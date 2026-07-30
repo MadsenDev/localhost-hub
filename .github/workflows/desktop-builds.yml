@@ -1,45 +1,60 @@
 name: Desktop builds
 
+# Packaging is driven by Releases: publishing a release builds every platform and
+# attaches the installers to it.
+#
+# The previous trigger listed src/** and src-tauri/**, so the full three-platform
+# matrix plus an Arch container build ran on very nearly every pull request — a lot
+# of runner time to prove something the release itself proves.
 on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  # Only for changes that can break packaging without touching application code.
+  # Deliberately narrow: application sources are covered by the CI workflow.
   pull_request:
     paths:
       - ".github/workflows/desktop-builds.yml"
       - "buildResources/**"
-      - "package.json"
-      - "package-lock.json"
-      - "scripts/check-version-sync.cjs"
-      - "src/**"
-      - "src-tauri/**"
-      - "vite.config.*"
-  workflow_dispatch:
-  push:
-    tags:
-      - "v*"
+      - "packaging/**"
+      - "scripts/generate-icons.cjs"
+      - "src-tauri/Cargo.toml"
+      - "src-tauri/tauri.conf.json"
+      - "src-tauri/tauri.windows.conf.json"
 
 permissions:
   contents: write
 
 jobs:
+  platforms:
+    name: Select platforms
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.pick.outputs.include }}
+    steps:
+      - name: Choose the build matrix for this event
+        id: pick
+        env:
+          LINUX: '{"name":"Linux · AppImage, DEB, RPM","runner":"ubuntu-22.04","rust_targets":"","args":"--bundles appimage,deb,rpm"}'
+          MACOS: '{"name":"macOS · Universal","runner":"macos-latest","rust_targets":"aarch64-apple-darwin,x86_64-apple-darwin","args":"--target universal-apple-darwin --bundles app,dmg"}'
+          WINDOWS: '{"name":"Windows · MSI, NSIS","runner":"windows-latest","rust_targets":"","args":"--bundles msi,nsis"}'
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # One platform is enough to show the bundle definition still builds.
+            printf 'include=[%s]\n' "$LINUX" >> "$GITHUB_OUTPUT"
+          else
+            printf 'include=[%s,%s,%s]\n' "$LINUX" "$MACOS" "$WINDOWS" >> "$GITHUB_OUTPUT"
+          fi
+
   package:
     name: ${{ matrix.name }}
+    needs: platforms
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: Linux · AppImage, DEB, RPM
-            runner: ubuntu-22.04
-            rust_targets: ""
-            args: "--bundles appimage,deb,rpm"
-          - name: macOS · Universal
-            runner: macos-latest
-            rust_targets: "aarch64-apple-darwin,x86_64-apple-darwin"
-            args: "--target universal-apple-darwin --bundles app,dmg"
-          - name: Windows · MSI, NSIS
-            runner: windows-latest
-            rust_targets: ""
-            args: "--bundles msi,nsis"
+        include: ${{ fromJSON(needs.platforms.outputs.include) }}
 
     steps:
       - name: Check out repository
@@ -77,6 +92,8 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # On a release this also asserts the tag matches the application version, so
+      # a mistagged release fails before any installer is attached to it.
       - name: Verify synchronized release version
         run: npm run check:version
 
@@ -89,20 +106,17 @@ jobs:
           retryAttempts: 1
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: "localhost-hub-[version]-[platform]-[arch]-[bundle]"
-          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Localhost Hub {0}', github.ref_name) || '' }}
-          releaseBody: "Cross-platform Localhost Hub desktop packages. See CHANGELOG.md for this version's changes."
-          releaseDraft: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          generateReleaseNotes: true
+          # Attach to the release that triggered this run. Empty on other events,
+          # which leaves the packages as workflow artifacts only.
+          releaseId: ${{ github.event_name == 'release' && github.event.release.id || '' }}
           releaseAssetNamePattern: "localhost-hub-[version]-[platform]-[arch]-[bundle][setup][ext]"
 
       - name: Prepare Arch package input
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && github.event_name != 'pull_request'
         run: cp src-tauri/target/release/bundle/deb/*.deb packaging/arch/localhost-hub.deb
 
       - name: Build Arch package
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && github.event_name != 'pull_request'
         run: |
           mkdir -p dist-arch
           docker run --rm \
@@ -118,7 +132,7 @@ jobs:
             '
 
       - name: Upload Arch workflow artifact
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: localhost-hub-${{ github.sha }}-arch-x86_64
@@ -126,8 +140,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Attach Arch package to tagged release
-        if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/v')
+      - name: Attach Arch package to the release
+        if: runner.os == 'Linux' && github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$GITHUB_REF_NAME" dist-arch/*.pkg.tar.zst --clobber
+        run: gh release upload "${{ github.event.release.tag_name }}" dist-arch/*.pkg.tar.zst --clobber
