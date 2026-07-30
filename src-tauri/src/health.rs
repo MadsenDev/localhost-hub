@@ -420,7 +420,7 @@ fn inspect_git(repository: &Repository) -> GitInspection {
             })
         })
         .collect::<Vec<_>>();
-    stale_branches.sort_by(|left, right| right.days_since_commit.cmp(&left.days_since_commit));
+    stale_branches.sort_by_key(|branch| std::cmp::Reverse(branch.days_since_commit));
 
     GitInspection {
         uncommitted_changes,

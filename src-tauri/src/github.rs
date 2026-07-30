@@ -495,10 +495,8 @@ fn parse_github_repository(url: &str) -> Option<String> {
         path
     } else if let Some(path) = trimmed.strip_prefix("http://github.com/") {
         path
-    } else if let Some(path) = trimmed.strip_prefix("ssh://git@github.com/") {
-        path
     } else {
-        return None;
+        trimmed.strip_prefix("ssh://git@github.com/")?
     };
     let path = path.strip_suffix(".git").unwrap_or(path);
     let (owner, name) = path.split_once('/')?;

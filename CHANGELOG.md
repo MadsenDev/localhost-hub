@@ -7,98 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Drove desktop packaging from Releases instead of from pull requests. The previous
-  trigger listed the application sources, so publishing installers for all three
-  platforms plus an Arch container build ran on very nearly every pull request.
-  Publishing a GitHub release now builds every platform and attaches the installers
-  to that release, manual runs still produce artifacts on demand, and pull requests
-  build Linux only when they change the packaging definition itself.
-
-- Generated the TypeScript types for every value crossing the command boundary from
-  the Rust structs themselves, using ts-rs, and re-exported them from the modules
-  that previously declared them by hand. The two sides were mirrored manually across
-  three separate files, so a renamed Rust field surfaced only at runtime as an
-  undefined value. A renamed field now fails typechecking, and continuous integration
-  fails if the committed bindings do not match the current Rust definitions.
-  Reconciling the two sides also corrected the stored run mode, which was an
-  unvalidated string rather than the same enumeration the workspace runner already
-  used, and one caller that relied on backend defaults instead of sending a complete
-  service definition.
-
-### Security
-
-- Moved the GitHub access token and every environment variable marked secret out of
-  `config.json` and into the operating system credential store: Keychain on macOS,
-  Credential Manager on Windows, and the Secret Service on Linux. A token with
-  repository scope in a plaintext file was readable by any process running as the
-  user, which includes the tooling in every project the application scans. Existing
-  configurations are migrated on first load and the file is rewritten without them.
-  Where no credential store is available, such as a Linux session without a Secret
-  Service provider, the values fall back to a file restricted to the current user
-  account — including a proper access control list on Windows, which the previous
-  code left to inherit from its parent directory — and the settings panel states
-  which of the two is in use rather than implying the credential store always is.
-- Enabled a Content Security Policy for the desktop window, which was previously
-  disabled. The policy allows only same-origin scripts and styles, restricts images
-  to the application, data URLs, and GitHub avatars, and blocks objects and frames
-  outright. Inline styles remain permitted because the interface animates through
-  them. Verified by loading the production bundle in a browser with the policy
-  enforced and confirming no violations.
-- Made environment profiles that do not inherit the system environment behave
-  predictably. The service command previously ran through a login shell, which
-  sources the user's profile files and re-exported the environment that clearing it
-  was meant to remove, so what a service saw depended on the user's dotfiles. A
-  non-inheriting profile now runs without the login shell over a documented minimal
-  baseline. The same correction was applied to the Electron script runner, which
-  passed an entirely empty environment and therefore left no `PATH` for the command
-  to resolve against.
-
-### Changed
-
-- Added ESLint (TypeScript, React Hooks) and wired lint, typechecking, and Clippy
-  into CI. Correctness rules fail the build; pre-existing `any` usage and React Hook
-  dependency findings are reported as warnings so they stay visible without
-  blocking. Removed the dead bindings this surfaced.
-- Removed `@babel/parser`, `@babel/traverse`, and `fast-glob` from the production
-  dependencies. Nothing imported them, and dropping `fast-glob` clears the only
-  advisory in the production dependency tree. Moved `toml`, used solely by the
-  version-sync script, to the development dependencies.
-
-### Fixed
-
-- Kept service log streaming alive when a process writes output that is not valid
-  UTF-8. Reading lines through a UTF-8 decoder returned an error that ended the
-  reader, so a single stray byte silenced a service's logs for as long as it kept
-  running. Output is now decoded lossily.
-- Made carriage-return progress output visible while it happens. Tools that redraw
-  progress with `\r` and never emit a newline previously buffered their entire run
-  as one unterminated line, so nothing appeared until the process finished. Long
-  lines are also flushed at a bound instead of growing without limit, and `\r\n` is
-  treated as a single terminator so blank lines survive.
-- Restored `findGitExecutable` on Windows, which referenced a platform flag that was
-  never declared, and corrected four `execSync` calls that passed a boolean for the
-  `shell` option, which expects a shell path.
-- Stopped `tsc -p tsconfig.json` from emitting JavaScript beside every source file
-  by marking that project typecheck-only.
-- Restored the Electron parity reference so it can actually be run. The Electron UI
-  had no entry point: `index.html` was the only one and it mounts the Tauri
-  application, so both `npm run dev:electron` and the packaged Electron build
-  rendered the Tauri interface against a backend that was not there. The original
-  Electron shell was recovered from history and is now mounted by
-  `index.electron.html` → `src/main.electron.tsx` → `src/ElectronApp.tsx`, with the
-  Electron build and main process pointed at that entry.
-- Stopped the Tauri command wrapper from resolving `null` in violation of its own
-  type signatures. Read commands used by the polling and startup paths now return
-  type-correct empty values, and commands that cannot be completed without the
-  native backend reject with an explicit error instead of appearing to succeed.
-  Previously every call resolved `null` outside Tauri, which crashed the first
-  refresh tick in browser development.
-- Corrected `tsconfig.app.json` to typecheck the whole `src/` tree. The `include`
-  patterns were not recursive, so `src/components`, `src/hooks`, `src/plugins`, and
-  `src/utils` were never checked; the resulting type errors are fixed.
-
 ### Added
 
 - Added the animated Localhost Hub brand lockup to first-run onboarding, with a reduced-motion fallback.
@@ -208,14 +116,102 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Drove desktop packaging from Releases instead of from pull requests. The previous
+  trigger listed the application sources, so publishing installers for all three
+  platforms plus an Arch container build ran on very nearly every pull request.
+  Publishing a GitHub release now builds every platform and attaches the installers
+  to that release, manual runs still produce artifacts on demand, and pull requests
+  build Linux only when they change the packaging definition itself.
+
+- Generated the TypeScript types for every value crossing the command boundary from
+  the Rust structs themselves, using ts-rs, and re-exported them from the modules
+  that previously declared them by hand. The two sides were mirrored manually across
+  three separate files, so a renamed Rust field surfaced only at runtime as an
+  undefined value. A renamed field now fails typechecking, and continuous integration
+  fails if the committed bindings do not match the current Rust definitions.
+  Reconciling the two sides also corrected the stored run mode, which was an
+  unvalidated string rather than the same enumeration the workspace runner already
+  used, and one caller that relied on backend defaults instead of sending a complete
+  service definition.
+- Added ESLint (TypeScript, React Hooks) and wired lint, typechecking, and Clippy
+  into CI. Correctness rules fail the build; pre-existing `any` usage and React Hook
+  dependency findings are reported as warnings so they stay visible without
+  blocking. Removed the dead bindings this surfaced.
+- Removed `@babel/parser`, `@babel/traverse`, and `fast-glob` from the production
+  dependencies. Nothing imported them, and dropping `fast-glob` clears the only
+  advisory in the production dependency tree. Moved `toml`, used solely by the
+  version-sync script, to the development dependencies.
 - Established `MadsenDev/localhost-hub` as the canonical active repository and the original Hub feature set as the behavioral parity reference.
 - Moved operating-system work and long-running process ownership behind Rust service boundaries while keeping React responsible for interface and presentation state.
 - Kept Git and GitHub as separate product domains: local repository operations use `git2`; remote platform information uses the GitHub integration.
 - Reworked the Repos view around detected local projects, runnable scripts, native Git controls, and workspace service creation.
 - Set the migration version line to `0.9.0-alpha`, preserving `0.8.x` as the final Electron-first line and reserving `1.0.0` for the unified production release.
 
+### Fixed
+
+- Pinned the Rust toolchain so Clippy's `-D warnings` gate is reproducible. Because
+  continuous integration tracked the floating stable channel, Rust 1.97 introduced
+  lints that 1.94 did not have and failed the build on code nobody had touched. The
+  three findings are corrected, and local checks now use the same compiler as
+  continuous integration, so a Clippy upgrade becomes a deliberate change.
+- Kept service log streaming alive when a process writes output that is not valid
+  UTF-8. Reading lines through a UTF-8 decoder returned an error that ended the
+  reader, so a single stray byte silenced a service's logs for as long as it kept
+  running. Output is now decoded lossily.
+- Made carriage-return progress output visible while it happens. Tools that redraw
+  progress with `\r` and never emit a newline previously buffered their entire run
+  as one unterminated line, so nothing appeared until the process finished. Long
+  lines are also flushed at a bound instead of growing without limit, and `\r\n` is
+  treated as a single terminator so blank lines survive.
+- Restored `findGitExecutable` on Windows, which referenced a platform flag that was
+  never declared, and corrected four `execSync` calls that passed a boolean for the
+  `shell` option, which expects a shell path.
+- Stopped `tsc -p tsconfig.json` from emitting JavaScript beside every source file
+  by marking that project typecheck-only.
+- Restored the Electron parity reference so it can actually be run. The Electron UI
+  had no entry point: `index.html` was the only one and it mounts the Tauri
+  application, so both `npm run dev:electron` and the packaged Electron build
+  rendered the Tauri interface against a backend that was not there. The original
+  Electron shell was recovered from history and is now mounted by
+  `index.electron.html` → `src/main.electron.tsx` → `src/ElectronApp.tsx`, with the
+  Electron build and main process pointed at that entry.
+- Stopped the Tauri command wrapper from resolving `null` in violation of its own
+  type signatures. Read commands used by the polling and startup paths now return
+  type-correct empty values, and commands that cannot be completed without the
+  native backend reject with an explicit error instead of appearing to succeed.
+  Previously every call resolved `null` outside Tauri, which crashed the first
+  refresh tick in browser development.
+- Corrected `tsconfig.app.json` to typecheck the whole `src/` tree. The `include`
+  patterns were not recursive, so `src/components`, `src/hooks`, `src/plugins`, and
+  `src/utils` were never checked; the resulting type errors are fixed.
+
 ### Security
 
+- Moved the GitHub access token and every environment variable marked secret out of
+  `config.json` and into the operating system credential store: Keychain on macOS,
+  Credential Manager on Windows, and the Secret Service on Linux. A token with
+  repository scope in a plaintext file was readable by any process running as the
+  user, which includes the tooling in every project the application scans. Existing
+  configurations are migrated on first load and the file is rewritten without them.
+  Where no credential store is available, such as a Linux session without a Secret
+  Service provider, the values fall back to a file restricted to the current user
+  account — including a proper access control list on Windows, which the previous
+  code left to inherit from its parent directory — and the settings panel states
+  which of the two is in use rather than implying the credential store always is.
+- Enabled a Content Security Policy for the desktop window, which was previously
+  disabled. The policy allows only same-origin scripts and styles, restricts images
+  to the application, data URLs, and GitHub avatars, and blocks objects and frames
+  outright. Inline styles remain permitted because the interface animates through
+  them. Verified by loading the production bundle in a browser with the policy
+  enforced and confirming no violations.
+- Made environment profiles that do not inherit the system environment behave
+  predictably. The service command previously ran through a login shell, which
+  sources the user's profile files and re-exported the environment that clearing it
+  was meant to remove, so what a service saw depended on the user's dotfiles. A
+  non-inheriting profile now runs without the login shell over a documented minimal
+  baseline. The same correction was applied to the Electron script runner, which
+  passed an entirely empty environment and therefore left no `PATH` for the command
+  to resolve against.
 - Rejects unsafe project names, path traversal, invalid package specifications, and attempts to overwrite existing project paths.
 - Restricts browser opening to normalized local HTTP and HTTPS URLs.
 - Runs package installation without a shell and disables interactive Git credential prompts for background network operations.

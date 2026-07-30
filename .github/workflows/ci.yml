@@ -57,8 +57,11 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      # Pinned to match src-tauri/rust-toolchain.toml. Clippy runs with
+      # -D warnings, so a floating channel lets a new Rust release fail CI on
+      # untouched code.
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.97.0
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2

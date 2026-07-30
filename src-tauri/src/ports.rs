@@ -229,10 +229,8 @@ pub fn extract_local_urls(line: &str) -> Vec<String> {
 pub fn normalize_local_url(candidate: &str) -> Option<String> {
     let (scheme, remainder) = if let Some(remainder) = candidate.strip_prefix("http://") {
         ("http", remainder)
-    } else if let Some(remainder) = candidate.strip_prefix("https://") {
-        ("https", remainder)
     } else {
-        return None;
+        ("https", candidate.strip_prefix("https://")?)
     };
 
     let authority_end = remainder
