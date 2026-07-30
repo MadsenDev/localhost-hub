@@ -1,3 +1,11 @@
+> [!NOTE]
+> This is the original product brief, kept for the product intent and the entity model
+> it describes. Its implementation details are historical: they describe the Electron
+> architecture that the `0.9.x` line replaced with Tauri and Rust. For how the app is
+> actually built, see [the README](README.md) and
+> [the unification plan](docs/UNIFICATION.md); for what is planned, see
+> [the implementation backlog](docs/IMPLEMENTATION_BACKLOG.md).
+
 1. High-level Concept
 
 Localhost Hub is a desktop app that acts as a control center for all your dev projects:

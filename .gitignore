@@ -1,13 +1,10 @@
 node_modules
-.dist
 .vscode
 .DS_Store
 dist
-dist-electron
 npm-debug.log*
 *.log
 /release
-/plugins
 /src-tauri/target
 /packaging/arch/localhost-hub.deb
 /dist-arch
