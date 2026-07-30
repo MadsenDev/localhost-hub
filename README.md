@@ -1,275 +1,233 @@
+<div align="center">
+
+<img src="./public/logo.svg" alt="Localhost Hub" width="96" />
+
 # Localhost Hub
 
-Localhost Hub is a local-first desktop control center for development projects. Discover projects, run services, inspect logs and ports, manage Git, and keep your local development environment under control from one app.
+**One window for every project on your machine.**
+Find them, run them, watch their logs and ports, and keep their Git in view — without a terminal tab per service.
 
-> [!IMPORTANT]
-> The migration from Electron to Tauri 2 is complete on the `0.9.x` line: Tauri is the only shell, and the Electron implementation has been removed. See [the unification plan](docs/UNIFICATION.md) for what the migration covered.
+Local-first · no telemetry · MIT
 
-![Localhost Hub hero](./public/logo.svg)
+</div>
 
----
-
-## Table of Contents
-1. [Highlights](#highlights)
-2. [Getting Started](#getting-started)
-3. [Project Scanner & Data Model](#project-scanner--data-model)
-4. [Script Runner & Workspaces](#script-runner--workspaces)
-5. [Projects, Git, Ports & Packages](#projects-git-ports--packages)
-6. [Create Project Wizard](#create-project-wizard)
-7. [Architecture](#architecture)
-8. [Build, Package & Release](#build-package--release)
-9. [Testing](#testing)
-10. [Troubleshooting](#troubleshooting)
-11. [Roadmap Ideas](#roadmap-ideas)
-12. [License](#license)
+![The Home view: system load, a running workspace, and detected projects](./docs/screenshots/home.png)
 
 ---
 
-## Highlights
+## Contents
 
-- **Zero-config project discovery** – recursively scans folders for `package.json` files, tags frameworks, and surfaces scripts automatically.
-- **Workspace orchestration** – create named “workflows” spanning multiple repos; launch scripts sequentially or in parallel with staggered boot to avoid port clashes.
-- **Deep process insight** – live logs with per-project history, toast alerts, Open-In-Browser buttons that parse stdout for URLs/ports, and terminal pop-outs.
-- **Git awareness** – branch, dirty/ahead/behind status, last commit summary, and change lists right from the project header/tab.
-- **New project scaffolding** – step-based creator with templates, dependencies, script planner, Tailwind presets (4.x Oxide or classic 3.4 stack), icon packs, README/git automation, and optional dependency installs.
-- **Tauri migration** – the new interface is backed by Rust commands for project scanning, managed services, live process events, ports, Git status, settings, and GitHub authentication.
-- **Cross-platform packaging** – Tauri builds AppImage, DEB, RPM, Arch, DMG, MSI, and NSIS packages from one codebase.
-- **Stays out of the way** – close to the system tray to keep supervised services running, and reopen from the tray icon.
+- [Why](#why)
+- [What it does](#what-it-does)
+- [Getting started](#getting-started)
+- [How it works](#how-it-works)
+- [Where your data lives](#where-your-data-lives)
+- [Development](#development)
+- [Packaging and releases](#packaging-and-releases)
+- [Project status](#project-status)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
 
 ---
 
-## Getting Started
+## Why
+
+A full-stack change usually means a web server, an API, a worker, and a database — four terminals, four sets of scrollback, and a guess at which port belongs to which. Localhost Hub puts them in one place: start the group, read one merged log, see which ports are actually listening, and check what Git thinks before you switch branches.
+
+It runs entirely on your machine. Nothing is uploaded, and there is no account.
+
+---
+
+## What it does
+
+### Finds your projects
+
+Point it at the folders you keep code in. It walks them and reports what it finds — framework, package manager, runnable scripts, Git branch, uncommitted work — for JavaScript and TypeScript, Rust, Go, Python, Ruby, and PHP.
+
+Discovery is stateless: each scan reads the filesystem fresh, so nothing can go stale between a rescan and what you are looking at.
+
+![The Repos view: four detected projects with framework, branch, and scripts](./docs/screenshots/repos.png)
+
+### Runs groups of services together
+
+Collect services into a workspace and start the whole thing at once. Declare what depends on what and they launch in order, waiting for a prerequisite to be ready before unlocking whatever needs it — and reporting downstream services as blocked when a prerequisite fails, rather than starting them into a broken world.
+
+Stopping escalates from `SIGTERM` to `SIGKILL` across the whole process group, so a dev server's children do not survive it.
+
+### Merges every log into one stream
+
+Colour-coded by source, filterable by service and level, searchable. Ports and URLs are picked out of the output, so "which port did that one get" stops being a question.
+
+![The Logs view: merged output from three services, colour-coded by source](./docs/screenshots/logs.png)
+
+### Remembers what ran
+
+Every run is recorded with its command, timing, exit status, and full output, and it survives closing the app. Runs that were still going when the app last closed are marked interrupted rather than presented as though they were still live.
+
+![The Run history view: live runs alongside interrupted ones from a previous session](./docs/screenshots/history.png)
+
+### Keeps an eye on repository hygiene
+
+Uncommitted work that has been sitting too long, unpushed commits, branches nobody has touched in months, a missing README or licence, absent CI. All computed locally from the filesystem and Git.
+
+![The Health view: per-repository scores and the signals behind them](./docs/screenshots/health.png)
+
+### Plus
+
+- **Ports** — every listening port on the machine, which process owns it, and a preflight check that catches a conflict before a service fails to bind.
+- **Git** — branch, ahead/behind, staged and unstaged changes, diffs, commits, branches, remotes, and fetch/pull/push.
+- **GitHub** — connect an account to see the pull request for your current branch, open issues, and CI results for the commit you are on.
+- **Packages** — dependency inspection, audit, and outdated checks across npm, pnpm, yarn, and Bun.
+- **New project** — a scaffolder for a starter with the scripts, dependencies, and styling you actually want.
+- **Environment profiles** — named sets of variables per project, applied per service, with secret values held in your operating system's credential store rather than a file.
+- **Close to the tray** — optionally keep supervised services running when you close the window, and reopen from the tray icon.
+
+![The Settings view: workspace folders, appearance, and window behaviour](./docs/screenshots/settings.png)
+
+---
+
+## Getting started
 
 ### Requirements
-- Node.js 20+
-- npm 10+ (pnpm/yarn/bun supported inside projects; the app itself uses npm)
-- Git
-- Rust 1.77.2+ and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for native development
 
-### Install & run the Tauri app
+- Node.js 20+ and npm 10+ (your projects can use pnpm, yarn, or Bun)
+- Git
+- Rust 1.77.2+ and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
+
+### Run it
+
 ```bash
 npm install
 npm run tauri:dev
 ```
 
-Set `GITHUB_CLIENT_ID` at build time to enable the optional GitHub OAuth device flow. The app still builds and its local features remain available without it.
+On first launch, choose the folders to scan. That is the only setup.
 
-Running `npm run dev` serves the interface in a plain browser, without the native
-backend. Read commands return empty values so the interface still renders; anything
-that mutates state rejects with a clear error rather than appearing to succeed. Use
-`npm run tauri:dev` for the real thing.
+To enable the optional GitHub connection, set `GITHUB_CLIENT_ID` at build time. Everything local works without it.
+
+> [!NOTE]
+> `npm run dev` serves the interface in a plain browser, without the native backend. Read commands return empty values so the interface still renders, and anything that would change state fails with a clear message rather than pretending to work. Useful for interface work; use `npm run tauri:dev` for the real thing.
 
 ---
 
-## Project Scanner & Data Model
+## How it works
 
-Discovery is stateless: `scan_workspace_groups` walks the configured roots on demand
-and returns what it finds, so nothing can go stale between a rescan and the interface.
+React owns the interface. Rust owns everything privileged — the filesystem, processes, ports, Git, persistence — and the two talk over typed Tauri commands.
 
-Scanner highlights:
-- Depth-limited recursion with ignore patterns.
-- Detects JavaScript/TypeScript, Rust, Go, Python, Ruby, and PHP projects from their
-  manifests, along with frameworks, package managers, runnable scripts, Git roots, and
-  environment files.
+```
+src/                          The interface
+  App.tsx                     Root, state orchestration
+  view-*.tsx                  Top-level views
+  tauri-api.ts                The only path to the backend
+  generated/                  TypeScript types generated from the Rust structs
 
-What *is* persisted lives in `config.json` under the platform application data
-directory, written by `src-tauri/src/config.rs`:
+src-tauri/src/                The backend
+  commands.rs                 Every command the interface can invoke
+  workspace.rs                Discovery, dependency ordering, readiness
+  services.rs                 Process lifecycle and output streaming
+  ports.rs                    Listening sockets, localhost URL parsing
+  git.rs / github.rs          Local Git via git2; GitHub as a separate concern
+  packages.rs / scaffold.rs   Package managers; project creation
+  health.rs                   Repository health signals
+  config.rs / secrets.rs      Persistence; credential store
+  history.rs                  Run history and stored output
+```
 
-| Stored | Purpose |
+**The boundary is checked by the compiler.** Every type crossing it is generated from the Rust struct by [ts-rs](https://github.com/Aleph-Alpha/ts-rs), so renaming a Rust field breaks the build at each call site that reads it instead of surfacing as an `undefined` at runtime. Continuous integration fails if the committed bindings drift from the Rust definitions.
+
+Built with React 19, Vite 7, Tauri 2, Tokio, and Framer Motion.
+
+---
+
+## Where your data lives
+
+Everything sits under your platform's application data directory — `~/.local/share/dev.madsens.localhost-hub` on Linux, `~/Library/Application Support` on macOS, `%APPDATA%` on Windows.
+
+| Path | Holds |
 | --- | --- |
-| `workspace_roots` | Directories to scan |
-| `user_workspaces` | Named workspaces and their service definitions |
-| `env_profiles` | Per-project environment sets |
-| `appearance` | Theme, accent, density, sidebar |
-| `onboarding_complete` | First-run state |
-| `github_user` | Connected account, for display |
+| `config.json` | Scan folders, workspaces, environment profiles, appearance, window behaviour |
+| `history/runs.json` | The last 200 runs, with timing and outcome |
+| `history/logs/*.log` | One append-only log per run, capped at 2 MiB |
+| OS credential store | The GitHub token and any variable marked secret |
 
-The GitHub access token and any variable marked secret are held in the operating
-system credential store rather than that file — see `src-tauri/src/secrets.rs`.
+Secrets go to Keychain on macOS, Credential Manager on Windows, and the Secret Service on Linux. Where no credential store exists — a headless session, a container — they fall back to a file readable only by your account, and Settings tells you which is in use rather than implying the credential store always is.
 
-Run history lives alongside it, under `history/`: a bounded index of past runs plus one
-append-only log per run. See the **Run history** view. Live process state is
-deliberately not persisted — the process table is in memory, so runs still marked
-running at startup are reported as interrupted rather than presented as live.
+Nothing leaves your machine.
 
 ---
 
-## Script Runner & Workspaces
-
-- Services are started, stopped, and restarted by the Rust service manager
-  (`src-tauri/src/services.rs`), which spawns each command in its own process group
-  and streams stdout, stderr, lifecycle events, and detected URLs to the interface.
-- Workspace sequencing:
-  - **Parallel**: independent services launch together.
-  - **Sequential**: ordered start for services that need it.
-  - **Dependencies**: `depends_on` is validated for missing, self-referential, and
-    cyclic entries, then launched in topological layers, waiting for prerequisite
-    readiness before unlocking dependents and reporting downstream services as blocked
-    when a prerequisite fails.
-- Environment profiles apply per service, either extending the login shell environment
-  or running over a documented minimal baseline.
-- Stopping escalates from SIGTERM to SIGKILL across the whole process group, so a dev
-  server's children do not survive it.
-
----
-
-## Projects, Git, Ports & Packages
-
-- **Sidebar indicators** – see branch/alive/running status at a glance.
-- **Project tabs** – Scripts, Logs, Env Profiles, Ports, Packages, Git.
-- **Port intelligence** – heuristics gather expected/detected ports plus `localhost:` URLs scraped from stdout.
-- **Packages panel** – paginate dependencies, scan `node_modules`, and trigger install operations with package manager detection.
-
----
-
-## Create Project Wizard
-
-Launch via **“Create New Project”** in the sidebar or empty state.
-
-1. **Basics** – name, directory, optional description.
-2. **Stack** – starter templates, curated dependency presets, script planner, package manager, styling + icon packs.
-3. **Extras** – choose language (JS/TS), sample code (CLI vs HTTP server), README + git init, notes.
-4. **Review** – confirm before scaffolding.
-
-Backend scaffolding handles:
-- Directories & `package.json` creation
-- Dependency/devDependency normalization
-- Tailwind v3 vs v4 (Oxide) pipeline files
-- Sample source files (`src/index.(ts|js)`)
-- README sections describing scripts/styling/icon packs
-- Optional `.gitignore` + `git init`
-- Optional install command using the selected package manager
-- Automatic project rescan so the new repo appears immediately
-
----
-
-## Architecture
-
-```
-.
-├── src-tauri/
-│   ├── src/
-│   │   ├── commands.rs      # Every command the interface can invoke
-│   │   ├── workspace.rs     # Discovery and workspace orchestration
-│   │   ├── services.rs      # Process lifecycle, output streaming
-│   │   ├── git.rs           # Local Git via git2, plus network operations
-│   │   ├── github.rs        # Device-flow auth and repository context
-│   │   ├── ports.rs         # Listening sockets and localhost URL parsing
-│   │   ├── packages.rs      # Package manager detection and actions
-│   │   ├── scaffold.rs      # Project creation
-│   │   ├── health.rs        # Repository health signals
-│   │   ├── config.rs        # Persistence
-│   │   └── secrets.rs       # Credential store, with a restricted-file fallback
-│   └── rust-toolchain.toml  # Pinned build toolchain
-├── src/
-│   ├── App.tsx          # React root, state orchestration
-│   ├── view-*.tsx       # Top-level views
-│   ├── tauri-api.ts     # The command wrapper; the only path to the backend
-│   └── generated/       # TypeScript types generated from the Rust structs
-├── scripts/             # Build helpers (icon generation, version sync)
-├── public/              # Icons, wordmarks
-├── buildResources/      # Packaged app icons, entitlements
-└── .github/workflows/   # CI and Release-driven packaging
-```
-
-Key tech:
-- **Renderer**: React 19 + Vite
-- **Native backend**: Tauri 2 + Rust + Tokio
-- **Animations**: Framer Motion
-- **Persistence**: JSON config plus the OS credential store for secrets
-- **Bridge**: typed Tauri commands and events, with the TypeScript types generated
-  from the Rust structs so the two cannot drift
-- **Testing**: Vitest + Testing Library + jsdom
-
----
-
-## Build, Package & Release
-
-### Frontend bundle
-```bash
-npm run build
-```
-This writes the Vite production bundle to `dist/`.
-
-### Tauri desktop package
+## Development
 
 ```bash
-npm run tauri:build
+npm run tauri:dev          # run the app
+npm test                   # interface tests
+npm run lint               # ESLint
+npm run typecheck          # both TypeScript projects
+npm run generate:bindings  # regenerate the TypeScript types from Rust
 ```
 
-GitHub Actions builds and retains:
+```bash
+cd src-tauri
+cargo test                 # backend tests, including the type-binding exports
+cargo clippy --all-targets -- -D warnings
+```
 
-- Linux AppImage, DEB, RPM, and Arch `.pkg.tar.zst` packages
-- A universal macOS DMG/app for Intel and Apple Silicon
-- Windows MSI and NSIS installers
+The Rust toolchain is pinned in `src-tauri/rust-toolchain.toml`, so local checks and continuous integration run the same compiler and a new Clippy release cannot fail the build on code nobody touched.
 
-Publishing a GitHub release builds all three platforms and attaches the installers
-to it. Manual workflow runs produce downloadable artifacts, and pull requests build
-Linux only when they change the packaging definition itself.
-See [Desktop Distribution](docs/DISTRIBUTION.md) for distro coverage, versioning,
-and current signing limitations.
+Continuous integration runs the lot on every pull request: lint, both typecheck projects, the interface tests, a production build, Clippy with warnings denied, the backend tests, and a check that the generated bindings still match the Rust definitions.
 
 ---
 
-## Testing
+## Packaging and releases
 
-Run once:
-```bash
-npm run test
-```
+Packaging is driven by Releases. Publishing a GitHub release builds every platform and attaches the installers to it:
 
-Watch mode:
-```bash
-npm run test:watch
-```
+| Platform | Formats |
+| --- | --- |
+| Linux | AppImage, DEB, RPM, Arch `.pkg.tar.zst` |
+| macOS | DMG and `.app`, universal for Intel and Apple Silicon |
+| Windows | MSI and NSIS |
 
-### What’s covered
-- React component behavior (ProjectHeader, etc.)
-- Utility logic (path normalization, project lookups)
-- jsdom-based tests for UI conditionals
+Manual workflow runs produce the same artifacts on demand. Pull requests build Linux only, and only when they change the packaging definition itself.
 
-### Planned coverage
-- Workspace runner integration tests (mocked child processes)
-- IPC contract tests between renderer and main
-- Snapshot or visual regression for key panels
+See [Desktop Distribution](docs/DISTRIBUTION.md) for distro coverage, versioning, and signing status.
+
+---
+
+## Project status
+
+`0.9.x` — the Electron-to-Tauri migration is complete and Tauri is the only shell. See [the unification plan](docs/UNIFICATION.md).
+
+Honest about what is not done:
+
+- **Packages are unsigned.** macOS Gatekeeper and Windows SmartScreen will warn until signing credentials are in place. Blocking for `1.0`.
+- **Linux is the best-tested platform.** The Windows and macOS paths — process trees, port inspection, the credential store, the tray — need real use on those systems.
+- **The Ports topology diagram has a layout bug** that clips nodes at the left edge. The Active ports table below it is correct.
+- **No Docker integration yet**, despite the Containers entry in the sidebar.
+
+What is planned, in order, lives in [the implementation backlog](docs/IMPLEMENTATION_BACKLOG.md). The original product brief is kept as [PROJECT.md](PROJECT.md) for its intent; its architecture section describes the implementation Tauri replaced.
+
+Further out: SSH tunnelling and remote discovery, richer diffs and staging, pluggable script types such as Docker Compose and Make, and [Localhost Companion](docs/LOCALHOST_COMPANION.md) — a focused Android remote.
 
 ---
 
 ## Troubleshooting
 
-### Unsigned Windows and macOS packages
+**Unsigned build warnings.** Expected until signing is configured. On macOS, right-click and choose Open; on Windows, choose More info then Run anyway.
 
-Development artifacts are currently unsigned. Windows SmartScreen and macOS
-Gatekeeper may therefore require explicit approval. Production signing and
-macOS notarization will be added once the release credentials are available.
+**Rendering problems on Linux.** Tauri uses WebKitGTK, so if the window renders oddly or the GPU drivers are unreliable, try:
 
-### Vite chunk size warning
-- Vite warns when a chunk exceeds 500 kB minified. Consider future code-splitting of rarely used panels if it becomes a perf problem; not currently blocking.
+```bash
+WEBKIT_DISABLE_COMPOSITING_MODE=1 localhost-hub
+WEBKIT_DISABLE_DMABUF_RENDERER=1 localhost-hub   # if the first does not help
+```
 
-### Linux AppImage feels sluggish (Wayland/X11)
-- Try `LOCALHOST_HUB_OZONE_PLATFORM=wayland` (or `x11`) to see which compositor performs better.
-- If GPU drivers are flaky, test with `LOCALHOST_HUB_DISABLE_GPU=1`.
-- In-app, enable **Minimize animations** for lighter UI transitions.
+**Services will not start.** Check the command runs in that directory in your own shell first. If an environment profile is set not to inherit the system environment, it runs over a documented minimal baseline rather than your full shell setup.
 
-### Icon/resource mismatch
-- Re-run `npm run generate:icons` if you change assets under `public/logo-icons`.
-- Ensure `buildResources/` contains the generated `.icns`, `.ico`, `.png`, and `linux-icons/**`.
-
----
-
-## Roadmap Ideas
-
-- Editable environment profiles per workspace item
-- SSH tunneling + remote project discovery
-- [Localhost Companion](docs/LOCALHOST_COMPANION.md), a focused Android remote after desktop parity
-- Git actions (commit/pull/push) with OAuth device flow
-- Pluggable script types (Docker compose, Make targets, etc.)
-- Telemetry opt-in for better error diagnostics
+**Icons look wrong after changing assets.** Re-run `npm run generate:icons`, and make sure `buildResources/` has the generated `.icns`, `.ico`, `.png`, and `linux-icons/**`.
 
 ---
 
 ## License
 
-MIT © Christoffer Madsen
-
-See [`LICENSE`](./LICENSE) for details.
+MIT © Christoffer Madsen — see [LICENSE](./LICENSE).
