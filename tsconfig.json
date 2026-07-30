@@ -9,6 +9,10 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "skipLibCheck": true,
+    // This project is a typecheck-only gate; Vite and vite-plugin-electron do
+    // the emitting. Without this, `tsc -p tsconfig.json` writes .js files next
+    // to every source file.
+    "noEmit": true,
     "types": ["vite/client"]
   },
   "include": ["src", "electron"]

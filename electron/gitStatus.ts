@@ -77,7 +77,7 @@ export function parseBranchLine(line: string) {
 
 export function findGitExecutable(): string | null {
   const isWindows = process.platform === 'win32';
-  
+
   if (isWindows) {
     // Try common Git installation paths on Windows
     const commonPaths = [
@@ -100,7 +100,6 @@ export function findGitExecutable(): string | null {
 
 function runGitCommand(command: string, cwd: string, options: { encoding?: BufferEncoding; stdio?: any } = {}): string {
   const gitPath = findGitExecutable();
-  const isWindows = process.platform === 'win32';
   
   if (gitPath) {
     // Use full path to git executable (Windows)
@@ -109,8 +108,7 @@ function runGitCommand(command: string, cwd: string, options: { encoding?: Buffe
     return execSync(fullCommand, {
       cwd,
       encoding: options.encoding || 'utf-8',
-      stdio: options.stdio || 'pipe',
-      shell: true
+      stdio: options.stdio || 'pipe'
     });
   } else {
     // Use 'git' from PATH (Linux/Mac)
@@ -120,8 +118,7 @@ function runGitCommand(command: string, cwd: string, options: { encoding?: Buffe
     return execSync(fullCommand, {
       cwd,
       encoding: options.encoding || 'utf-8',
-      stdio: options.stdio || 'pipe',
-      shell: true
+      stdio: options.stdio || 'pipe'
     });
   }
 }
@@ -135,7 +132,7 @@ export function getGitStatus(projectPath: string): GitStatusInfo {
     if (gitPath) {
       execSync(`"${gitPath}" --version`, { stdio: 'ignore' });
     } else {
-      execSync('git --version', { stdio: 'ignore', shell: process.platform === 'win32' });
+      execSync('git --version', { stdio: 'ignore' });
     }
   } catch (error: any) {
     // Git is not installed or not in PATH

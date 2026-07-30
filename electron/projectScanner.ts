@@ -91,7 +91,7 @@ async function findProjectsInDirectory(root: string, maxDepth: number, ignoredDi
     let entries: Dirent[] = [];
     try {
       entries = (await readdir(directory, { withFileTypes: true })) as Dirent[];
-    } catch (error) {
+    } catch {
       return;
     }
 
@@ -104,7 +104,7 @@ async function findProjectsInDirectory(root: string, maxDepth: number, ignoredDi
       try {
         const project = await createProjectFromDirectory(directory, { hasPackageJson, hasCargoToml });
         results.push(project);
-      } catch (error) {
+      } catch {
         // ignore parse errors and continue walking
       }
     }

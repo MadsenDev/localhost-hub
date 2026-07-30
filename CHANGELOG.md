@@ -7,7 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Added ESLint (TypeScript, React Hooks) and wired lint, typechecking, and Clippy
+  into CI. Correctness rules fail the build; pre-existing `any` usage and React Hook
+  dependency findings are reported as warnings so they stay visible without
+  blocking. Removed the dead bindings this surfaced.
+- Removed `@babel/parser`, `@babel/traverse`, and `fast-glob` from the production
+  dependencies. Nothing imported them, and dropping `fast-glob` clears the only
+  advisory in the production dependency tree. Moved `toml`, used solely by the
+  version-sync script, to the development dependencies.
+
 ### Fixed
+
+- Kept service log streaming alive when a process writes output that is not valid
+  UTF-8. Reading lines through a UTF-8 decoder returned an error that ended the
+  reader, so a single stray byte silenced a service's logs for as long as it kept
+  running. Output is now decoded lossily.
+- Made carriage-return progress output visible while it happens. Tools that redraw
+  progress with `\r` and never emit a newline previously buffered their entire run
+  as one unterminated line, so nothing appeared until the process finished. Long
+  lines are also flushed at a bound instead of growing without limit, and `\r\n` is
+  treated as a single terminator so blank lines survive.
+- Restored `findGitExecutable` on Windows, which referenced a platform flag that was
+  never declared, and corrected four `execSync` calls that passed a boolean for the
+  `shell` option, which expects a shell path.
+- Stopped `tsc -p tsconfig.json` from emitting JavaScript beside every source file
+  by marking that project typecheck-only.
 
 - Restored the Electron parity reference so it can actually be run. The Electron UI
   had no entry point: `index.html` was the only one and it mounts the Tauri

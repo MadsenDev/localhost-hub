@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSettings } from './useSettings';
 import type { TourStep } from '../components/OnboardingTour';
-import { createDemoProject, DEMO_PROJECT_ID, getDemoLogs, isDemoProject } from '../utils/demoProject';
+import { createDemoProject, getDemoLogs, isDemoProject } from '../utils/demoProject';
 import type { ProjectInfo } from '../types/global';
 
 export function useOnboarding(electronAPI?: Window['electronAPI']) {

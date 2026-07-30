@@ -168,7 +168,7 @@ export function parseAuditOutput(output: string): ParsedAuditResult | null {
 
   // Parse summary
   const summaryLine = lines.find(l => l.includes('vulnerabilities') && /\d/.test(l));
-  let summary = { total: 0, moderate: 0, high: 0, critical: 0, low: 0 };
+  const summary = { total: 0, moderate: 0, high: 0, critical: 0, low: 0 };
   if (summaryLine) {
     const totalMatch = summaryLine.match(/(\d+)\s+vulnerabilities/);
     if (totalMatch) summary.total = parseInt(totalMatch[1], 10);

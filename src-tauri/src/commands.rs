@@ -121,6 +121,8 @@ pub fn kill_process(pid: u32) -> Result<(), String> {
 }
 
 #[tauri::command]
+// Tauri deserializes each argument by name from the renderer's payload.
+#[allow(clippy::too_many_arguments)]
 pub fn start_service(
     app: AppHandle,
     services: State<ServiceManager>,

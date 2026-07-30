@@ -29,6 +29,12 @@ jobs:
       - name: Verify synchronized release version
         run: npm run check:version
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Build frontend
         run: npm run build
 
@@ -58,6 +64,11 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+
+      # `cargo fmt --check` is not gated yet: the tree predates rustfmt, so
+      # enabling it needs a one-off `cargo fmt` that would touch every file.
+      - name: Run Clippy
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
       - name: Run Rust tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml

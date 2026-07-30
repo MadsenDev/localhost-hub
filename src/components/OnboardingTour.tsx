@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { HiXMark, HiChevronLeft, HiChevronRight } from 'react-icons/hi2';
 
 export type TourStep = {

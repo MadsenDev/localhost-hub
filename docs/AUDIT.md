@@ -30,10 +30,11 @@ The blocking problems are not in the Rust. They are in the **migration's integri
 Neither is hard to fix, but until they are, "verify feature parity before removing
 Electron" (UNIFICATION.md stage 10) is not an executable plan.
 
-> **Status: C1 and C2 were fixed in this branch.** See the *Resolution* notes under
-> each. Fixing C1 also surfaced a third defect that neither the audit nor CI could
-> have caught — `tsconfig.app.json` was typechecking only the top level of `src/`
-> (**F1** below). The findings are left in their original form for the record.
+> **Status: C1, C2, H4, H5, M1 (partly), M3, and M7 were fixed in this branch**, plus
+> three defects the audit could not have seen because no gate covered the code they
+> live in (**F1**, **F2**, **F3** below). Each finding keeps its original text, with a
+> *Resolution* note appended where work landed. Still open: **H1** (CSP), **H2**
+> (secrets at rest), **H3** (`sh -lc`), **M2**, **M4**, **M5**, **M6**, **M8**.
 
 ### Release-readiness verdict
 
@@ -141,10 +142,12 @@ the reference is the real prior behavior and not an approximation:
   Tauri build is untouched.
 - `electron/main.ts` — loads `index.electron.html` in both dev and packaged paths.
 
-One genuine bug surfaced in the recovered code: it read `plugin.launch.projectAction`,
-but the manifest type had since become `projectActions?: PluginProjectAction[]`. The
-shell was adapted to the current type. This is exactly the drift that having no
-runnable reference allows to accumulate.
+The recovered code referenced `plugin.launch.projectAction`, a field the manifest type
+had since renamed to `projectActions?: PluginProjectAction[]`. It turned out to sit in a
+`useMemo` whose result was never read — a dead near-duplicate of the live
+`projectPluginActions` immediately above it — so the binding was removed rather than
+adapted. Still the drift an unrunnable reference invites, but a stale computation
+rather than a user-facing bug.
 
 Verified: the two bundles are cleanly separated — the Electron bundle has 30
 `electronAPI` references and 0 Tauri internals; the Tauri bundle is the reverse (0
@@ -247,6 +250,38 @@ entry point pulled them all in at once.
 
 Both defects compound: dead code is not typechecked, so it rots; and because it rots,
 reviving it looks harder than it is.
+
+### F2 — `electron/` was never typechecked either
+
+`tsconfig.json` does include `electron`, but **no script or CI job ever invoked it** —
+`npm run typecheck` and `npm run build` both point at `tsconfig.app.json`, and
+`tsconfig.node.json` covers only `vite.config.ts`. So the Electron main process had no
+typecheck gate at all.
+
+It was hiding two real defects:
+
+- **`findGitExecutable` was broken on Windows.** It referenced an `isWindows` flag
+  that no longer existed in its scope, so the function could not compile — meaning
+  the Windows Git-path lookup was dead. (Found by ESLint flagging the *other*,
+  genuinely-unused declaration, then confirmed against `git show HEAD`.)
+- **Four `execSync` calls passed `shell: true`.** Node types that option as a shell
+  *path*, and `execSync` already runs through a shell, so the argument was both a
+  type error and a no-op. Removed, preserving behavior.
+
+**Fixed:** `noEmit` added to `tsconfig.json`, both defects corrected, and
+`npm run typecheck` now runs `tsconfig.app.json` **and** `tsconfig.json`, so the
+renderer, the Electron main process, and the tests are all covered.
+
+### F3 — `tsconfig.json` emitted JavaScript into the source tree
+
+`tsconfig.json` lacked `"noEmit": true` (unlike `tsconfig.app.json`). The moment it
+was wired into a script it wrote 113 `.js` files next to their sources — and Vitest
+promptly collected the compiled copies alongside the originals, reporting 94 tests
+across 32 files where there are 47 across 16.
+
+Latent rather than active, since nothing invoked that project before. Worth recording
+because it is what makes F2's fix safe to keep: without `noEmit`, adding the gate
+would have quietly polluted the tree on every run.
 
 **Fixed:** `include` is now `["src/**/*.ts", "src/**/*.tsx", "src/assets"]` and the
 full tree — application code and tests — typechecks clean. Worth keeping recursive
@@ -361,6 +396,17 @@ degrade to `U+FFFD` instead of terminating the stream; `continue` rather than `b
 on read errors; split on `\r` as well as `\n`, and flush partial lines above a size
 cap (e.g. 8 KiB).
 
+**Resolution (this branch):** `spawn_reader` now reads bytes rather than decoded lines.
+Invalid UTF-8 becomes replacement characters via `String::from_utf8_lossy` instead of
+ending the stream; `ErrorKind::Interrupted` continues rather than aborting; `\r` and
+`\n` both terminate lines, with `\r\n` treated as one terminator so blank lines
+survive; lines flush at `MAX_LOG_LINE_BYTES` (8 KiB); and output with no trailing
+terminator is emitted at EOF.
+
+Six tests cover the cases, and unlike the original audit these were **executed** — the
+GTK libraries were installed in the audit environment, so the full Rust suite runs
+here: **59 passed** (53 pre-existing + 6 new).
+
 The renderer side is handled correctly — `App.tsx:487` caps at 5,000 lines — and URL
 detection deduplicates, so unbounded growth there is not a concern.
 
@@ -382,6 +428,11 @@ advisory outright — see M7.
 
 **Fix:** `npm audit fix`, drop `fast-glob`, and add `npm audit --omit=dev` to CI as a
 non-blocking report so production-tree regressions surface on PRs.
+
+**Resolution (this branch):** `@babel/parser`, `@babel/traverse`, and `fast-glob` were
+removed (see M7). `npm audit --omit=dev` now reports **0 vulnerabilities** — dropping
+the unused `fast-glob` was sufficient, with no version bumps needed. The dev-tree
+advisories remain and retire with Electron.
 
 ### M1 — Filesystem capability over-grant
 
@@ -435,6 +486,25 @@ with many effects is precisely where `react-hooks/exhaustive-deps` earns its kee
 **Fix:** add ESLint (`typescript-eslint`, `react-hooks`) and `cargo clippy -- -D warnings`
 plus `cargo fmt --check` to CI. Expect a meaningful first-run backlog; fix
 incrementally with the gate on new code.
+
+**Resolution (this branch):** ESLint 9 flat config (`eslint.config.mjs`) covering the
+renderer (with `react-hooks`), the Electron main process, and the build scripts —
+`.mjs` because the package is `type: commonjs` for Electron's sake. Clippy runs in CI
+with `-D warnings`; its 6 mechanical lints were auto-fixed and the 3 remaining
+`too_many_arguments` were annotated where the signature mirrors the IPC payload.
+
+Severity was calibrated rather than blanket-set: correctness rules **fail** the build,
+while 26 pre-existing `any` usages and 13 `react-hooks/exhaustive-deps` findings are
+**warnings**. Typing away `any` and rewriting hook dependencies both change behavior,
+and doing 39 of those blind is how a lint rollout introduces bugs. The result is
+**0 errors, 42 warnings** with a real gate on new code.
+
+`cargo fmt --check` is deliberately **not** gated yet: the tree predates rustfmt, so
+enabling it needs a one-off `cargo fmt` touching every Rust file, which would bury this
+diff. One command, whenever it suits.
+
+The 13 hook-dependency warnings are the highest-value follow-up — they are the class of
+latent bug the rule exists to catch.
 
 ### M4 — Oversized modules
 
@@ -490,6 +560,11 @@ Misplaced:
   in `devDependencies`
 - `sql.js` / `@types/sql.js` — used only by `electron/database.ts` → retires with
   Electron
+
+**Resolution (this branch):** the three unused packages were removed and `toml` moved to
+`devDependencies`; `npm run check:version` still passes, since `npm ci` installs dev
+dependencies. Both dependency blocks are now alphabetically sorted. `sql.js` stays until
+Electron goes.
 
 `package.json` also lists dependencies out of alphabetical order (the two `@babel/*`
 entries sit between `@tauri-apps/plugin-dialog` and `@tauri-apps/plugin-fs`),

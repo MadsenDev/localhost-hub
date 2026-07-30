@@ -38,7 +38,6 @@ export function ProjectSidebar({
   query,
   onQueryChange,
   filteredProjects,
-  allProjects,
   isScanning,
   selectedProjectId,
   onSelectProject,

@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { writeFile, mkdir, unlink, readFile } from 'node:fs/promises';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { exec, execSync } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -35,7 +35,6 @@ import {
   addWorkspaceItem,
   updateWorkspaceItem,
   removeWorkspaceItem,
-  type WorkspaceRecord,
   type WorkspaceItemRecord
 } from './database';
 import { findProjectIdByPath as findProjectIdByPathHelper } from './utils/projectLookup';
@@ -132,7 +131,7 @@ const runWorkspaceMap = new Map<string, { workspaceId: number; itemId?: number; 
 
 const DEFAULT_ENV_FILES = ['.env', '.env.local', '.env.development', '.env.production', '.env.test'];
 
-async function createAskPassScript(username: string, password: string) {
+async function createAskPassScript() {
   const scriptPath = join(app.getPath('userData'), `git-askpass-${randomUUID()}.js`);
   const content = `#!/usr/bin/env node
 const prompt = (process.argv[2] || '').toLowerCase();
@@ -158,7 +157,7 @@ async function runGitCommand(
     env.LOCALHOST_HUB_GIT_PASSWORD = options.credentials.password;
     env.GIT_TERMINAL_PROMPT = '0';
     env.DISPLAY = env.DISPLAY || 'localhost-hub';
-    askPassPath = await createAskPassScript(options.credentials.username, options.credentials.password);
+    askPassPath = await createAskPassScript();
     env.GIT_ASKPASS = askPassPath;
     env.SSH_ASKPASS = askPassPath;
   }
@@ -1561,7 +1560,7 @@ ipcMain.handle('git:checkInstalled', async () => {
       
       // Fallback: try to find git in PATH (might work if PATH is updated)
       try {
-        execSync('git --version', { stdio: 'ignore', shell: true });
+        execSync('git --version', { stdio: 'ignore' });
         return { installed: true };
       } catch {
         // Try PowerShell as last resort
@@ -1577,11 +1576,11 @@ ipcMain.handle('git:checkInstalled', async () => {
       try {
         execSync('git --version', { stdio: 'ignore' });
         return { installed: true };
-      } catch (error: any) {
+      } catch {
         return { installed: false };
       }
     }
-  } catch (error: any) {
+  } catch {
     return { installed: false };
   }
 });
