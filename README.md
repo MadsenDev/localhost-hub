@@ -59,6 +59,19 @@ The migration branch also retains the Electron path for parity work:
 npm run dev:electron
 ```
 
+The two shells have separate entry points and separate UIs, so parity can be compared
+side by side:
+
+| Entry | Renders | Backend |
+| --- | --- | --- |
+| `index.html` → `src/main.tsx` | `src/App.tsx` | Tauri commands (`src/tauri-api.ts`) |
+| `index.electron.html` → `src/main.electron.tsx` | `src/ElectronApp.tsx` | Electron IPC (`window.electronAPI`) |
+
+Running `npm run dev` on its own serves the Tauri entry in a plain browser, where no
+native backend exists. Read commands return empty values so the interface still
+renders; anything that mutates state rejects with a clear error rather than appearing
+to succeed.
+
 ---
 
 ## Project Scanner & Data Model
