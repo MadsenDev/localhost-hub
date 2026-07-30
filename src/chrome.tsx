@@ -17,6 +17,13 @@ interface TitleBarProps {
   pulse: number[];
 }
 
+// The window controls are drawn at the icons' native 16-unit box, so one view
+// box unit is one CSS pixel and the geometry lands exactly where it was drawn.
+// One size and one stroke for all four glyphs is the point: they sit next to
+// each other, so any difference between them reads as a mistake.
+const WIN_GLYPH = 16;
+const WIN_STROKE = 1.25;
+
 function getWin() {
   try { return getCurrentWindow(); } catch { return null; }
 }
@@ -100,11 +107,23 @@ export function TitleBar({
 
       <div className="tb-right">
         <div className="win-controls">
-          <button className="wc" title="Minimize" onClick={() => win?.minimize()}><Ic.Min size={12} /></button>
-          <button className="wc" title={maximized ? "Restore" : "Maximize"} onClick={() => win?.toggleMaximize()}>
-            {maximized ? <Ic.Restore size={10} /> : <Ic.Square size={10} />}
+          <button type="button" className="wc" title="Minimize" aria-label="Minimize" onClick={() => win?.minimize()}>
+            <Ic.WinMin size={WIN_GLYPH} sw={WIN_STROKE} />
           </button>
-          <button className="wc close" title="Close" onClick={() => win?.close()}><Ic.Close size={11} /></button>
+          <button
+            type="button"
+            className="wc"
+            title={maximized ? "Restore" : "Maximize"}
+            aria-label={maximized ? "Restore" : "Maximize"}
+            onClick={() => win?.toggleMaximize()}
+          >
+            {maximized
+              ? <Ic.WinRestore size={WIN_GLYPH} sw={WIN_STROKE} />
+              : <Ic.WinMax size={WIN_GLYPH} sw={WIN_STROKE} />}
+          </button>
+          <button type="button" className="wc close" title="Close" aria-label="Close" onClick={() => win?.close()}>
+            <Ic.WinClose size={WIN_GLYPH} sw={WIN_STROKE} />
+          </button>
         </div>
       </div>
     </div>

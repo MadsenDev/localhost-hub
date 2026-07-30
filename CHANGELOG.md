@@ -193,6 +193,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed the window controls in the title bar, which were drawn by the platform webview
+  rather than by the application. Their stylesheet never reset the default button
+  appearance, so minimise, maximise and close rendered as three pale filled boxes with
+  drop shadows and a barely visible mark inside each — the opposite of the flat dark
+  chrome around them. They are now flat glyphs that light up on hover, with close
+  turning red. The four glyphs were also drawn at three different sizes against a fixed
+  stroke width, which gave each button a different stroke weight and optical size; they
+  now share one size and one weight, and maximise is a square rather than a rounded
+  blob. Added `aria-label` to each control, and a focus outline for keyboard use.
+
+- Fixed a settings label running into its own description. Two fields wrap their label
+  and hint in an element outside the field's grid gap, and both are inline, so they
+  rendered as a single run-on line — `CLOSING TO THE TRAYKeeps supervised services…`.
+
 - Corrected version and storage labels in the interface. The title bar and sidebar
   showed a hardcoded `v2.0`, and the sidebar described local storage as `sqlite`, which
   left with the Electron implementation. Both now reflect reality: the version comes
