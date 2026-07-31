@@ -7,7 +7,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Stopped rebuilding the whole process table on every poll, and fixed the CPU column
+  it broke. Localhost Hub refreshes every five seconds, and each tick built a fresh
+  `System`, called `refresh_all()` — which also walks disks, networks and components
+  that nothing reads — and did it twice, because scanning ports rebuilt the same table
+  again to name the processes holding them.
+  - The correctness half matters more than the cost. sysinfo derives CPU usage from
+    the difference between two refreshes, so a table constructed per call had nothing
+    to compare against and reported `0.0%` for every process. That is what the
+    interface displayed, including for a `cargo` that was busy compiling. One shared
+    table makes the figure real; a test creates load and asserts it is found.
+  - Measured on an idle machine with 92 processes: a refresh went from 9.4ms to about
+    3ms, and there is now one per tick instead of two. The gap widens with the process
+    count, and a developer's machine runs several hundred.
+
+- Reopening from the tray now shows current state at once, instead of up to five
+  seconds of whatever was true when the window was hidden — which, after an afternoon
+  in the tray, can mean presenting a service as running that died hours ago. Rust
+  announces window visibility, because Rust is what hides the window and
+  `document.hidden` is reported inconsistently by platform webviews for exactly this
+  case.
+  - This was built to stop the polling while hidden, and measurement showed there was
+    nothing to stop: the webview already suspends those timers, at zero polls over
+    thirty seconds hidden to the tray. The check stays for the freshness it buys, and
+    the code says so rather than claiming a saving it does not make.
+
+### Removed
+
+- Deleted 2,015 lines that nothing referenced: four locale files under
+  `src/translations/` totalling 1,828 lines, wired to no internationalisation of any
+  kind, and `src/data.ts`, a 187-line mock dataset imported by nothing. The built
+  bundle is byte-identical afterwards, which is the point — this was never reaching
+  users, only readers.
+
+### Security
+
+- Validated process identifiers before signalling anything. `kill_process` accepts a
+  pid from the interface, and `4294967295` was accepted and reported as success: it
+  truncates to a `pid_t` of `-1`, which `kill(2)` reads as *every process the caller
+  may signal*, and `/bin/kill` takes it without complaint. Workspace stop
+  specifications carry a caller-supplied pid across the same boundary. `0` (the
+  caller's own process group), `1` (init) and anything above `i32::MAX` are now
+  refused before a signal is sent. This is not an authorization change — killing a
+  process Hub did not start is what the Ports view is for — it is a check that the
+  number is a process identifier rather than an alias for a broadcast.
+  Found by writing the first tests for the IPC surface.
+
 ### Added
+
+- Added tests for the IPC boundary, which had none. `src-tauri/src/command_tests.rs`
+  sends real invoke requests through the same handler list the application registers,
+  so it covers what calling the functions directly cannot: that a command is reachable
+  at all, that its arguments bind from the payload the interface sends, and that
+  rejected input comes back as an error rather than unwinding across the boundary. A
+  command can be written, exported and completely unreachable, because defining it and
+  registering it are two separate acts; the registration check reads the source and so
+  covers every command, including the ones the test runtime cannot invoke.
+
+- Routed workspace events through the same sink as service events, in a new
+  `events.rs`. Workspace progress went straight to the webview, so it could not be
+  delivered anywhere else, and a caller that was not the webview would also have
+  missed every line of output its own run produced. Both kinds now go to one
+  caller-supplied destination — the third precondition the Companion plan sets, and
+  what lets a Companion server observe a run it started.
+
+- Added the Localhost Companion threat model and pairing design in
+  `docs/COMPANION_SECURITY.md`. Design only; no server, pairing or device credential code
+  exists yet. It is the fourth precondition the Companion plan sets for starting
+  implementation, and writing it first was deliberate: the feature puts a network
+  listener in front of process control, so the security model should be reviewable before
+  there is a socket to attack.
+  - Its central conclusion is a constraint on the future API: it must not proxy the Tauri
+    commands. `start_service` takes the command line, working directory and environment
+    variables from its caller, which is reasonable for a local webview and is remote code
+    execution over a socket. The Companion API therefore speaks in stored identifiers and
+    resolves commands from configuration, so nothing executable crosses the wire.
+  - Also settled: which of the 50 commands may ever be exposed and which may not, with
+    reasons; certificate pinning through the pairing QR code, so an attacker present
+    during pairing cannot become the permanent host; a pairing handshake whose transcript
+    is bound into its challenge; device credentials as phone-generated non-exportable
+    keypairs, leaving no authentication secret at rest on the desktop; revocation that
+    terminates live sessions rather than only blocking new ones; and the residual risks,
+    including that streamed service output can leak secrets Hub has no way to identify.
+
+- Added **Start at login**. Closing to the tray keeps Localhost Hub alive once it is
+  running; this is what gets it running, launching it straight to the tray at login
+  without putting a window on screen. It exists for the cases where something other
+  than the window needs Hub present — a workspace booted before sitting down at the
+  computer, or a remote such as Localhost Companion having a host to reach.
+  - The operating system owns the truth. A login item can be removed in System
+    Settings, Task Manager or a desktop environment's startup panel, entirely outside
+    Hub, so the setting is read back from the OS rather than trusted from the config
+    file. The stored value records intent, and is re-applied at startup if the two
+    have drifted apart. Toggling reports back whatever the OS actually did, so a
+    refusal shows as the control not moving rather than as an interface that disagrees
+    with the system.
+  - Starting at login while closing the window still quits is a half-measure, so
+    Settings says so rather than silently changing the other setting.
 
 - Added a system tray icon and an option to close to it. Localhost Hub supervises
   long-running development servers, so closing the window usually means getting it out
@@ -192,6 +290,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   brief, since its product intent and entity model outlived its architecture section.
 
 ### Fixed
+
+- Exiting no longer orphans supervised services. Every child process Localhost Hub had
+  started outlived it: reparented to init, still holding its port, with nothing left to
+  manage it — and the next launch marked those runs interrupted while they were in fact
+  still alive and serving. Confirmed by closing Hub with three servers running, then
+  finding all three still answering HTTP 200 with no Hub process anywhere. Hub started
+  them, so Hub stops them on the way out. Closing to the tray is the option that keeps
+  them running, and it is unaffected.
+
+- Hiding the window now requires a tray that can actually be reached. A successful tray
+  build was taken as proof one existed, but building the icon succeeded on a session
+  with no message bus and no panel at all, so Hub could hide itself somewhere with no
+  window and no icon. On Linux the icon is published over the session bus, so a missing
+  bus now counts as no tray. This is a necessary condition rather than a sufficient one —
+  a bus can exist with nothing hosting the icon — but it rules out the case that
+  actually strands the application.
+
+- Fixed the Settings segmented controls sizing themselves to a hardcoded three options,
+  which left the two-option **On window close** with a dead third column, and stretching
+  to the height of whatever shared their grid row, which made one control nearly twice
+  the height of the identical ones above it.
+
+- Stopped the Sessions view taking the whole application down with it. Its initial state
+  read `sessions[0].id`, so with no sessions recorded it threw, and because nothing
+  caught the error React unmounted everything — the window went blank, title bar and
+  sidebar included, with no message and no way to navigate out. Sessions now shows an
+  empty state, and a boundary around the view area keeps any future failure of one view
+  from blanking the rest; it resets when you switch views, so the application recovers
+  without a restart.
+
+- Switched off the platform webview's own button rendering once, globally, rather than
+  in each component. Buttons carry a fill, a border and a drop shadow until that is
+  explicitly reset, which left every component having to remember to override all of it.
+  The project page tabs did not, and rendered as pale filled boxes on the dark title
+  bar — the same defect as the window controls below. The reset is deliberately limited
+  to that decorative chrome: an earlier, broader version also normalised typography and
+  alignment, which left the Settings segmented controls with their labels shoved to the
+  left, so it now leaves both alone.
+
+- Fixed information being cut off in a narrow window:
+  - **Project overview cards** clipped `PACKAGE MANAGER` to `PACK…` and pushed the
+    values out of sight. These cards sit in a side column around 260px wide at *any*
+    window size, so the viewport breakpoint that was meant to collapse them never fired
+    when it mattered. They now respond to their own container's width instead, which is
+    the only thing that actually determines whether two columns fit.
+  - **Repository health rows** demanded roughly 710px against the ~630px available at
+    the 900px minimum window width, so `Active today` became `Activ` and the expand
+    chevron disappeared entirely. The repository path also wrapped to six lines because
+    it asked for an ellipsis without `white-space: nowrap`, which does nothing on its
+    own.
+  - **The Logs stream** pushed its level filters and the Unlock button off the right of
+    the window, and gave the whole page a horizontal scrollbar: its header could not
+    wrap and its grid track would not shrink below the header's width.
+  - **The project tab strip** ran GITHUB and HEALTH off the edge. The tabs now wrap onto
+    a second row, because a tab nobody can see is a tab nobody can reach.
+  - **Ports topology nodes** hung off the left edge with their labels cut to `port`. A
+    node is a fixed 168px box centred on its coordinate, but the first column was
+    pinned to a hardcoded 18% — only 83px across a narrow canvas, less than the node's
+    own half-width. Columns are now fractions of a band inset by half a node at each
+    end. A single workspace is also centred rather than pinned to the left, which the
+    old spread formula did by accident when dividing by `max(1, n - 1)`.
+
+- Fixed the window controls in the title bar, which were drawn by the platform webview
+  rather than by the application. Their stylesheet never reset the default button
+  appearance, so minimise, maximise and close rendered as three pale filled boxes with
+  drop shadows and a barely visible mark inside each — the opposite of the flat dark
+  chrome around them. They are now flat glyphs that light up on hover, with close
+  turning red. The four glyphs were also drawn at three different sizes against a fixed
+  stroke width, which gave each button a different stroke weight and optical size; they
+  now share one size and one weight, and maximise is a square rather than a rounded
+  blob. Added `aria-label` to each control, and a focus outline for keyboard use.
+
+- Fixed a settings label running into its own description. Two fields wrap their label
+  and hint in an element outside the field's grid gap, and both are inline, so they
+  rendered as a single run-on line — `CLOSING TO THE TRAYKeeps supervised services…`.
 
 - Corrected version and storage labels in the interface. The title bar and sidebar
   showed a hardcoded `v2.0`, and the sidebar described local storage as `sqlite`, which

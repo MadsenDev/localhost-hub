@@ -224,6 +224,15 @@ export const tauriApi = {
   secretStorageBackend: () =>
     query<SecretBackend>("secret_storage_backend", undefined, "file"),
 
+  // Read from the operating system, not from the saved preference: a login item
+  // can be removed outside Localhost Hub, so the stored value records intent
+  // rather than state. Both of these return what the OS reports afterwards, so a
+  // refusal shows as the toggle not moving.
+  getStartAtLogin: () => query<boolean>("get_start_at_login", undefined, false),
+
+  setStartAtLogin: (enabled: boolean) =>
+    action<boolean>("set_start_at_login", { enabled }),
+
   listRunHistory: () => query<RunRecord[]>("list_run_history", undefined, []),
 
   readRunLog: (runId: string, limit?: number) =>
@@ -273,4 +282,27 @@ export async function listenToServiceEvents(handler: (event: ServiceEvent) => vo
   if (!isTauri) return () => {};
   const mod = await import("@tauri-apps/api/event");
   return mod.listen<ServiceEvent>("service://event", (event) => handler(event.payload));
+}
+
+/**
+ * Whether the window is on screen, as reported by Rust.
+ *
+ * Used to refresh immediately on becoming visible, not to stop polling while
+ * hidden — the webview already suspends those timers on its own, which measurement
+ * confirmed. Reopening from the tray otherwise shows state from when the window was
+ * hidden for up to five seconds.
+ *
+ * Rust is the authority because it is what hides and shows the window;
+ * `document.hidden` is reported inconsistently across platform webviews for a
+ * window hidden to a tray.
+ *
+ * Outside the desktop application there is always a window, so the fallback reports
+ * visible.
+ */
+export async function listenToWindowVisibility(
+  handler: (visible: boolean) => void,
+): Promise<() => void> {
+  if (!isTauri) return () => {};
+  const mod = await import("@tauri-apps/api/event");
+  return mod.listen<boolean>("window://visibility", (event) => handler(event.payload));
 }

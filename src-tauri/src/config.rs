@@ -26,6 +26,18 @@ pub struct AppConfig {
     /// expected to do until asked otherwise.
     #[serde(default)]
     pub close_to_tray: bool,
+    /// Start Localhost Hub when the user logs in, hidden to the tray.
+    ///
+    /// This exists for the cases where something other than the window needs Hub
+    /// to be running — starting a workspace before sitting down at the computer,
+    /// or a remote such as Localhost Companion having a host to reach. Closing to
+    /// the tray keeps Hub alive once launched; this is what launches it.
+    ///
+    /// Defaults off. Whether the operating system actually honours it is not
+    /// stored here: the registration lives with the OS, and `start_at_login` is
+    /// read back from there rather than trusted from this file.
+    #[serde(default)]
+    pub start_at_login: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -324,6 +336,7 @@ mod tests {
             user_workspaces: Vec::new(),
             appearance: AppearanceConfig::default(),
             close_to_tray: false,
+            start_at_login: false,
             env_profiles: vec![EnvProfile {
                 id: "profile-1".to_string(),
                 project_path: "/code/app".to_string(),

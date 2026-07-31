@@ -31,11 +31,14 @@ Neither is hard to fix, but until they are, "verify feature parity before removi
 Electron" (UNIFICATION.md stage 10) is not an executable plan.
 
 > **Status: every Critical and High finding is closed**, along with **M2**, **M3**,
-> **M4**, **M7**, **M8**, and **M1** in part, plus three defects the audit could not
-> have seen because no gate covered the code they live in (**F1**, **F2**, **F3**).
-> Each finding keeps its original text, with a *Resolution* note appended where work
-> landed. Still open: **M5** (polling cost), **M6** (unused locales), and the
-> `commands.rs` half of **M4**.
+> **M4**, **M6**, **M7**, **M8**, most of **M5**, and **M1** in part, plus three
+> defects the audit could not have seen because no gate covered the code they live in
+> (**F1**, **F2**, **F3**). Each finding keeps its original text, with a *Resolution*
+> note appended where work landed. Still open: the remainder of **M5** —
+> `scan_ports` still spawns `ss` on every tick, and the interval does not lengthen
+> when nothing is running — and the last third of **M4**, where 17 of the 50 commands
+> take a concrete `AppHandle` and need the commands generic over `R: Runtime` before a
+> mock runtime can reach them.
 >
 > C1 was ultimately resolved twice: first by making the Electron reference runnable,
 > then — once parity had been compared against it — by removing Electron entirely,
@@ -65,7 +68,7 @@ Electron" (UNIFICATION.md stage 10) is not an executable plan.
 ```
 index.html → src/main.tsx → src/App.tsx        ← the ONLY live UI (Tauri)
     ├── src/view-*.tsx, sidebar, chrome, *-panel, *-dialog
-    └── src/tauri-api.ts → invoke() → src-tauri/src/commands.rs (44 commands)
+    └── src/tauri-api.ts → invoke() → src-tauri/src/commands.rs (48 commands)
 
 src/components/** + src/hooks/**   ← 9,791 LOC, 227 window.electronAPI calls
                                      NO ENTRY POINT — unreachable (see C1)
@@ -648,6 +651,27 @@ parent PIDs.
 window is unfocused or hidden (`tauri::WindowEvent::Focused`); increase the interval
 when no services are running; consider caching port scans between ticks.
 
+**Resolution.** The `sysinfo` half is done, and it was hiding a correctness bug the
+audit did not see. A `System` was constructed per call, so sysinfo had no previous
+sample to difference against and reported `0.0%` CPU for **every** process — which is
+what the interface displayed, including for a `cargo` busy compiling. One shared table
+in `processes.rs` fixes that and makes the refresh cheaper; a test creates load and
+asserts the figure is found. `refresh_all()` is replaced by targeted refreshes, and
+`ports.rs` reuses the same table instead of rebuilding it, so a tick does one process
+walk rather than two. Measured on an idle machine, 92 processes: 9.4ms → ~3ms per
+refresh, and the gap widens with the process count.
+
+The "back off when hidden" half turned out to be unnecessary, which measurement
+established rather than argument: the platform webview already suspends the
+interface's timers for a hidden window — **zero** polls over thirty seconds hidden to
+the tray, with the interface's own check removed. A visibility signal was kept, but
+for the opposite reason to the one intended: reopening from the tray showed state from
+when the window was hidden for up to five seconds, and it now refreshes at once.
+
+**Still open:** increasing the interval when no services are running, and caching port
+scans between ticks. `scan_ports` remains the more expensive half of a tick (~6–25ms,
+dominated by spawning `ss`) and is unchanged.
+
 ### M6 — Unused i18n scaffolding
 
 `src/translations/{en,fr,no,sv}.json` — four locale files, 457 lines each, 1,828
@@ -657,6 +681,13 @@ installed; every UI string is hardcoded in JSX.
 Four translations are maintained in parallel while having no effect, and will silently
 drift from the real strings. Either wire up i18n or delete them until it is a real
 priority; keeping them costs maintenance and implies a capability the app lacks.
+
+**Resolution.** Deleted, along with `src/data.ts` — a 187-line mock dataset also
+imported by nothing — for 2,015 lines removed. Verified unreferenced first, including
+against `import.meta.glob`, and the built bundle is byte-identical afterwards, which
+is the point: none of this reached users, only readers. Internationalisation is a real
+feature when someone wants it, and four unwired locale files are not a head start on
+it.
 
 ### M7 — Dependency hygiene
 
@@ -701,8 +732,32 @@ adversarial tests, not coverage theater.
 
 **Gaps:**
 
-- **`commands.rs` (406 LOC, all 44 command entry points): 0 tests.** This is the
-  entire IPC surface — the security boundary — untested.
+- **`commands.rs`: 0 tests.** This is the entire IPC surface — the security
+  boundary — untested. *(44 commands across 406 LOC at audit time; 50 across 472 now,
+  after the persistence, credential-store and login-item work.)*
+
+  **Resolution (partial).** `src/command_tests.rs` now drives commands through real
+  `InvokeRequest`s using `tauri::test`, covering what direct function calls cannot:
+  that a command is registered at all, that arguments bind from the payload the
+  interface sends, and that rejected input returns an error rather than unwinding
+  across the boundary. The registration check reads the source, so it covers all 50 —
+  verified by deleting a registration and watching it name the command.
+
+  Two things this found rather than assumed:
+  - **`kill_process` accepted `4294967295` and reported success.** It truncates to
+    `pid_t` `-1`, which `kill(2)` reads as *every process the caller may signal*, and
+    `/bin/kill` takes it without complaint. `kill_process` and workspace stop
+    specifications both carry a caller-supplied pid across IPC. Now validated before
+    any signal is sent — `0`, `1` and anything above `i32::MAX` are refused.
+  - Tauri binds **both** the `camelCase` and `snake_case` spellings of an argument,
+    and an unknown *optional* argument is silently ignored while a missing required
+    one is enforced. Worth knowing before relying on either.
+
+  **Still open:** 17 of the 50 commands take a concrete `AppHandle` (`AppHandle<Wry>`),
+  which `MockRuntime` cannot supply, so they are not drivable by this harness. Reaching
+  them needs the commands generic over `R: Runtime` — a refactor through `commands.rs`,
+  `config.rs` and `services.rs`, not a test. The 33 that are drivable include every one
+  that validates untrusted input.
 - **`processes.rs`: 0 tests.**
 - **No IPC contract tests.** Nothing asserts that the TypeScript types in
   `tauri-api.ts` match the Rust `Serialize` structs. These are hand-mirrored across
@@ -718,8 +773,11 @@ adversarial tests, not coverage theater.
 - `README.md` lists "IPC contract tests" and "workspace runner integration tests"
   under *Planned coverage* — an accurate self-assessment that is still outstanding.
 
-Given 44 IPC commands and 33k LOC, ~94 tests is thin. Prioritize `commands.rs` and
-type-contract tests over raw coverage percentage.
+Given 48 IPC commands and 33k LOC, the suite is thin where it matters. `cargo test`
+reports 158 tests, but 66 of those are binding-export tests generated by the ts-rs
+derive — they guard the type contract, not behaviour — leaving 92 hand-written Rust
+tests plus 47 frontend tests. Prioritize `commands.rs` and type-contract tests over
+raw coverage percentage.
 
 ---
 
@@ -811,10 +869,10 @@ only defect is describing the Electron parity path as viable (C1).
 10. **H3** — resolve the `sh -lc` / `inherit_system: false` contradiction.
 11. **M1** — drop the three unused `fs:` permissions; add an explicit scope.
 12. **M8** — rewrite or delete `TODO.md`.
-13. **M6** — wire up or delete the four unused locale files.
+13. ~~**M6** — wire up or delete the four unused locale files.~~ Done: deleted, with `src/data.ts`.
 
 ### Ongoing
-14. **M5** — narrow `sysinfo` refresh; back off polling when unfocused.
+14. **M5** — ~~narrow `sysinfo` refresh~~ done; ~~back off polling when unfocused~~ unnecessary, the webview already suspends the timers. Remaining: cache port scans between ticks, and lengthen the interval when nothing is running.
 15. **M4** — extract `useLiveRuntime` and the service-event stream from `App.tsx`;
     split orchestration out of `workspace.rs`.
 16. Add a release checklist and a packaged-artifact smoke test to the tag pipeline.

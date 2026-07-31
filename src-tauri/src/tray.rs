@@ -28,13 +28,36 @@ static TRAY_AVAILABLE: AtomicBool = AtomicBool::new(false);
 
 const MAIN_WINDOW: &str = "main";
 
+/// Whether hiding the window would leave a way back to it.
+///
+/// A successful `TrayIconBuilder::build` is not enough on its own. Building the
+/// icon succeeded on a session with no message bus and no panel at all — nothing
+/// was drawn and nothing could have hosted it — so trusting the build alone let
+/// Hub hide itself somewhere unreachable, with no window and no icon.
+///
+/// On Linux the tray is published over the session bus, so no session bus means
+/// no tray, definitively. That is a necessary condition rather than a sufficient
+/// one: a bus can exist with no panel hosting the icon, and this cannot tell that
+/// case apart. It rules out the case that actually strands the application —
+/// headless sessions, containers, a bare X server — and everything it lets
+/// through is at least capable of showing a tray.
 pub fn is_available() -> bool {
-    TRAY_AVAILABLE.load(Ordering::SeqCst)
+    if !TRAY_AVAILABLE.load(Ordering::SeqCst) {
+        return false;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none() {
+            return false;
+        }
+    }
+    true
 }
 
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.show();
+        crate::events::emit_window_visibility(app, true);
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
@@ -46,6 +69,7 @@ fn toggle_main_window(app: &AppHandle) {
     };
     if window.is_visible().unwrap_or(false) {
         let _ = window.hide();
+        crate::events::emit_window_visibility(app, false);
     } else {
         show_main_window(app);
     }
@@ -113,26 +137,23 @@ pub fn init(app: &AppHandle) {
 
 /// Intercepts the window close so it hides instead of exiting.
 ///
-/// Deliberately reads the setting from disk on each close rather than caching it,
-/// so toggling the preference takes effect immediately.
+/// Whether to stay resident is not decided here — see [`crate::lifetime`], which
+/// owns that question so a second reason to stay alive cannot end up disagreeing
+/// with this one.
 pub fn handle_window_event(app: &AppHandle, event: &WindowEvent) {
     let WindowEvent::CloseRequested { api, .. } = event else {
         return;
     };
-    if QUITTING.load(Ordering::SeqCst) || !is_available() {
+    if QUITTING.load(Ordering::SeqCst) {
         return;
     }
-    let close_to_tray = crate::config::load(app)
-        .ok()
-        .flatten()
-        .map(|config| config.close_to_tray)
-        .unwrap_or(false);
-    if !close_to_tray {
+    if !crate::lifetime::should_stay_resident(app).stays_resident() {
         return;
     }
     api.prevent_close();
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.hide();
+        crate::events::emit_window_visibility(app, false);
     }
 }
 
@@ -140,14 +161,31 @@ pub fn handle_window_event(app: &AppHandle, event: &WindowEvent) {
 mod tests {
     use super::*;
 
-    /// Guards the invariant that matters: without a tray there is nothing to
-    /// close to, so the window must be allowed to close normally.
+    /// Guards the invariant that matters: without somewhere to close to, the
+    /// window must be allowed to close normally, or Hub ends up running with no
+    /// window and no icon.
+    ///
+    /// Kept as a single test because both halves move the same global flag, and
+    /// tests in one binary run in parallel.
     #[test]
-    fn closing_to_the_tray_requires_a_tray() {
+    fn closing_to_the_tray_requires_a_reachable_tray() {
+        let restore = TRAY_AVAILABLE.load(Ordering::SeqCst);
+
         TRAY_AVAILABLE.store(false, Ordering::SeqCst);
-        assert!(!is_available());
+        assert!(!is_available(), "no tray was built, so there is nothing to close to");
+
         TRAY_AVAILABLE.store(true, Ordering::SeqCst);
-        assert!(is_available());
-        TRAY_AVAILABLE.store(false, Ordering::SeqCst);
+        if cfg!(target_os = "linux") {
+            // The builder reporting success is not the whole answer here: the icon
+            // is published over the session bus, so without one there is no tray
+            // however well the build went. Asserted against the real environment so
+            // this holds both on a desktop and on a headless runner.
+            let has_bus = std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_some();
+            assert_eq!(is_available(), has_bus);
+        } else {
+            assert!(is_available());
+        }
+
+        TRAY_AVAILABLE.store(restore, Ordering::SeqCst);
     }
 }

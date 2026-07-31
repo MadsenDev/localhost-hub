@@ -228,4 +228,42 @@ Companion implementation begins only after:
 2. Rust process and workspace state have stable application-service APIs.
 3. Logs/events can be subscribed to without depending on React or Tauri window
    state.
+   → Done. `src-tauri/src/events.rs` owns the `EventSink` trait; service events and
+   workspace progress both publish to a caller-supplied destination, and a workspace
+   run reports the service events it produces to the same one. `TauriEventSink` is
+   one implementation, not the mechanism.
 4. The threat model and device-revocation flow are documented.
+   → [Threat Model and Pairing Design](COMPANION_SECURITY.md) covers this: adversaries,
+   the exposed and never-exposed command vocabulary, transport and certificate pinning,
+   the pairing handshake, device credentials, permissions, revocation and residual risk.
+   Design only; no code implements it yet.
+
+## Host Lifetime
+
+Companion is useless without a host to reach, and the desktop originally had no
+way to be one: the window was Hub's whole existence. Two pieces of that are now
+in place.
+
+**Hub can survive its window.** With **On window close** set to keep it in the
+tray, closing hides the window and leaves supervised services running. Quitting
+still means quitting — and now genuinely stops what Hub started, which it did not
+before: exiting used to orphan every child process to init, leaving ports bound
+with nothing supervising them.
+
+**Hub can be running before the user is.** **Start at login** registers an OS
+login item that launches Hub straight to the tray, which is what the "start a
+full workspace before sitting down at the computer" moment above actually
+requires. Hiding on login is refused when no tray is reachable, because a hidden
+Hub with no icon cannot be reached at all.
+
+The decision "should Hub stay running with no window" lives in one place,
+`src-tauri/src/lifetime.rs`. The Companion server adds a clause there — a paired
+device connected is another reason to stay resident — rather than introducing a
+second switch that could silently contradict the first and drop a phone's host.
+
+Still missing, and needed before any of the above matters to a phone: the server
+itself, mDNS advertisement, pairing, device credentials and per-device
+permissions — designed in [COMPANION_SECURITY.md](COMPANION_SECURITY.md), not yet
+built. Note also that the tray-reachability check is a necessary condition
+rather than a sufficient one on Linux — it rules out sessions with no message
+bus, but cannot tell whether a panel is actually hosting the icon.

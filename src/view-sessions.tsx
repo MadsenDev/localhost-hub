@@ -14,7 +14,29 @@ interface SessionsViewProps {
 
 interface TrackSpan { svc: Service; spans: [number, number, string][] }
 
-export function SessionsView({ workspaces, sessions, onResume, onJumpToLogs }: SessionsViewProps) {
+export function SessionsView(props: SessionsViewProps) {
+  // Everything below assumes a session to show: the initial state reads
+  // `sessions[0].id`, and the timeline is built from that session's workspace.
+  // With no sessions recorded that threw, and because nothing above catches it,
+  // the whole application unmounted to a blank window rather than this view
+  // failing on its own.
+  if (props.sessions.length === 0) {
+    return (
+      <div className="view"><div className="view-inner">
+        <div className="empty">
+          <Ic.Clock size={36} />
+          <div style={{ marginTop: 10, fontFamily: "var(--font-mono)" }}>No sessions yet</div>
+          <div style={{ color: "var(--fg-4)", marginTop: 6, fontSize: 12 }}>
+            Start a workspace and its run will be recorded here as a slice of time.
+          </div>
+        </div>
+      </div></div>
+    );
+  }
+  return <SessionsTimeline {...props} />;
+}
+
+function SessionsTimeline({ workspaces, sessions, onResume, onJumpToLogs }: SessionsViewProps) {
   const [active, setActive] = React.useState(sessions[0].id);
   const [scrub, setScrub] = React.useState(0.78);
   const [hover, setHover] = React.useState<{ x: number; services: Service[] } | null>(null);

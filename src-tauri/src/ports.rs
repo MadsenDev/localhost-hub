@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use std::process::{Command, Output};
-use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
+use sysinfo::Pid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[ts(export, export_to = "../../src/generated/")]
@@ -51,18 +51,19 @@ fn enrich_process_names(ports: &mut [LivePort]) {
     if missing == 0 {
         return;
     }
-    let mut system = System::new_with_specifics(
-        RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
-    );
-    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-    for port in ports {
-        if port.process_name.is_none() {
-            port.process_name = port
-                .pid
-                .and_then(|pid| system.process(Pid::from_u32(pid)))
-                .map(|process| process.name().to_string_lossy().to_string());
+    // Reuses the shared process table rather than building a second one. A single
+    // 5-second poll called this and `get_dev_processes`, so the whole process map
+    // was being rebuilt twice per tick.
+    crate::processes::with_processes(|system| {
+        for port in ports {
+            if port.process_name.is_none() {
+                port.process_name = port
+                    .pid
+                    .and_then(|pid| system.process(Pid::from_u32(pid)))
+                    .map(|process| process.name().to_string_lossy().to_string());
+            }
         }
-    }
+    });
 }
 
 #[cfg(target_os = "linux")]
