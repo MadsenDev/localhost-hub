@@ -11,7 +11,8 @@
   "scripts": {
     "build": "tsc -b && vite build",
     "check:version": "node scripts/check-version-sync.cjs",
-    "dev": "vite",
+    "dev": "tauri dev",
+    "dev:web": "vite",
     "generate:bindings": "cargo test --manifest-path src-tauri/Cargo.toml export_bindings",
     "generate:icons": "node scripts/generate-icons.cjs",
     "lint": "eslint .",

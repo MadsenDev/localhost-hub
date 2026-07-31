@@ -98,7 +98,7 @@ Uncommitted work that has been sitting too long, unpushed commits, branches nobo
 
 ```bash
 npm install
-npm run tauri:dev
+npm run dev
 ```
 
 On first launch, choose the folders to scan. That is the only setup.
@@ -106,7 +106,7 @@ On first launch, choose the folders to scan. That is the only setup.
 To enable the optional GitHub connection, set `GITHUB_CLIENT_ID` at build time. Everything local works without it.
 
 > [!NOTE]
-> `npm run dev` serves the interface in a plain browser, without the native backend. Read commands return empty values so the interface still renders, and anything that would change state fails with a clear message rather than pretending to work. Useful for interface work; use `npm run tauri:dev` for the real thing.
+> `npm run dev` starts the Vite dev server and opens the Tauri window. `npm run dev:web` serves the interface in a plain browser, without the native backend. Read commands return empty values so the interface still renders, and anything that would change state fails with a clear message rather than pretending to work.
 
 ---
 
@@ -159,7 +159,8 @@ Nothing leaves your machine.
 ## Development
 
 ```bash
-npm run tauri:dev          # run the app
+npm run dev                # run the app
+npm run dev:web            # browser-only frontend server
 npm test                   # interface tests
 npm run lint               # ESLint
 npm run typecheck          # both TypeScript projects
