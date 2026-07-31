@@ -7,7 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Stopped rebuilding the whole process table on every poll, and fixed the CPU column
+  it broke. Localhost Hub refreshes every five seconds, and each tick built a fresh
+  `System`, called `refresh_all()` — which also walks disks, networks and components
+  that nothing reads — and did it twice, because scanning ports rebuilt the same table
+  again to name the processes holding them.
+  - The correctness half matters more than the cost. sysinfo derives CPU usage from
+    the difference between two refreshes, so a table constructed per call had nothing
+    to compare against and reported `0.0%` for every process. That is what the
+    interface displayed, including for a `cargo` that was busy compiling. One shared
+    table makes the figure real; a test creates load and asserts it is found.
+  - Measured on an idle machine with 92 processes: a refresh went from 9.4ms to about
+    3ms, and there is now one per tick instead of two. The gap widens with the process
+    count, and a developer's machine runs several hundred.
+
+- Reopening from the tray now shows current state at once, instead of up to five
+  seconds of whatever was true when the window was hidden — which, after an afternoon
+  in the tray, can mean presenting a service as running that died hours ago. Rust
+  announces window visibility, because Rust is what hides the window and
+  `document.hidden` is reported inconsistently by platform webviews for exactly this
+  case.
+  - This was built to stop the polling while hidden, and measurement showed there was
+    nothing to stop: the webview already suspends those timers, at zero polls over
+    thirty seconds hidden to the tray. The check stays for the freshness it buys, and
+    the code says so rather than claiming a saving it does not make.
+
+### Removed
+
+- Deleted 2,015 lines that nothing referenced: four locale files under
+  `src/translations/` totalling 1,828 lines, wired to no internationalisation of any
+  kind, and `src/data.ts`, a 187-line mock dataset imported by nothing. The built
+  bundle is byte-identical afterwards, which is the point — this was never reaching
+  users, only readers.
+
+### Security
+
+- Validated process identifiers before signalling anything. `kill_process` accepts a
+  pid from the interface, and `4294967295` was accepted and reported as success: it
+  truncates to a `pid_t` of `-1`, which `kill(2)` reads as *every process the caller
+  may signal*, and `/bin/kill` takes it without complaint. Workspace stop
+  specifications carry a caller-supplied pid across the same boundary. `0` (the
+  caller's own process group), `1` (init) and anything above `i32::MAX` are now
+  refused before a signal is sent. This is not an authorization change — killing a
+  process Hub did not start is what the Ports view is for — it is a check that the
+  number is a process identifier rather than an alias for a broadcast.
+  Found by writing the first tests for the IPC surface.
+
 ### Added
+
+- Added tests for the IPC boundary, which had none. `src-tauri/src/command_tests.rs`
+  sends real invoke requests through the same handler list the application registers,
+  so it covers what calling the functions directly cannot: that a command is reachable
+  at all, that its arguments bind from the payload the interface sends, and that
+  rejected input comes back as an error rather than unwinding across the boundary. A
+  command can be written, exported and completely unreachable, because defining it and
+  registering it are two separate acts; the registration check reads the source and so
+  covers every command, including the ones the test runtime cannot invoke.
+
+- Routed workspace events through the same sink as service events, in a new
+  `events.rs`. Workspace progress went straight to the webview, so it could not be
+  delivered anywhere else, and a caller that was not the webview would also have
+  missed every line of output its own run produced. Both kinds now go to one
+  caller-supplied destination — the third precondition the Companion plan sets, and
+  what lets a Companion server observe a run it started.
+
+- Added the Localhost Companion threat model and pairing design in
+  `docs/COMPANION_SECURITY.md`. Design only; no server, pairing or device credential code
+  exists yet. It is the fourth precondition the Companion plan sets for starting
+  implementation, and writing it first was deliberate: the feature puts a network
+  listener in front of process control, so the security model should be reviewable before
+  there is a socket to attack.
+  - Its central conclusion is a constraint on the future API: it must not proxy the Tauri
+    commands. `start_service` takes the command line, working directory and environment
+    variables from its caller, which is reasonable for a local webview and is remote code
+    execution over a socket. The Companion API therefore speaks in stored identifiers and
+    resolves commands from configuration, so nothing executable crosses the wire.
+  - Also settled: which of the 50 commands may ever be exposed and which may not, with
+    reasons; certificate pinning through the pairing QR code, so an attacker present
+    during pairing cannot become the permanent host; a pairing handshake whose transcript
+    is bound into its challenge; device credentials as phone-generated non-exportable
+    keypairs, leaving no authentication secret at rest on the desktop; revocation that
+    terminates live sessions rather than only blocking new ones; and the residual risks,
+    including that streamed service output can leak secrets Hub has no way to identify.
 
 - Added **Start at login**. Closing to the tray keeps Localhost Hub alive once it is
   running; this is what gets it running, launching it straight to the tray at login

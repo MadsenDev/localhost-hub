@@ -17,7 +17,7 @@ import { CommandPalette } from './view-palette';
 import { OnboardingView } from './view-onboarding';
 import { SettingsView } from './view-settings';
 import { githubAuth, type GitHubUser } from './github-auth';
-import { listenToServiceEvents, tauriApi, type WorkspaceGroup, type ProcessInfo, type LivePort, type ManagedServiceInfo } from './tauri-api';
+import { listenToServiceEvents, listenToWindowVisibility, tauriApi, type WorkspaceGroup, type ProcessInfo, type LivePort, type ManagedServiceInfo } from './tauri-api';
 import { Ic } from './icons';
 import { formatDuration } from './utils';
 import { CreateProjectDialog } from './create-project-dialog';
@@ -267,6 +267,9 @@ export default function App() {
   const portApprovalActiveRef = React.useRef(false);
   const gitStatusesRef = React.useRef<Record<string, GitStatus | null>>({});
   const [view, setView] = React.useState("home");
+  // Whether there is a window to update. Rust announces this because it is what
+  // hides the window; see `listenToWindowVisibility`.
+  const [windowVisible, setWindowVisible] = React.useState(true);
   const [ws, setWs] = React.useState("");
   const [project, setProject] = React.useState("");
   const [paletteOpen, setPaletteOpen] = React.useState(false);
@@ -354,6 +357,22 @@ export default function App() {
       setData(buildHubData(storedWsRef.current, processes, ports, managedRuntimesRef.current));
     }
 
+    // Nothing to do without a window, and nothing to save either: the platform
+    // webview already suspends these timers while the window is hidden — measured
+    // at zero polls over thirty seconds hidden to the tray, with this check
+    // removed. So this is not a cost optimisation, and was mistaken for one.
+    //
+    // What it does buy is freshness. Reopening from the tray used to show whatever
+    // state was current when the window was hidden, for up to five seconds, which
+    // after an afternoon in the tray can mean showing a service as running that
+    // died hours ago. Becoming visible re-runs this effect, which refreshes at once
+    // and then re-arms the intervals.
+    //
+    // Returning before the refresh matters: hiding must cost nothing at all.
+    if (!windowVisible) {
+      return () => { cancelled = true; };
+    }
+
     loadGroups().then(refreshLive);
     const liveId = setInterval(refreshLive, 5000);
     const gitId = setInterval(refreshGitStatuses, 15000);
@@ -362,7 +381,15 @@ export default function App() {
       clearInterval(liveId);
       clearInterval(gitId);
     };
-  }, [onboarding, workspaceRefreshKey]);
+  }, [onboarding, workspaceRefreshKey, windowVisible]);
+
+  React.useEffect(() => {
+    let stop: (() => void) | undefined;
+    listenToWindowVisibility(setWindowVisible)
+      .then((unlisten) => { stop = unlisten; })
+      .catch(() => {});
+    return () => { stop?.(); };
+  }, []);
 
   const workspaceServices = React.useMemo(
     () => data.workspaces.flatMap((w) => w.services.map((s) => ({ ...s, _ws: w.id }))),

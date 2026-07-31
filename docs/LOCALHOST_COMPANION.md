@@ -228,7 +228,15 @@ Companion implementation begins only after:
 2. Rust process and workspace state have stable application-service APIs.
 3. Logs/events can be subscribed to without depending on React or Tauri window
    state.
+   → Done. `src-tauri/src/events.rs` owns the `EventSink` trait; service events and
+   workspace progress both publish to a caller-supplied destination, and a workspace
+   run reports the service events it produces to the same one. `TauriEventSink` is
+   one implementation, not the mechanism.
 4. The threat model and device-revocation flow are documented.
+   → [Threat Model and Pairing Design](COMPANION_SECURITY.md) covers this: adversaries,
+   the exposed and never-exposed command vocabulary, transport and certificate pinning,
+   the pairing handshake, device credentials, permissions, revocation and residual risk.
+   Design only; no code implements it yet.
 
 ## Host Lifetime
 
@@ -255,6 +263,7 @@ second switch that could silently contradict the first and drop a phone's host.
 
 Still missing, and needed before any of the above matters to a phone: the server
 itself, mDNS advertisement, pairing, device credentials and per-device
-permissions. Note also that the tray-reachability check is a necessary condition
+permissions — designed in [COMPANION_SECURITY.md](COMPANION_SECURITY.md), not yet
+built. Note also that the tray-reachability check is a necessary condition
 rather than a sufficient one on Linux — it rules out sessions with no message
 bus, but cannot tell whether a panel is actually hosting the icon.
