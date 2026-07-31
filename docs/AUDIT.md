@@ -332,6 +332,37 @@ a vulnerability. The findings below are therefore scoped to what matters — pro
 **secrets at rest** and preventing **untrusted remote content** (GitHub API strings,
 process stdout, git metadata) from gaining privilege.
 
+### F4 — the Sessions view presented invented data as history, and could not be reached
+
+`view-sessions.tsx` rendered a timeline whose every element was fabricated: event
+markers hardcoded as `"Bench panic"`, `"ngrok → https://fattern-tunnel.ngrok.app"` and
+`"compiled successfully · 612ms · 2,483 modules"`; service spans positioned from
+`(id.charCodeAt(0) + id.length) % 7`; and two statistics — `"Builds 14 / avg 482ms"`
+and `"Requests 218 / rpm peak"` — for telemetry Localhost Hub does not collect and has
+no way to collect.
+
+Worse than fabricated: unreachable. `buildHubData` sets `sessions: []` on every path,
+and so does `EMPTY_HUB`, so `data.sessions` was always empty. The component read
+`sessions[0].id` in its initial state, which threw — and with no error boundary above
+it, React unmounted the whole tree and the window went blank. Fixing that crash simply
+revealed the truth: an empty state, forever, behind a sidebar entry for a feature that
+could not work.
+
+No gate could have caught this. It typechecks, it lints, and no test rendered it. What
+found it was reading where the data came from.
+
+**Fixed:** sessions are derived from `history/runs.json` — real runs clustered into
+bursts of work, real spans, real outcomes as markers, real counts. The derivation is in
+`src/sessions.ts` with 16 tests. The two invented statistics are gone rather than
+replaced, because Hub has no build or request telemetry to put there.
+
+**Related and still open:** the same always-empty array feeds Home's "Pick up where you
+left off" resume card and the command palette's `Resume "…"` entries, so both are
+equally dead — which is why Home always greets with "Good to see you". Wiring them
+needs a decision the records cannot answer on their own: a run knows its `service_id`
+but not which workspace it belonged to, so "resume that session" has to be inferred by
+matching service ids back to stored workspaces.
+
 ### H1 — Content Security Policy disabled
 
 `src-tauri/tauri.conf.json`: `"security": { "csp": null }`.

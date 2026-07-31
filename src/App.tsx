@@ -19,7 +19,6 @@ import { SettingsView } from './view-settings';
 import { githubAuth, type GitHubUser } from './github-auth';
 import { listenToServiceEvents, listenToWindowVisibility, tauriApi, type WorkspaceGroup, type ProcessInfo, type LivePort, type ManagedServiceInfo } from './tauri-api';
 import { Ic } from './icons';
-import { formatDuration } from './utils';
 import { CreateProjectDialog } from './create-project-dialog';
 import { ViewErrorBoundary } from './error-boundary';
 import {
@@ -1260,15 +1259,10 @@ export default function App() {
         clearLogs={() => setLogs([])}
       />
     );
-    if (view === "sessions") return (
-      <SessionsView
-        workspaces={data.workspaces}
-        sessions={data.sessions}
-        services={allServices}
-        onResume={(s: Session) => { setWs(s.ws); setView("workspace"); toast(`Resumed "${s.title}"`, "ok"); }}
-        onJumpToLogs={(t: number, s: Session) => { setView("logs"); toast(`Jumped to logs @ +${formatDuration(t * s.duration)}`, "info"); }}
-      />
-    );
+    // Reads run history itself, like the Run history view. It previously took a
+    // `sessions` array that `buildHubData` only ever filled with `[]`, so the
+    // timeline it rendered was unreachable — and invented, when it was reached.
+    if (view === "sessions") return <SessionsView onOpenLogs={() => setView("logs")} />;
     if (view === "history") return <HistoryView />;
     if (view === "project") {
       const proj = repos.find((repo) => repo.id === project) ?? repos[0];

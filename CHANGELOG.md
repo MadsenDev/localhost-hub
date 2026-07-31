@@ -57,6 +57,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Rebuilt the Sessions view on recorded runs. It was the one view presenting invented
+  data as though it were history: hardcoded event markers reading "Bench panic" and
+  "ngrok → https://…", spans positioned from a hash of the service name, and two
+  statistics — "14 builds, avg 482ms" and "218 requests" — for telemetry Localhost Hub
+  has never collected.
+  - None of it could be reached. The array the view read from was filled with `[]` on
+    every code path, so the timeline was unreachable and the view rendered nothing at
+    all. Which also means the sidebar carried an entry for a feature that could not
+    work.
+  - Sessions are now reconstructed from `history/runs.json`: runs are grouped into
+    bursts of work separated by half an hour of quiet, each service gets a track with
+    its real spans, and each marker is a real outcome — started, exited, failed,
+    stopped, or interrupted, with a clean exit distinguished from a non-zero one. The
+    counts are of real records, and the scrubber's "failures before this point" is
+    computed from real timestamps.
+  - The derivation lives in `src/sessions.ts`, apart from the view, with 16 tests
+    covering the clustering rules — including that a long-lived server spanning a quiet
+    period keeps one session open rather than splitting it.
+  - The density strip above the scrubber is now measured against the number of
+    services rather than against its own busiest point, and is hidden when every
+    bucket is identical. Normalising to the peak drew a solid full-height bar across
+    the width for the common case of everything running start to finish, which is a
+    chart that says nothing.
+
 - Added tests for the IPC boundary, which had none. `src-tauri/src/command_tests.rs`
   sends real invoke requests through the same handler list the application registers,
   so it covers what calling the functions directly cannot: that a command is reachable
