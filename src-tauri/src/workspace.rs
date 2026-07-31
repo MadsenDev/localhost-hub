@@ -1,12 +1,14 @@
+use crate::events::{EventSink, TauriEventSink};
 use crate::services::{terminate_process_tree, ServiceEnvironment, ServiceManager};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use ts_rs::TS;
 
 const DEFAULT_MAX_DEPTH: usize = 4;
@@ -168,7 +170,7 @@ struct PlannedWorkspaceService {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum WorkspaceEventKind {
+pub enum WorkspaceEventKind {
     Starting,
     Started,
     Partial,
@@ -178,15 +180,34 @@ enum WorkspaceEventKind {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct WorkspaceEvent {
-    workspace_id: String,
-    kind: WorkspaceEventKind,
-    message: String,
-    service_ids: Vec<String>,
+pub struct WorkspaceEvent {
+    pub workspace_id: String,
+    pub kind: WorkspaceEventKind,
+    pub message: String,
+    pub service_ids: Vec<String>,
 }
 
 pub fn start_workspace(
     app: AppHandle,
+    manager: &ServiceManager,
+    workspace_id: String,
+    services: Vec<WorkspaceServiceSpec>,
+) -> Result<WorkspaceRunResult, String> {
+    start_workspace_with_sink(
+        Arc::new(TauriEventSink(app)),
+        manager,
+        workspace_id,
+        services,
+    )
+}
+
+/// The workspace runner, with its event destination injected.
+///
+/// Both the workspace progress events and the service events the run produces go
+/// to the same sink, so a caller that is not the webview — the Companion server —
+/// sees the whole run rather than only half of it.
+pub(crate) fn start_workspace_with_sink(
+    sink: Arc<dyn EventSink>,
     manager: &ServiceManager,
     workspace_id: String,
     services: Vec<WorkspaceServiceSpec>,
@@ -198,7 +219,7 @@ pub fn start_workspace(
         .map(|planned| planned.service.service_id.clone())
         .collect::<Vec<_>>();
     emit_workspace(
-        &app,
+        sink.as_ref(),
         &workspace_id,
         WorkspaceEventKind::Starting,
         format!("starting {} workspace services", service_ids.len()),
@@ -236,7 +257,7 @@ pub fn start_workspace(
             let service_id = planned.service.service_id.clone();
             let expected_ports = planned.service.expected_ports.clone();
             let readiness_timeout_ms = planned.service.readiness_timeout_ms;
-            if start_workspace_service(&app, manager, planned.service, &mut result) {
+            if start_workspace_service(&sink, manager, planned.service, &mut result) {
                 if readiness_timeout_ms > 0 {
                     readiness_checks.push((service_id, expected_ports, readiness_timeout_ms));
                 }
@@ -296,12 +317,26 @@ pub fn start_workspace(
                 ),
             )
         };
-    emit_workspace(&app, &workspace_id, kind, message, result.started.clone());
+    emit_workspace(sink.as_ref(), &workspace_id, kind, message, result.started.clone());
     Ok(result)
 }
 
 pub fn stop_workspace(
     app: AppHandle,
+    manager: &ServiceManager,
+    workspace_id: String,
+    services: Vec<WorkspaceStopSpec>,
+) -> Result<WorkspaceRunResult, String> {
+    stop_workspace_with_sink(
+        Arc::new(TauriEventSink(app)),
+        manager,
+        workspace_id,
+        services,
+    )
+}
+
+pub(crate) fn stop_workspace_with_sink(
+    sink: Arc<dyn EventSink>,
     manager: &ServiceManager,
     workspace_id: String,
     services: Vec<WorkspaceStopSpec>,
@@ -312,7 +347,7 @@ pub fn stop_workspace(
         .map(|service| service.service_id.clone())
         .collect::<Vec<_>>();
     emit_workspace(
-        &app,
+        sink.as_ref(),
         &workspace_id,
         WorkspaceEventKind::Stopping,
         format!("stopping {} workspace services", service_ids.len()),
@@ -332,7 +367,7 @@ pub fn stop_workspace(
                 },
                 None => result.not_running.push(service.service_id),
             },
-            Ok(true) => match manager.stop(app.clone(), service.service_id.clone()) {
+            Ok(true) => match manager.stop_with_sink(sink.clone(), service.service_id.clone(), true) {
                 Ok(()) => result.stopped.push(service.service_id),
                 Err(error) => result
                     .failed
@@ -370,12 +405,12 @@ pub fn stop_workspace(
             ),
         )
     };
-    emit_workspace(&app, &workspace_id, kind, message, result.stopped.clone());
+    emit_workspace(sink.as_ref(), &workspace_id, kind, message, result.stopped.clone());
     Ok(result)
 }
 
 fn start_workspace_service(
-    app: &AppHandle,
+    sink: &Arc<dyn EventSink>,
     manager: &ServiceManager,
     service: WorkspaceServiceSpec,
     result: &mut WorkspaceRunResult,
@@ -385,8 +420,8 @@ fn start_workspace_service(
             result.already_running.push(service.service_id);
             true
         }
-        Ok(false) => match manager.start(
-            app.clone(),
+        Ok(false) => match manager.start_with_sink(
+            sink.clone(),
             service.service_id.clone(),
             service.cwd,
             service.cmd,
@@ -620,21 +655,18 @@ fn validate_stop_services(
 }
 
 fn emit_workspace(
-    app: &AppHandle,
+    sink: &dyn EventSink,
     workspace_id: &str,
     kind: WorkspaceEventKind,
     message: String,
     service_ids: Vec<String>,
 ) {
-    let _ = app.emit(
-        "workspace://event",
-        WorkspaceEvent {
-            workspace_id: workspace_id.to_string(),
-            kind,
-            message,
-            service_ids,
-        },
-    );
+    sink.workspace(WorkspaceEvent {
+        workspace_id: workspace_id.to_string(),
+        kind,
+        message,
+        service_ids,
+    });
 }
 
 #[derive(Debug)]
@@ -1562,5 +1594,136 @@ mod tests {
         assert_eq!(nested.git_root.as_deref(), Some(expected_root.as_str()));
 
         fs::remove_dir_all(root).expect("remove fixture");
+    }
+}
+
+#[cfg(test)]
+mod event_routing_tests {
+    use super::*;
+    use crate::events::EventSink;
+    use crate::services::{ServiceEvent, ServiceEventKind};
+    use std::sync::Mutex;
+    use std::time::Instant;
+
+    /// Records both kinds of event, so a test can assert that a workspace run
+    /// publishes everything it produces to one destination.
+    #[derive(Default)]
+    struct RecordingSink {
+        service: Mutex<Vec<ServiceEventKind>>,
+        workspace: Mutex<Vec<WorkspaceEventKind>>,
+    }
+
+    impl EventSink for RecordingSink {
+        fn service(&self, event: ServiceEvent) {
+            self.service.lock().expect("service events").push(event.kind);
+        }
+
+        fn workspace(&self, event: WorkspaceEvent) {
+            self.workspace
+                .lock()
+                .expect("workspace events")
+                .push(event.kind);
+        }
+    }
+
+    impl RecordingSink {
+        fn saw_service(&self, kind: &ServiceEventKind) -> bool {
+            self.service.lock().expect("service events").contains(kind)
+        }
+
+        fn workspace_kinds(&self) -> Vec<WorkspaceEventKind> {
+            self.workspace.lock().expect("workspace events").clone()
+        }
+    }
+
+    fn wait_until(mut done: impl FnMut() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            if done() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        panic!("timed out waiting for events");
+    }
+
+    fn spec(service_id: &str, cmd: &str) -> WorkspaceServiceSpec {
+        WorkspaceServiceSpec {
+            service_id: service_id.to_string(),
+            cwd: "/tmp".to_string(),
+            cmd: cmd.to_string(),
+            depends_on: Vec::new(),
+            run_mode: WorkspaceRunMode::default(),
+            order: 0,
+            environment: ServiceEnvironment::default(),
+            expected_ports: Vec::new(),
+            allow_port_conflicts: false,
+            startup_delay_ms: 0,
+            readiness_timeout_ms: 0,
+        }
+    }
+
+    /// The property that makes a Companion server possible: one caller-supplied
+    /// destination receives *both* the workspace's own progress events and the
+    /// service events the run produces.
+    ///
+    /// Workspace events used to go straight to the webview via `app.emit`, so a
+    /// caller that was not the webview could see neither — and a caller that
+    /// somehow saw the workspace events would still have missed every line of
+    /// output the run generated.
+    #[test]
+    fn a_workspace_run_reports_both_event_kinds_to_its_sink() {
+        let manager = ServiceManager::default();
+        let sink = Arc::new(RecordingSink::default());
+
+        let result = start_workspace_with_sink(
+            sink.clone(),
+            &manager,
+            "ws-events".to_string(),
+            vec![spec("svc-events", "printf 'ready\\n'")],
+        )
+        .expect("workspace starts");
+        assert_eq!(result.started, vec!["svc-events".to_string()]);
+
+        wait_until(|| sink.saw_service(&ServiceEventKind::Exited));
+
+        // Service events reached the workspace's sink, not just the webview.
+        assert!(sink.saw_service(&ServiceEventKind::Starting));
+        assert!(sink.saw_service(&ServiceEventKind::Stdout));
+        assert!(sink.saw_service(&ServiceEventKind::Exited));
+
+        // And the workspace's own progress, opening with Starting.
+        let kinds = sink.workspace_kinds();
+        assert!(
+            matches!(kinds.first(), Some(WorkspaceEventKind::Starting)),
+            "expected the run to open with Starting, got {kinds:?}"
+        );
+        assert!(kinds.len() >= 2, "expected a terminal event too, got {kinds:?}");
+    }
+
+    /// Stopping publishes to the sink as well, and reports a service it was never
+    /// supervising as not running rather than as an error.
+    #[test]
+    fn stopping_a_workspace_reports_to_its_sink() {
+        let manager = ServiceManager::default();
+        let sink = Arc::new(RecordingSink::default());
+
+        let result = stop_workspace_with_sink(
+            sink.clone(),
+            &manager,
+            "ws-stop".to_string(),
+            vec![WorkspaceStopSpec {
+                service_id: "never-started".to_string(),
+                pid: None,
+            }],
+        )
+        .expect("workspace stops");
+
+        assert_eq!(result.not_running, vec!["never-started".to_string()]);
+        let kinds = sink.workspace_kinds();
+        assert!(
+            matches!(kinds.first(), Some(WorkspaceEventKind::Stopping)),
+            "expected Stopping first, got {kinds:?}"
+        );
     }
 }

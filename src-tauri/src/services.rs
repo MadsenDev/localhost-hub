@@ -1,3 +1,4 @@
+use crate::events::{EventSink, NoopEventSink, TauriEventSink};
 use crate::history::{History, RunLogWriter, RunOutcome};
 use crate::ports::{
     extract_local_urls, find_port_conflicts, port_from_local_url, scan_all_live_ports,
@@ -15,7 +16,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use ts_rs::TS;
 
 /// Largest line buffered before it is forced out as its own log event.
@@ -149,27 +150,6 @@ pub struct ServiceEvent {
     pub code: Option<i32>,
 }
 
-trait EventSink: Send + Sync {
-    fn emit(&self, event: ServiceEvent);
-}
-
-#[derive(Clone)]
-struct TauriEventSink(AppHandle);
-
-impl EventSink for TauriEventSink {
-    fn emit(&self, event: ServiceEvent) {
-        let _ = self.0.emit("service://event", event);
-    }
-}
-
-/// Drops events. Used while shutting down, where there is no interface left to
-/// deliver them to.
-struct NoopEventSink;
-
-impl EventSink for NoopEventSink {
-    fn emit(&self, _event: ServiceEvent) {}
-}
-
 impl ServiceManager {
     // The parameter list mirrors the start_service IPC payload; grouping it into
     // a struct would only move the same fields behind another name.
@@ -212,7 +192,7 @@ impl ServiceManager {
             )
         };
 
-        sink.emit(ServiceEvent {
+        sink.service(ServiceEvent {
             service_id: service_id.clone(),
             kind: ServiceEventKind::Restarting,
             message: "restarting".to_string(),
@@ -414,7 +394,7 @@ impl ServiceManager {
     // The parameter list mirrors the start_service IPC payload; grouping it into
     // a struct would only move the same fields behind another name.
     #[allow(clippy::too_many_arguments)]
-    fn start_with_sink(
+    pub(crate) fn start_with_sink(
         &self,
         sink: Arc<dyn EventSink>,
         service_id: String,
@@ -458,7 +438,7 @@ impl ServiceManager {
             ensure_ports_available(&expected_ports)?;
         }
 
-        sink.emit(ServiceEvent {
+        sink.service(ServiceEvent {
             service_id: service_id.clone(),
             kind: ServiceEventKind::Starting,
             message: format!("starting `{cmd}`"),
@@ -534,7 +514,7 @@ impl ServiceManager {
                 },
             );
 
-        sink.emit(ServiceEvent {
+        sink.service(ServiceEvent {
             service_id: service_id.clone(),
             kind: ServiceEventKind::Started,
             message: format!("started `{cmd}`"),
@@ -567,7 +547,7 @@ impl ServiceManager {
         Ok(pid)
     }
 
-    fn stop_with_sink(
+    pub(crate) fn stop_with_sink(
         &self,
         sink: Arc<dyn EventSink>,
         service_id: String,
@@ -604,7 +584,7 @@ impl ServiceManager {
         }
 
         if emit_stopped {
-            sink.emit(ServiceEvent {
+            sink.service(ServiceEvent {
                 service_id,
                 kind: ServiceEventKind::Stopped,
                 message: "stopped".to_string(),
@@ -654,7 +634,7 @@ impl ServiceManager {
                 managed.pid,
             )
         };
-        sink.emit(ServiceEvent {
+        sink.service(ServiceEvent {
             service_id: service_id.to_string(),
             kind: ServiceEventKind::Restarting,
             message: "restarting".to_string(),
@@ -888,7 +868,32 @@ fn wait_for_exit(child: &mut Child, attempts: usize) -> Result<bool, String> {
     Ok(false)
 }
 
+/// Rejects process identifiers that no process can have.
+///
+/// This is not an authorization check — killing a process Hub did not start is the
+/// point of the Ports view's kill action. It is a check that the number is a
+/// process identifier at all, because two of them are aliases for something much
+/// larger:
+///
+/// - `0` means "every process in my own process group" to `kill(2)`.
+/// - `1` is init.
+/// - Anything above `i32::MAX` truncates when it becomes a `pid_t`. `4294967295`
+///   becomes `-1`, and `kill(-1, …)` signals *every process the caller may
+///   signal*. `/bin/kill` accepts it and reports success.
+///
+/// Both `kill_process` and workspace stop specifications carry a caller-supplied
+/// pid across the IPC boundary, so this is reachable from the interface rather
+/// than only from Hub's own bookkeeping.
+fn validate_pid(pid: u32) -> Result<(), String> {
+    if pid <= 1 || pid > i32::MAX as u32 {
+        return Err(format!("{pid} is not a valid process identifier"));
+    }
+    Ok(())
+}
+
 pub fn terminate_process_tree(pid: u32) -> Result<(), String> {
+    validate_pid(pid)?;
+
     #[cfg(unix)]
     {
         if signal_unix_process_group(pid, "TERM")? {
@@ -943,7 +948,7 @@ fn spawn_reader<R>(
                 // A signal interrupting the read is not a stream failure.
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(error) => {
-                    sink.emit(ServiceEvent {
+                    sink.service(ServiceEvent {
                         service_id: service_id.clone(),
                         kind: ServiceEventKind::Stderr,
                         message: format!("failed to read process output: {error}"),
@@ -1023,7 +1028,7 @@ fn emit_log_line(
             })
             .unwrap_or(false);
         if is_new {
-            sink.emit(ServiceEvent {
+            sink.service(ServiceEvent {
                 service_id: service_id.to_string(),
                 kind: ServiceEventKind::Url,
                 message: url,
@@ -1033,7 +1038,7 @@ fn emit_log_line(
         }
     }
 
-    sink.emit(ServiceEvent {
+    sink.service(ServiceEvent {
         service_id: service_id.to_string(),
         kind: kind.clone(),
         message,
@@ -1082,7 +1087,7 @@ fn spawn_exit_watcher(
             let mut child = match child.lock() {
                 Ok(child) => child,
                 Err(error) => {
-                    sink.emit(ServiceEvent {
+                    sink.service(ServiceEvent {
                         service_id: service_id.clone(),
                         kind: ServiceEventKind::Error,
                         message: error.to_string(),
@@ -1124,7 +1129,7 @@ fn spawn_exit_watcher(
                 let recorded_code = if stopped_deliberately { None } else { code };
                 finish_run(&history, &run, outcome, recorded_code);
                 if should_emit {
-                    sink.emit(ServiceEvent {
+                    sink.service(ServiceEvent {
                         service_id,
                         kind: ServiceEventKind::Exited,
                         message: format!(
@@ -1144,7 +1149,7 @@ fn spawn_exit_watcher(
                     .unwrap_or(true);
                 finish_run(&history, &run, RunOutcome::Failed, None);
                 if should_emit {
-                    sink.emit(ServiceEvent {
+                    sink.service(ServiceEvent {
                         service_id,
                         kind: ServiceEventKind::Error,
                         message,
@@ -1201,15 +1206,40 @@ mod tests {
     use super::*;
     use std::time::Instant;
 
+    /// `kill_process` and workspace stop specifications both carry a pid across the
+    /// IPC boundary, and three values are not process identifiers but broadcast
+    /// targets. `4294967295` is the dangerous one: it truncates to `-1`, which
+    /// `kill(2)` reads as every process the caller may signal, and `/bin/kill`
+    /// accepts it and reports success rather than failing.
+    #[test]
+    fn identifiers_that_are_not_processes_are_refused() {
+        for pid in [0, 1, i32::MAX as u32 + 1, u32::MAX] {
+            let error = terminate_process_tree(pid)
+                .expect_err("should be refused before any signal is sent");
+            assert!(
+                error.contains("not a valid process identifier"),
+                "unexpected error for {pid}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_plausible_identifier_passes_validation() {
+        // Validation only; this pid is this test process, which is certainly real.
+        assert!(validate_pid(std::process::id()).is_ok());
+    }
+
     #[derive(Default)]
     struct TestSink {
         events: Mutex<Vec<ServiceEvent>>,
     }
 
     impl EventSink for TestSink {
-        fn emit(&self, event: ServiceEvent) {
+        fn service(&self, event: ServiceEvent) {
             self.events.lock().expect("events").push(event);
         }
+
+        fn workspace(&self, _event: crate::workspace::WorkspaceEvent) {}
     }
 
     impl TestSink {

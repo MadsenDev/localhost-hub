@@ -134,6 +134,7 @@ src-tauri/src/                The backend
   history.rs                  Run history and stored output
   tray.rs / autostart.rs      System tray; the login item
   lifetime.rs                 Whether Hub stays running with no window
+  events.rs                   Where live events go, so it need not be the window
 ```
 
 **The boundary is checked by the compiler.** Every type crossing it is generated from the Rust struct by [ts-rs](https://github.com/Aleph-Alpha/ts-rs), so renaming a Rust field breaks the build at each call site that reads it instead of surfacing as an `undefined` at runtime. Continuous integration fails if the committed bindings drift from the Rust definitions.

@@ -7,7 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Validated process identifiers before signalling anything. `kill_process` accepts a
+  pid from the interface, and `4294967295` was accepted and reported as success: it
+  truncates to a `pid_t` of `-1`, which `kill(2)` reads as *every process the caller
+  may signal*, and `/bin/kill` takes it without complaint. Workspace stop
+  specifications carry a caller-supplied pid across the same boundary. `0` (the
+  caller's own process group), `1` (init) and anything above `i32::MAX` are now
+  refused before a signal is sent. This is not an authorization change — killing a
+  process Hub did not start is what the Ports view is for — it is a check that the
+  number is a process identifier rather than an alias for a broadcast.
+  Found by writing the first tests for the IPC surface.
+
 ### Added
+
+- Added tests for the IPC boundary, which had none. `src-tauri/src/command_tests.rs`
+  sends real invoke requests through the same handler list the application registers,
+  so it covers what calling the functions directly cannot: that a command is reachable
+  at all, that its arguments bind from the payload the interface sends, and that
+  rejected input comes back as an error rather than unwinding across the boundary. A
+  command can be written, exported and completely unreachable, because defining it and
+  registering it are two separate acts; the registration check reads the source and so
+  covers every command, including the ones the test runtime cannot invoke.
+
+- Routed workspace events through the same sink as service events, in a new
+  `events.rs`. Workspace progress went straight to the webview, so it could not be
+  delivered anywhere else, and a caller that was not the webview would also have
+  missed every line of output its own run produced. Both kinds now go to one
+  caller-supplied destination — the third precondition the Companion plan sets, and
+  what lets a Companion server observe a run it started.
 
 - Added the Localhost Companion threat model and pairing design in
   `docs/COMPANION_SECURITY.md`. Design only; no server, pairing or device credential code

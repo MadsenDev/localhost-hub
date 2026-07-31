@@ -228,6 +228,10 @@ Companion implementation begins only after:
 2. Rust process and workspace state have stable application-service APIs.
 3. Logs/events can be subscribed to without depending on React or Tauri window
    state.
+   → Done. `src-tauri/src/events.rs` owns the `EventSink` trait; service events and
+   workspace progress both publish to a caller-supplied destination, and a workspace
+   run reports the service events it produces to the same one. `TauriEventSink` is
+   one implementation, not the mechanism.
 4. The threat model and device-revocation flow are documented.
    → [Threat Model and Pairing Design](COMPANION_SECURITY.md) covers this: adversaries,
    the exposed and never-exposed command vocabulary, transport and certificate pinning,

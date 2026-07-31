@@ -48,3 +48,9 @@ thiserror = "1"
 keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 ts-rs = { version = "10.1.0", features = ["no-serde-warnings"] }
 tauri-plugin-autostart = "2.5.1"
+
+[dev-dependencies]
+# Enables `tauri::test`, so the IPC entry points can be exercised through the real
+# `generate_handler!` registration rather than called as plain functions. Dev-only:
+# the feature is not enabled for release builds.
+tauri = { version = "2.11.1", features = ["test"] }
