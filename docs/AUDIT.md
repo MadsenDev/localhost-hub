@@ -34,8 +34,10 @@ Electron" (UNIFICATION.md stage 10) is not an executable plan.
 > **M4**, **M7**, **M8**, and **M1** in part, plus three defects the audit could not
 > have seen because no gate covered the code they live in (**F1**, **F2**, **F3**).
 > Each finding keeps its original text, with a *Resolution* note appended where work
-> landed. Still open: **M5** (polling cost), **M6** (unused locales), and the
-> `commands.rs` half of **M4**.
+> landed. Still open: **M5** (polling cost), **M6** (unused locales), and the last
+> third of **M4** — the IPC surface now has tests, but 17 of the 50 commands take a
+> concrete `AppHandle` and need the commands generic over `R: Runtime` before a mock
+> runtime can reach them.
 >
 > C1 was ultimately resolved twice: first by making the Electron reference runnable,
 > then — once parity had been compared against it — by removing Electron entirely,
