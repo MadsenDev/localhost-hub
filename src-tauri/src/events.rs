@@ -46,3 +46,22 @@ impl EventSink for NoopEventSink {
     fn service(&self, _event: ServiceEvent) {}
     fn workspace(&self, _event: WorkspaceEvent) {}
 }
+
+/// Tells the interface whether it has a window on screen.
+///
+/// Not a cost saving, though it was built as one: the platform webview already
+/// suspends the interface's timers while the window is hidden. Measured on
+/// WebKitGTK, hidden to the tray, with the interface's own check removed — zero
+/// polls over thirty seconds.
+///
+/// What it is for is freshness on the way back. Reopening from the tray showed
+/// whatever was current when the window was hidden, for up to five seconds; after an
+/// afternoon in the tray that can mean presenting a service as running that died
+/// hours ago. Knowing it became visible lets the interface refresh at once.
+///
+/// Rust announces it because Rust is what hides and shows the window. The obvious
+/// alternative, `document.hidden`, is reported inconsistently by platform webviews
+/// for a window hidden to a tray — which is precisely the case that matters.
+pub fn emit_window_visibility(app: &AppHandle, visible: bool) {
+    let _ = app.emit("window://visibility", visible);
+}

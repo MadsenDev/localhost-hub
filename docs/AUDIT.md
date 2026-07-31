@@ -31,13 +31,14 @@ Neither is hard to fix, but until they are, "verify feature parity before removi
 Electron" (UNIFICATION.md stage 10) is not an executable plan.
 
 > **Status: every Critical and High finding is closed**, along with **M2**, **M3**,
-> **M4**, **M7**, **M8**, and **M1** in part, plus three defects the audit could not
-> have seen because no gate covered the code they live in (**F1**, **F2**, **F3**).
-> Each finding keeps its original text, with a *Resolution* note appended where work
-> landed. Still open: **M5** (polling cost), **M6** (unused locales), and the last
-> third of **M4** — the IPC surface now has tests, but 17 of the 50 commands take a
-> concrete `AppHandle` and need the commands generic over `R: Runtime` before a mock
-> runtime can reach them.
+> **M4**, **M6**, **M7**, **M8**, most of **M5**, and **M1** in part, plus three
+> defects the audit could not have seen because no gate covered the code they live in
+> (**F1**, **F2**, **F3**). Each finding keeps its original text, with a *Resolution*
+> note appended where work landed. Still open: the remainder of **M5** —
+> `scan_ports` still spawns `ss` on every tick, and the interval does not lengthen
+> when nothing is running — and the last third of **M4**, where 17 of the 50 commands
+> take a concrete `AppHandle` and need the commands generic over `R: Runtime` before a
+> mock runtime can reach them.
 >
 > C1 was ultimately resolved twice: first by making the Electron reference runnable,
 > then — once parity had been compared against it — by removing Electron entirely,
@@ -650,6 +651,27 @@ parent PIDs.
 window is unfocused or hidden (`tauri::WindowEvent::Focused`); increase the interval
 when no services are running; consider caching port scans between ticks.
 
+**Resolution.** The `sysinfo` half is done, and it was hiding a correctness bug the
+audit did not see. A `System` was constructed per call, so sysinfo had no previous
+sample to difference against and reported `0.0%` CPU for **every** process — which is
+what the interface displayed, including for a `cargo` busy compiling. One shared table
+in `processes.rs` fixes that and makes the refresh cheaper; a test creates load and
+asserts the figure is found. `refresh_all()` is replaced by targeted refreshes, and
+`ports.rs` reuses the same table instead of rebuilding it, so a tick does one process
+walk rather than two. Measured on an idle machine, 92 processes: 9.4ms → ~3ms per
+refresh, and the gap widens with the process count.
+
+The "back off when hidden" half turned out to be unnecessary, which measurement
+established rather than argument: the platform webview already suspends the
+interface's timers for a hidden window — **zero** polls over thirty seconds hidden to
+the tray, with the interface's own check removed. A visibility signal was kept, but
+for the opposite reason to the one intended: reopening from the tray showed state from
+when the window was hidden for up to five seconds, and it now refreshes at once.
+
+**Still open:** increasing the interval when no services are running, and caching port
+scans between ticks. `scan_ports` remains the more expensive half of a tick (~6–25ms,
+dominated by spawning `ss`) and is unchanged.
+
 ### M6 — Unused i18n scaffolding
 
 `src/translations/{en,fr,no,sv}.json` — four locale files, 457 lines each, 1,828
@@ -659,6 +681,13 @@ installed; every UI string is hardcoded in JSX.
 Four translations are maintained in parallel while having no effect, and will silently
 drift from the real strings. Either wire up i18n or delete them until it is a real
 priority; keeping them costs maintenance and implies a capability the app lacks.
+
+**Resolution.** Deleted, along with `src/data.ts` — a 187-line mock dataset also
+imported by nothing — for 2,015 lines removed. Verified unreferenced first, including
+against `import.meta.glob`, and the built bundle is byte-identical afterwards, which
+is the point: none of this reached users, only readers. Internationalisation is a real
+feature when someone wants it, and four unwired locale files are not a head start on
+it.
 
 ### M7 — Dependency hygiene
 
@@ -840,10 +869,10 @@ only defect is describing the Electron parity path as viable (C1).
 10. **H3** — resolve the `sh -lc` / `inherit_system: false` contradiction.
 11. **M1** — drop the three unused `fs:` permissions; add an explicit scope.
 12. **M8** — rewrite or delete `TODO.md`.
-13. **M6** — wire up or delete the four unused locale files.
+13. ~~**M6** — wire up or delete the four unused locale files.~~ Done: deleted, with `src/data.ts`.
 
 ### Ongoing
-14. **M5** — narrow `sysinfo` refresh; back off polling when unfocused.
+14. **M5** — ~~narrow `sysinfo` refresh~~ done; ~~back off polling when unfocused~~ unnecessary, the webview already suspends the timers. Remaining: cache port scans between ticks, and lengthen the interval when nothing is running.
 15. **M4** — extract `useLiveRuntime` and the service-event stream from `App.tsx`;
     split orchestration out of `workspace.rs`.
 16. Add a release checklist and a packaged-artifact smoke test to the tag pipeline.

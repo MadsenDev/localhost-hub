@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Stopped rebuilding the whole process table on every poll, and fixed the CPU column
+  it broke. Localhost Hub refreshes every five seconds, and each tick built a fresh
+  `System`, called `refresh_all()` — which also walks disks, networks and components
+  that nothing reads — and did it twice, because scanning ports rebuilt the same table
+  again to name the processes holding them.
+  - The correctness half matters more than the cost. sysinfo derives CPU usage from
+    the difference between two refreshes, so a table constructed per call had nothing
+    to compare against and reported `0.0%` for every process. That is what the
+    interface displayed, including for a `cargo` that was busy compiling. One shared
+    table makes the figure real; a test creates load and asserts it is found.
+  - Measured on an idle machine with 92 processes: a refresh went from 9.4ms to about
+    3ms, and there is now one per tick instead of two. The gap widens with the process
+    count, and a developer's machine runs several hundred.
+
+- Reopening from the tray now shows current state at once, instead of up to five
+  seconds of whatever was true when the window was hidden — which, after an afternoon
+  in the tray, can mean presenting a service as running that died hours ago. Rust
+  announces window visibility, because Rust is what hides the window and
+  `document.hidden` is reported inconsistently by platform webviews for exactly this
+  case.
+  - This was built to stop the polling while hidden, and measurement showed there was
+    nothing to stop: the webview already suspends those timers, at zero polls over
+    thirty seconds hidden to the tray. The check stays for the freshness it buys, and
+    the code says so rather than claiming a saving it does not make.
+
+### Removed
+
+- Deleted 2,015 lines that nothing referenced: four locale files under
+  `src/translations/` totalling 1,828 lines, wired to no internationalisation of any
+  kind, and `src/data.ts`, a 187-line mock dataset imported by nothing. The built
+  bundle is byte-identical afterwards, which is the point — this was never reaching
+  users, only readers.
+
 ### Security
 
 - Validated process identifiers before signalling anything. `kill_process` accepts a

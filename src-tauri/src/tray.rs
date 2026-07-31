@@ -57,6 +57,7 @@ pub fn is_available() -> bool {
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.show();
+        crate::events::emit_window_visibility(app, true);
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
@@ -68,6 +69,7 @@ fn toggle_main_window(app: &AppHandle) {
     };
     if window.is_visible().unwrap_or(false) {
         let _ = window.hide();
+        crate::events::emit_window_visibility(app, false);
     } else {
         show_main_window(app);
     }
@@ -151,6 +153,7 @@ pub fn handle_window_event(app: &AppHandle, event: &WindowEvent) {
     api.prevent_close();
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.hide();
+        crate::events::emit_window_visibility(app, false);
     }
 }
 

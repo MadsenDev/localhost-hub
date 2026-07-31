@@ -283,3 +283,26 @@ export async function listenToServiceEvents(handler: (event: ServiceEvent) => vo
   const mod = await import("@tauri-apps/api/event");
   return mod.listen<ServiceEvent>("service://event", (event) => handler(event.payload));
 }
+
+/**
+ * Whether the window is on screen, as reported by Rust.
+ *
+ * Used to refresh immediately on becoming visible, not to stop polling while
+ * hidden — the webview already suspends those timers on its own, which measurement
+ * confirmed. Reopening from the tray otherwise shows state from when the window was
+ * hidden for up to five seconds.
+ *
+ * Rust is the authority because it is what hides and shows the window;
+ * `document.hidden` is reported inconsistently across platform webviews for a
+ * window hidden to a tray.
+ *
+ * Outside the desktop application there is always a window, so the fallback reports
+ * visible.
+ */
+export async function listenToWindowVisibility(
+  handler: (visible: boolean) => void,
+): Promise<() => void> {
+  if (!isTauri) return () => {};
+  const mod = await import("@tauri-apps/api/event");
+  return mod.listen<boolean>("window://visibility", (event) => handler(event.payload));
+}
