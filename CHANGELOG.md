@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Release prep now distinguishes the two reasons a version can already have a changelog
+  section, because one message for both sent someone the wrong way. After `v0.9.0` was
+  prepared but its packaging never started, re-running the workflow was the natural
+  thing to try, and `CHANGELOG.md already has a section for 0.9.0` gave no hint that
+  the work was already committed and only the tag was missing.
+  - When the tree is already at that version, it says so and gives the two commands
+    that actually help: recreate the tag, or start packaging against an existing one.
+    When the tree is at some later version, it says the version shipped and to pick the
+    next one. `docs/DISTRIBUTION.md` gains a table of what to do when something goes
+    wrong after the tag.
+
 ### Fixed
 
 - Release prep now actually starts packaging. Pushing the tag was supposed to, and does
