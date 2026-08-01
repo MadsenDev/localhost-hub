@@ -58,8 +58,18 @@ Pushing the tag is what starts packaging. The ordering is therefore:
      new heading would be a reference with no definition, rendering as bracketed text
      rather than a link. The previous tag is read out of the existing `[Unreleased]`
      link, so the file is its own record of what shipped last.
-2. **Desktop builds** sees the tag, drafts the release with that changelog section as
-   its notes, builds all three platforms, and attaches every installer to the draft.
+2. **Desktop builds** runs against the tag, drafts the release with that changelog
+   section as its notes, builds all three platforms, and attaches every installer to
+   the draft.
+   - Release prep starts it explicitly rather than relying on the tag push to do it.
+     GitHub does not start workflows from events created with the default
+     `GITHUB_TOKEN` — the rule that stops a workflow triggering itself forever — so a
+     tag pushed by a workflow fires no `push` trigger. `workflow_dispatch` is one of
+     the two events exempt from that rule, so it is used instead, against the tag. The
+     alternative is a personal access token stored in the repository purely to work
+     around the rule, which is a long-lived credential for no benefit.
+   - This is why the jobs key off `github.ref_type == 'tag'` rather than the event
+     name: a real tag push and a dispatch against a tag are the same thing here.
 3. **You** review the draft — with the packages already on it — and publish.
 
 Nothing is downloadable until step 3, which is the point: a release is never public
@@ -113,8 +123,9 @@ same shared rules, so the writer is checked rather than trusted.
 
 `.github/workflows/desktop-builds.yml` runs:
 
-- when a `v*` tag is **pushed** — all three platforms, drafting the release and
-  attaching the installers to it;
+- when a `v*` tag is **pushed**, or the workflow is **dispatched against a tag** —
+  all three platforms, drafting the release and attaching the installers to it. Release
+  prep uses the second form; see above for why;
 - when a GitHub release is **published** by hand — all three platforms, attached to
   that release;
 - manually through **Actions → Desktop builds → Run workflow** — all three

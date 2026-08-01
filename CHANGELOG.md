@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Release prep now actually starts packaging. Pushing the tag was supposed to, and does
+  not: GitHub deliberately does not start workflows from events created with the default
+  `GITHUB_TOKEN`, which is the rule that stops a workflow triggering itself forever. So
+  `v0.9.0` was tagged correctly — versions, changelog, compare links, commit, tag, all
+  of it — and nothing built.
+  - `workflow_dispatch` is one of the two events exempt from that rule, so Release prep
+    now starts Desktop builds explicitly, against the tag. No personal access token is
+    involved; storing a long-lived credential in the repository purely to work around
+    the rule would be a worse trade.
+  - Packaging keys off `github.ref_type == 'tag'` rather than the event name, so a real
+    tag push and a dispatch against a tag behave identically, and a manual run against a
+    branch still just produces artifacts.
+
 ## [0.9.0] - 2026-08-01
 
 ### Added

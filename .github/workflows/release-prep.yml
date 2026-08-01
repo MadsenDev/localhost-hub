@@ -151,4 +151,22 @@ jobs:
           git push origin "HEAD:${BRANCH}"
           git push origin "$TAG"
 
-          echo "::notice::Pushed ${TAG}. Desktop builds will draft the release and attach the installers."
+      # Pushing the tag is not enough to start packaging. GitHub deliberately does not
+      # start workflows from events created with the default GITHUB_TOKEN — it is the
+      # rule that stops a workflow triggering itself forever — so the `push: tags`
+      # trigger never fires for a tag this workflow pushed. The first real release
+      # found that out: v0.9.0 was tagged correctly and nothing built.
+      #
+      # `workflow_dispatch` is one of the two events exempt from that rule, so
+      # packaging is started explicitly, against the tag. No deploy key or personal
+      # access token is involved, which is the point: the alternative is a long-lived
+      # credential stored in the repository purely to work around the rule.
+      - name: Start packaging for the tag
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          gh workflow run desktop-builds.yml --ref "$TAG"
+          echo "::notice::Pushed ${TAG} and started Desktop builds against it. It will draft the release and attach the installers."
