@@ -1,15 +1,38 @@
 import React from 'react';
-import type { HubDataShape, Repo, Session, Workspace } from './types';
+import type { HubDataShape, Repo, Workspace } from './types';
 import { Ic } from './icons';
 import { StatusDot, Sparkline, SectionHeader } from './shared';
 import { tauriApi, type SystemStats } from './tauri-api';
+import { attributeSession, deriveSessions, type DerivedSession, type SessionEventKind } from './sessions';
+import { formatDuration } from './utils';
+
+/** How each kind of session event reads in the activity list. */
+const ACTIVITY_TONE: Record<SessionEventKind, string> = {
+  started: '--blue',
+  exited: '--ok',
+  failed: '--danger',
+  stopped: '--warn',
+  interrupted: '--warn',
+};
+
+function formatClock(ms: number): string {
+  return new Date(ms).toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function formatWhen(ms: number): string {
+  const elapsed = Date.now() - ms;
+  if (elapsed < 60_000) return 'just now';
+  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m ago`;
+  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h ago`;
+  return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
 
 interface HomeViewProps {
   data: HubDataShape;
   projects: Repo[];
   onOpenWs: (id: string) => void;
   onOpenProject: (id: string) => void;
-  onResumeSession: (s: Session) => void;
+  onResumeSession: (workspaceId: string) => void;
   startWs: (id: string) => void;
   stopWs: (id: string) => void;
 }
@@ -19,8 +42,58 @@ export function HomeView({ data, projects, onOpenWs, onOpenProject, onResumeSess
   const running = allServices.filter((s) => s.status === "running").length;
   const failed = allServices.filter((s) => s.status === "failed").length;
   const totalPorts = data.ports.filter((p) => p.status === "running").length;
-  const lastSession = data.sessions.find((s) => s.badge) || data.sessions[1] || data.sessions[0] || null;
-  const lastWs = lastSession ? (data.workspaces.find((w) => w.id === lastSession.ws) ?? data.workspaces[0]) : null;
+  // The most recent burst of recorded work, and the workspace it belonged to.
+  // Read from run history rather than from `data`, whose `sessions` array was
+  // filled with `[]` on every path — which is why this card never once appeared
+  // and Home always greeted with "Good to see you".
+  const [lastSession, setLastSession] = React.useState<DerivedSession | null>(null);
+  // Refetched whenever the number of running services changes, so a start or a
+  // stop is reflected here without polling: `data.workspaces` is already kept
+  // current, and every start and stop moves this count. Fetching only on mount
+  // left the card asserting "still running" after the user stopped the workspace
+  // from this very view.
+  React.useEffect(() => {
+    let cancelled = false;
+    tauriApi.listRunHistory()
+      .then((runs) => {
+        if (!cancelled) setLastSession(deriveSessions(runs, Date.now())[0] ?? null);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [running, failed]);
+
+  // Only offered when the session's services still belong to a workspace that
+  // exists. A session of scripts run straight from a project matches nothing, and
+  // resuming it would start something the user never ran as a group.
+  const attributed = lastSession ? attributeSession(lastSession, data.workspaces) : null;
+  const lastWs = attributed?.workspace ?? null;
+
+  // A session with something still running is not something to pick up — it is
+  // happening. The card keeps its shape and changes its tense, and the duration is
+  // measured against the current render rather than against the instant the history
+  // was fetched, which would otherwise freeze at however long the session had run
+  // by the time Home mounted.
+  const sessionLive = lastSession?.live === true;
+  const sessionDurationMs = lastSession
+    ? Math.max(1000, (lastSession.endedAtMs ?? Date.now()) - lastSession.startedAtMs)
+    : 0;
+
+  // Recent activity is the newest session's own events, most recent first. It used
+  // to read `data.activity`, which was `[]` on every path — so the panel always
+  // showed its empty message, including while three services were running.
+  const activity = React.useMemo(
+    () => (lastSession ? [...lastSession.events].reverse().slice(0, 7) : []),
+    [lastSession],
+  );
+
+  // Service ids are stable but not readable. A workspace service has a name; a
+  // script run straight from a project has only its id, so show that rather than
+  // guess at something friendlier.
+  const serviceName = React.useCallback(
+    (serviceId: string) =>
+      allServices.find((service) => service.id === serviceId)?.name ?? serviceId,
+    [allServices],
+  );
 
   const [stats, setStats] = React.useState<SystemStats | null>(null);
   React.useEffect(() => {
@@ -40,7 +113,11 @@ export function HomeView({ data, projects, onOpenWs, onOpenProject, onResumeSess
       <div className="dash-head">
         <div className="dash-greeting">
           <div className="eyebrow">{dateLabel}</div>
-          <h1>{lastSession ? <>Pick up where you left off</> : <>Good to see you</>}</h1>
+          <h1>
+            {!(lastSession && lastWs)
+              ? <>Good to see you</>
+              : sessionLive ? <>Still running</> : <>Pick up where you left off</>}
+          </h1>
         </div>
         <div className="dash-stats">
           <div className="dash-stat"><span className="v">{running}</span><span className="l">Services</span></div>
@@ -50,37 +127,61 @@ export function HomeView({ data, projects, onOpenWs, onOpenProject, onResumeSess
       </div>
 
       {lastSession && lastWs ? (
-        <div className="resume-card" onClick={() => onResumeSession(lastSession)}>
+        <div
+          className="resume-card"
+          onClick={() => (sessionLive ? onOpenWs(lastWs.id) : onResumeSession(lastWs.id))}
+        >
           <div className="resume-rail" style={{ background: lastWs.swatch }} />
           <div className="resume-body">
             <div className="resume-head">
-              <span className="eyebrow">Last session · {lastSession.when}</span>
+              <span className="eyebrow">
+                {sessionLive ? 'Current session · started ' : 'Last session · '}
+                {formatWhen(lastSession.startedAtMs)}
+              </span>
               <span className="resume-meta mono">
                 <span>{lastWs.name}</span>
                 <span className="sep">·</span>
-                <span>{lastSession.projects} projects</span>
+                <span>{lastSession.runs.length} {lastSession.runs.length === 1 ? 'run' : 'runs'}</span>
                 <span className="sep">·</span>
-                <span>{lastSession.services} services</span>
+                <span>{lastSession.tracks.length} {lastSession.tracks.length === 1 ? 'service' : 'services'}</span>
               </span>
             </div>
-            <div className="resume-title">You were working on <em>{lastSession.title}</em></div>
+            <div className="resume-title">
+              {sessionLive ? 'You have been working on ' : 'You were working on '}
+              <em>{lastWs.name}</em> for {formatDuration(sessionDurationMs / 1000)}
+            </div>
             <div className="resume-traces">
               {lastWs.services.slice(0, 4).map((s) => (
                 <span key={s.id} className="resume-trace">
                   <StatusDot s={s.status} />
                   <span className="mono">{s.name}</span>
-                  <span className="mono" style={{ color: "var(--fg-4)" }}>:{s.port ?? "—"}</span>
+                  {/* Only when there is a port to show. An idle service has none, and
+                      ":—" beside every name read as a broken value rather than as
+                      "not listening". */}
+                  {s.port !== null && s.port !== undefined ? (
+                    <span className="mono port-suffix">:{s.port}</span>
+                  ) : null}
                 </span>
               ))}
             </div>
           </div>
+          {/* Nothing to resume while it is still up, so the only action offered is
+              the one that makes sense: go and look at it. */}
           <div className="resume-actions">
-            <button className="btn primary" onClick={(e) => { e.stopPropagation(); onResumeSession(lastSession); }}>
-              <Ic.Play size={12} /> Resume session
-            </button>
-            <button className="btn ghost sm" onClick={(e) => { e.stopPropagation(); onOpenWs(lastWs.id); }}>
-              <Ic.External size={11} /> Open workspace
-            </button>
+            {sessionLive ? (
+              <button className="btn primary" onClick={(e) => { e.stopPropagation(); onOpenWs(lastWs.id); }}>
+                <Ic.External size={11} /> Open workspace
+              </button>
+            ) : (
+              <>
+                <button className="btn primary" onClick={(e) => { e.stopPropagation(); onResumeSession(lastWs.id); }}>
+                  <Ic.Play size={12} /> Resume session
+                </button>
+                <button className="btn ghost sm" onClick={(e) => { e.stopPropagation(); onOpenWs(lastWs.id); }}>
+                  <Ic.External size={11} /> Open workspace
+                </button>
+              </>
+            )}
           </div>
         </div>
       ) : data.workspaces.length === 0 ? (
@@ -109,17 +210,24 @@ export function HomeView({ data, projects, onOpenWs, onOpenProject, onResumeSess
         <div>
           <SectionHeader title="Recent activity" actionLabel="Open logs" onAction={() => onOpenWs("__logs__")} />
           <div className="panel" style={{ padding: 0 }}>
-            {data.activity.length === 0 ? (
+            {activity.length === 0 ? (
               <div style={{ padding: '20px 16px', fontSize: 12, color: 'var(--fg-4)', textAlign: 'center' }}>
-                Activity will appear here once services are running.
+                Nothing has run yet. Start a workspace and it will show up here.
               </div>
-            ) : data.activity.map((a, i) => (
-              <div key={i} className="activity-item">
-                <span style={{ color: a.kind === "error" ? "var(--danger)" : a.kind === "warn" ? "var(--warn)" : a.kind === "ok" ? "var(--ok)" : "var(--blue)" }}>
-                  {a.kind === "error" ? <Ic.Close size={12} /> : a.kind === "warn" ? <Ic.Bell size={12} /> : a.kind === "ok" ? <Ic.Check size={12} /> : <Ic.Dot size={12} />}
+            ) : activity.map((event) => (
+              <div key={`${event.serviceId}-${event.kind}-${event.atMs}`} className="activity-item">
+                <span style={{ color: `var(${ACTIVITY_TONE[event.kind]})` }}>
+                  {event.kind === 'failed' ? <Ic.Close size={12} />
+                    : event.kind === 'exited' ? <Ic.Check size={12} />
+                    : event.kind === 'started' ? <Ic.Play size={11} />
+                    : <Ic.Bell size={12} />}
                 </span>
-                <span className="t">{a.ts}</span>
-                <span><span className="project">{a.project}</span> <span style={{ color: "var(--fg-3)" }}> ›</span> <span className="label">{a.label}</span></span>
+                <span className="t">{formatClock(event.atMs)}</span>
+                <span>
+                  <span className="project">{serviceName(event.serviceId)}</span>
+                  <span style={{ color: "var(--fg-3)" }}> › </span>
+                  <span className="label">{event.detail}</span>
+                </span>
                 <span />
               </div>
             ))}
@@ -181,7 +289,7 @@ function WorkspaceCard({ w, onOpenWs, startWs, stopWs }: WorkspaceCardProps) {
           <div key={s.id} className="svc">
             <StatusDot s={s.status} />
             <span style={{ color: "var(--fg-1)" }}>{s.name}</span>
-            <span style={{ color: "var(--fg-4)" }}>{s.port ? ":" + s.port : ""}</span>
+            {s.port ? <span className="port-suffix">:{s.port}</span> : null}
           </div>
         ))}
         {w.services.length > 4 ? <div className="svc" style={{ color: "var(--fg-4)" }}>+{w.services.length - 4} more</div> : null}

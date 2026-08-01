@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A release can now be cut without doing six edits by hand. **Release prep**
+  (`.github/workflows/release-prep.yml`) takes a version, sets it everywhere it
+  appears, rolls `[Unreleased]` into a dated changelog section, runs lint, both
+  typechecks, the tests and a production build, then commits and pushes the tag. It
+  defaults to a dry run that shows the diff and the release notes in the run summary
+  and commits nothing, so both can be read before a tag exists.
+  - Six files carry the version, in four notations, and `Cargo.lock` is one of them.
+    Continuous integration builds `--locked`, so a manifest bumped without its
+    lockfile fails every Rust job — at a point where the tag already exists. The
+    synchronization check never looked at the lockfile before; it does now, and covers
+    six files rather than five.
+  - The writer and the checker read one shared definition of where the version lives
+    (`scripts/release-version.cjs`), so the thing that sets the versions and the thing
+    that verifies them cannot drift apart. The prep script validates everything it can
+    reject before writing a single file, because a half-bumped tree is worse than an
+    untouched one.
+  - Release notes are the changelog section, read from the tagged commit, so what is
+    attached to a release and what is in the tree cannot say different things.
+
+- Packaging now runs from the tag and drafts the release itself, which is what the
+  documented ordering always described but could not do: the trigger was a *published*
+  release, so publishing was what started the build, and the release was public and
+  empty for the up-to-an-hour the matrix took. A `v*` tag now drafts the release,
+  attaches every installer to the draft, and leaves publishing as a human decision
+  taken with the packages already in place. Publishing by hand still builds, as before.
+  - The draft is created once by its own job before the matrix fans out, because three
+    jobs each creating a release would leave three drafts holding a third of the
+    installers each. Re-running for a tag reuses the existing draft.
+
+### Changed
+
+- Settled the release tag convention on a `v` prefix — `v0.9.0` — which is what the
+  version check already enforced and what the documentation already described, while
+  every tag in the repository's history was bare. Following that history would have
+  failed the check. The three tags that predate the convention are left alone;
+  retagging published releases breaks existing links and buys nothing.
+
 ### Performance
 
 - Stopped rebuilding the whole process table on every poll, and fixed the CPU column
@@ -42,6 +81,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bundle is byte-identical afterwards, which is the point — this was never reaching
   users, only readers.
 
+- Removed the command palette's `Resume "…"` entries and its "Session" tab. Both were
+  generated from the empty sessions array, so the tab filtered nothing and the entries
+  never existed; the palette now offers only actions that do something.
+
+- Deleted the interface types that carried no data: `Session`, `ActivityItem`, and the
+  `sessions` field on both the application state and each workspace. Each was written
+  and never read, which is what let the views above hold placeholders without anything
+  failing to point out they had no source.
+
 ### Security
 
 - Validated process identifiers before signalling anything. `kill_process` accepts a
@@ -56,6 +104,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Found by writing the first tests for the IPC surface.
 
 ### Added
+
+- Rebuilt the Sessions view on recorded runs. It was the one view presenting invented
+  data as though it were history: hardcoded event markers reading "Bench panic" and
+  "ngrok → https://…", spans positioned from a hash of the service name, and two
+  statistics — "14 builds, avg 482ms" and "218 requests" — for telemetry Localhost Hub
+  has never collected.
+  - None of it could be reached. The array the view read from was filled with `[]` on
+    every code path, so the timeline was unreachable and the view rendered nothing at
+    all. Which also means the sidebar carried an entry for a feature that could not
+    work.
+  - Sessions are now reconstructed from `history/runs.json`: runs are grouped into
+    bursts of work separated by half an hour of quiet, each service gets a track with
+    its real spans, and each marker is a real outcome — started, exited, failed,
+    stopped, or interrupted, with a clean exit distinguished from a non-zero one. The
+    counts are of real records, and the scrubber's "failures before this point" is
+    computed from real timestamps.
+  - The derivation lives in `src/sessions.ts`, apart from the view, with 20 tests
+    covering the clustering rules — including that a long-lived server spanning a quiet
+    period keeps one session open rather than splitting it.
+  - The density strip above the scrubber is now measured against the number of
+    services rather than against its own busiest point, and is hidden when every
+    bucket is identical. Normalising to the peak drew a solid full-height bar across
+    the width for the common case of everything running start to finish, which is a
+    chart that says nothing.
+
+- The Home screen now shows the session you were last in. Its "Pick up where you left
+  off" card read the same always-empty array as the Sessions view, so it had never once
+  appeared and Home always greeted with "Good to see you". It now names the workspace,
+  how long ago the session was, how many runs and services it covered, and starts the
+  whole group again.
+  - Which workspace a session belonged to is a real join, not a guess. A run records
+    the `service_id` it was started with, and starting a workspace passes the stored
+    service's own id straight through — so the ids in a session are workspace service
+    ids whenever a workspace started them. A script run directly from a project gets an
+    id that belongs to no workspace and matches nothing, and Hub offers no resume for
+    it rather than attributing it to something arbitrary.
+  - When the session is still live the card says so — "Still running", present tense,
+    with "Open workspace" as the only action, because there is nothing to resume. Its
+    duration counts against the clock rather than freezing at whatever the session had
+    lasted when the screen was opened, and starting or stopping anything refreshes it,
+    including from Home itself. No new polling: the refresh rides on service state the
+    screen already receives.
+
+- "Recent activity" on Home now shows activity. It read a second field that was `[]` on
+  every code path, so it permanently displayed "Activity will appear here once services
+  are running" — including with three services running, which is the one moment it was
+  meant to be useful. It now lists the newest session's real events, newest first, with
+  each one's time, service and command or outcome.
 
 - Added tests for the IPC boundary, which had none. `src-tauri/src/command_tests.rs`
   sends real invoke requests through the same handler list the application registers,

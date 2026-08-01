@@ -46,7 +46,6 @@ const workspace: Workspace = {
     order: 1,
     depends_on: [],
   }],
-  sessions: 0,
   lastOpened: 'recently',
 };
 

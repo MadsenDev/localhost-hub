@@ -1,0 +1,154 @@
+name: Release prep
+
+# Cuts a release: sets the version everywhere it appears, rolls the changelog over,
+# runs the gate, and pushes the tag. Pushing the tag is what starts packaging — see
+# desktop-builds.yml, which drafts the release and attaches the installers to it.
+#
+# The version lives in six files in four notations, one of them a lockfile that
+# continuous integration builds with `--locked`. Doing that by hand and then noticing
+# afterwards is how a tag ends up on a tree that cannot build, so the bump is a script
+# and this workflow checks its work with the same rules continuous integration uses.
+#
+# Defaults to a dry run: it shows the diff and the notes without committing anything,
+# so the version and the release notes can be read before a tag exists.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, without the leading v — for example 0.9.0 or 0.9.0-alpha.1"
+        required: true
+        type: string
+      dry_run:
+        description: "Show the diff and notes only. Uncheck to commit, tag and push."
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+# One at a time. Two concurrent runs would race on the same tag and on the branch.
+concurrency:
+  group: release-prep
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: ${{ inputs.dry_run && 'Dry run' || 'Release' }} ${{ inputs.version }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          # The changelog rollover needs the branch, not a detached commit, because
+          # the version bump is pushed back to it.
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Pinned to match src-tauri/rust-toolchain.toml, like the other workflows.
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.97.0
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Refuse to reuse an existing tag
+        env:
+          TAG: v${{ inputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::$TAG already exists. A published version is never re-cut; choose the next one."
+            exit 1
+          fi
+          echo "$TAG is free."
+
+      - name: Set the version everywhere and roll the changelog over
+        run: node scripts/prepare-release.cjs "${{ inputs.version }}" --notes-out release-notes.md
+
+      # The same check continuous integration runs, against what the script just
+      # wrote. The writer being verified by an independent reader is the point: a bug
+      # in the bump should fail here rather than at packaging time, after the tag.
+      - name: Verify synchronized release version
+        run: npm run check:version
+
+      # Proves the lockfile edit is consistent, so the `--locked` builds in
+      # continuous integration and packaging cannot fail on a tag that already exists.
+      # `cargo metadata` resolves without compiling, so this needs no system libraries.
+      - name: Verify the lockfile still resolves
+        run: cargo metadata --locked --manifest-path src-tauri/Cargo.toml --format-version 1 > /dev/null
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run frontend tests
+        run: npm test -- --run
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Summarize the release
+        env:
+          TAG: v${{ inputs.version }}
+        run: |
+          {
+            echo "## ${TAG}"
+            echo
+            echo '### Version changes'
+            echo
+            echo '```diff'
+            git --no-pager diff -- package.json src-tauri/tauri.conf.json \
+              src-tauri/Cargo.toml src-tauri/Cargo.lock packaging/arch/PKGBUILD \
+              src-tauri/tauri.windows.conf.json
+            echo '```'
+            echo
+            echo '### Release notes'
+            echo
+            cat release-notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stop here (dry run)
+        if: inputs.dry_run
+        run: |
+          echo "::notice::Dry run. Nothing was committed, tagged or pushed."
+          echo "Re-run with 'Show the diff and notes only' unchecked to cut v${{ inputs.version }}."
+
+      - name: Commit, tag and push
+        if: ${{ !inputs.dry_run }}
+        env:
+          TAG: v${{ inputs.version }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Only the release files. Nothing else should have changed, and adding
+          # everything would sweep up any stray build output.
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml \
+            src-tauri/Cargo.lock packaging/arch/PKGBUILD \
+            src-tauri/tauri.windows.conf.json CHANGELOG.md
+          git commit -m "Release ${TAG}"
+
+          # The tag has to point at the release commit, so it is created after.
+          git tag -a "$TAG" -m "Release ${TAG}"
+
+          # The branch first: if the tag pushed first, packaging would start against a
+          # commit that is not yet on the branch.
+          git push origin "HEAD:${BRANCH}"
+          git push origin "$TAG"
+
+          echo "::notice::Pushed ${TAG}. Desktop builds will draft the release and attach the installers."

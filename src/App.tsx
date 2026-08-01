@@ -1,5 +1,5 @@
 import React from 'react';
-import type { EnvProfile, EnvVariable, HubDataShape, Service, Session, LogLine, Workspace, Port, ServiceStatus, Repo, Script, StoredWorkspace, StoredService, GitStatus } from './types';
+import type { EnvProfile, EnvVariable, HubDataShape, Service, LogLine, Workspace, Port, ServiceStatus, Repo, Script, StoredWorkspace, StoredService, GitStatus } from './types';
 import { useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakColor, TweakButton } from './tweaks-panel';
 import { TitleBar } from './chrome';
 import { Sidebar } from './sidebar';
@@ -19,7 +19,6 @@ import { SettingsView } from './view-settings';
 import { githubAuth, type GitHubUser } from './github-auth';
 import { listenToServiceEvents, listenToWindowVisibility, tauriApi, type WorkspaceGroup, type ProcessInfo, type LivePort, type ManagedServiceInfo } from './tauri-api';
 import { Ic } from './icons';
-import { formatDuration } from './utils';
 import { CreateProjectDialog } from './create-project-dialog';
 import { ViewErrorBoundary } from './error-boundary';
 import {
@@ -66,7 +65,7 @@ interface PortConflictPrompt {
 }
 type AppearanceKey = "theme" | "accent" | "density" | "sidebar";
 
-const EMPTY_HUB: HubDataShape = { workspaces: [], projects: {}, activity: [], sessions: [], logSeeds: {}, ports: [], portEdges: [] };
+const EMPTY_HUB: HubDataShape = { workspaces: [], projects: {}, logSeeds: {}, ports: [], portEdges: [] };
 
 const WS_COLORS = [
   'oklch(0.66 0.115 252)', 'oklch(0.80 0.07 75)', 'oklch(0.73 0.13 148)',
@@ -170,7 +169,6 @@ function buildHubData(
       path: '',
       projects: sw.services.map(s => s.id),
       services,
-      sessions: 0,
       lastOpened: 'recently',
     };
   });
@@ -213,7 +211,7 @@ function buildHubData(
   });
   const portsList = [...portsByNumber.values()].sort((a, b) => a.port - b.port);
 
-  return { workspaces, projects: {}, activity: [], sessions: [], logSeeds: {}, ports: portsList, portEdges: [] };
+  return { workspaces, projects: {}, logSeeds: {}, ports: portsList, portEdges: [] };
 }
 
 export default function App() {
@@ -1175,7 +1173,7 @@ export default function App() {
         projects={repos}
         onOpenWs={onOpenWs}
         onOpenProject={(id) => { setProject(id); setView("project"); }}
-        onResumeSession={(s: Session) => { setWs(s.ws); setView("workspace"); startAll(s.ws); }}
+        onResumeSession={(workspaceId: string) => { setWs(workspaceId); setView("workspace"); startAll(workspaceId); }}
         startWs={(id) => startAll(id)}
         stopWs={(id) => stopAll(id)}
       />
@@ -1260,15 +1258,10 @@ export default function App() {
         clearLogs={() => setLogs([])}
       />
     );
-    if (view === "sessions") return (
-      <SessionsView
-        workspaces={data.workspaces}
-        sessions={data.sessions}
-        services={allServices}
-        onResume={(s: Session) => { setWs(s.ws); setView("workspace"); toast(`Resumed "${s.title}"`, "ok"); }}
-        onJumpToLogs={(t: number, s: Session) => { setView("logs"); toast(`Jumped to logs @ +${formatDuration(t * s.duration)}`, "info"); }}
-      />
-    );
+    // Reads run history itself, like the Run history view. It previously took a
+    // `sessions` array that `buildHubData` only ever filled with `[]`, so the
+    // timeline it rendered was unreachable — and invented, when it was reached.
+    if (view === "sessions") return <SessionsView onOpenLogs={() => setView("logs")} />;
     if (view === "history") return <HistoryView />;
     if (view === "project") {
       const proj = repos.find((repo) => repo.id === project) ?? repos[0];

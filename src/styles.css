@@ -701,6 +701,11 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
   border: 1px solid var(--line-soft);
   font-size: 11px;
 }
+/* The port belongs to the name in front of it, so it should not sit behind the
+   6px gap its container uses between everything else — "web:5174" rather than
+   "web :5174". Shared by the resume card and the workspace cards below it, which
+   list the same services and should read the same way. */
+.port-suffix { margin-left: -6px; color: var(--fg-4); }
 .resume-actions {
   display: flex; flex-direction: column; gap: 8px;
   padding: 18px 22px;
@@ -1301,6 +1306,16 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
 }
 .tl-event:hover .ev-glyph { transform: scale(1.25); }
 .tl-event.is-near .ev-glyph { transform: scale(1.2); box-shadow: 0 0 0 3px currentColor; opacity: 0.95; }
+
+/* Session events, named for the run outcomes they actually represent. The set
+   below them — build, request, deploy — described telemetry Hub does not collect
+   and is kept only because other views still reference the colours. */
+.tl-event.ev-started     { color: var(--blue); }
+.tl-event.ev-exited      { color: var(--ok); }
+.tl-event.ev-failed      { color: var(--danger); }
+.tl-event.ev-stopped     { color: var(--fg-3); }
+.tl-event.ev-interrupted { color: var(--warn); }
+.tl-event.ev-failed .ev-stem { box-shadow: 0 0 10px -2px var(--danger); }
 
 .tl-event.ev-build   { color: var(--blue); }
 .tl-event.ev-error   { color: var(--danger); }

@@ -81,9 +81,10 @@ export function CommandPalette({ open, onClose, data, projects, onRunScript, onR
       out.push({ id: "proj-" + p.id, label: p.name, sub: p.path, kind: "project", icon: <Ic.Folder size={13} />, run: () => onOpenProject(p.id) });
     });
 
-    data.sessions.slice(0, 4).forEach((s) => {
-      out.push({ id: "ses-" + s.id, label: `Resume "${s.title}"`, sub: s.when, kind: "session", icon: <Ic.History size={13} />, run: () => onOpenView("sessions") });
-    });
+    // No per-session entries. They read `Resume "…"` but only navigated to the
+    // Sessions view, which "Go to Sessions" above already does — and they were
+    // built from an array that was always empty, so none ever appeared. Resuming a
+    // session is offered on Home, where it actually starts the workspace.
 
     return out;
   }, [data, projects, onOpenProject, onOpenUrl, onOpenView, onRunProjectScript, onRunScript, onSwitchWs]);
@@ -120,8 +121,7 @@ export function CommandPalette({ open, onClose, data, projects, onRunScript, onR
             { id: "script",  label: "Run script" },
             { id: "ws",      label: "Workspace" },
             { id: "project", label: "Project" },
-            { id: "open",    label: "Open URL" },
-            { id: "session", label: "Session" }
+            { id: "open",    label: "Open URL" }
           ].map((t) => (
             <div key={t.id} className={"palette-tab" + (tab === t.id ? " active" : "")} onClick={() => setTab(t.id)}>{t.label}</div>
           ))}

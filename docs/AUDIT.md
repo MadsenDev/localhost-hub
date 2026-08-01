@@ -332,6 +332,60 @@ a vulnerability. The findings below are therefore scoped to what matters — pro
 **secrets at rest** and preventing **untrusted remote content** (GitHub API strings,
 process stdout, git metadata) from gaining privilege.
 
+### F4 — the Sessions view presented invented data as history, and could not be reached
+
+`view-sessions.tsx` rendered a timeline whose every element was fabricated: event
+markers hardcoded as `"Bench panic"`, `"ngrok → https://fattern-tunnel.ngrok.app"` and
+`"compiled successfully · 612ms · 2,483 modules"`; service spans positioned from
+`(id.charCodeAt(0) + id.length) % 7`; and two statistics — `"Builds 14 / avg 482ms"`
+and `"Requests 218 / rpm peak"` — for telemetry Localhost Hub does not collect and has
+no way to collect.
+
+Worse than fabricated: unreachable. `buildHubData` sets `sessions: []` on every path,
+and so does `EMPTY_HUB`, so `data.sessions` was always empty. The component read
+`sessions[0].id` in its initial state, which threw — and with no error boundary above
+it, React unmounted the whole tree and the window went blank. Fixing that crash simply
+revealed the truth: an empty state, forever, behind a sidebar entry for a feature that
+could not work.
+
+No gate could have caught this. It typechecks, it lints, and no test rendered it. What
+found it was reading where the data came from.
+
+**Fixed:** sessions are derived from `history/runs.json` — real runs clustered into
+bursts of work, real spans, real outcomes as markers, real counts. The derivation is in
+`src/sessions.ts` with 20 tests. The two invented statistics are gone rather than
+replaced, because Hub has no build or request telemetry to put there.
+
+**Also fixed — the other two readers of that array.** Home's "Pick up where you left
+off" card and the command palette's `Resume "…"` entries were dead for the same reason,
+which is why Home always greeted with "Good to see you".
+
+Attributing a session to a workspace turned out not to need an inference. A run records
+the `service_id` it was started with, and `start_workspace` passes the stored workspace
+service's own id straight through to `begin_run` — so the ids in a session's tracks *are*
+workspace service ids whenever a workspace started them. Scripts run directly from a
+project get `project::{projectId}::{script}`, which matches no workspace and correctly
+attributes to nothing, so no resume is offered rather than an arbitrary one. That join is
+`attributeSession` in `src/sessions.ts`.
+
+Two things the card only revealed once it could render at all. It described a still-live
+session in the past tense — "you *were* working on Storefront" while Storefront was
+running — and offered to resume what was already up; it now reads "Still running" and
+offers only "Open workspace". And its duration froze at whatever the session had lasted
+when Home mounted, because it came from a single fetch; it is now measured against the
+current render, and the history is refetched whenever the count of running services
+changes, so a start or stop from Home itself is reflected without adding any polling.
+
+The palette's `Resume "…"` entries are deleted rather than rewired, along with the
+`"Session"` tab filter that had nothing left to filter.
+
+**Same pattern, same fix — `HubDataShape.activity`.** Home's "Recent activity" panel read
+another field that `buildHubData` and `EMPTY_HUB` both set to `[]`, so it permanently
+showed "Activity will appear here once services are running" — which was false precisely
+when it mattered, with three services running. It now renders the newest session's own
+events (started, exited, failed, stopped, interrupted) with real times, real service
+names and real commands. `ActivityItem` and the field are deleted.
+
 ### H1 — Content Security Policy disabled
 
 `src-tauri/tauri.conf.json`: `"security": { "csp": null }`.

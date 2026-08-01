@@ -18,6 +18,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "preview": "vite preview",
+    "release:notes": "node scripts/release-notes.cjs",
+    "release:prep": "node scripts/prepare-release.cjs",
     "tauri": "tauri",
     "tauri:build": "tauri build",
     "tauri:dev": "tauri dev",
