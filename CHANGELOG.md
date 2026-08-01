@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     untouched one.
   - Release notes are the changelog section, read from the tagged commit, so what is
     attached to a release and what is in the tree cannot say different things.
+  - The rollover also repoints the compare links at the foot of the file, which is the
+    half that is easy to forget: `[Unreleased]` moves up to the new tag and the new
+    version gets its own definition for the range just released. Renaming only the
+    heading leaves it a reference with no definition, which renders as bracketed text
+    instead of a link. The previous tag comes out of the existing `[Unreleased]` link,
+    so the file is its own record of what shipped last, and a changelog with no link
+    definitions is left alone rather than given invented URLs.
 
 - Packaging now runs from the tag and drafts the release itself, which is what the
   documented ordering always described but could not do: the trigger was a *published*
@@ -37,6 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The draft is created once by its own job before the matrix fans out, because three
     jobs each creating a release would leave three drafts holding a third of the
     installers each. Re-running for a tag reuses the existing draft.
+
+### Fixed
+
+- Reading the oldest release's notes out of `CHANGELOG.md` returned the whole block of
+  compare-link definitions along with them. A section ended at the next heading, and
+  the last section in the file has none, so it ran to the end. The link definitions
+  now end a section too. Found by a test written for the rollover, and latent rather
+  than live — nothing had asked for the oldest section yet.
 
 ### Changed
 

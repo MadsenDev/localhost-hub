@@ -51,6 +51,13 @@ Pushing the tag is what starts packaging. The ordering is therefore:
 1. **Release prep** sets the version, rolls `[Unreleased]` into a dated section, runs
    lint, both typechecks, the tests and a production build, commits, and pushes the
    tag.
+   - The rollover renames the `## [Unreleased]` heading to `## [0.9.0] - 2026-08-01`
+     and leaves a fresh empty `[Unreleased]` above it. It also repoints the compare
+     links at the foot of the file: `[Unreleased]` moves up to the new tag, and a
+     `[0.9.0]:` definition is added for the range just released — without which the
+     new heading would be a reference with no definition, rendering as bracketed text
+     rather than a link. The previous tag is read out of the existing `[Unreleased]`
+     link, so the file is its own record of what shipped last.
 2. **Desktop builds** sees the tag, drafts the release with that changelog section as
    its notes, builds all three platforms, and attaches every installer to the draft.
 3. **You** review the draft — with the packages already on it — and publish.
