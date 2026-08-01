@@ -1,7 +1,7 @@
 # Maintainer: Chris Madsen <chris@madsens.dev>
 
 pkgname=localhost-hub
-pkgver=0.9.0_alpha.0
+pkgver=0.9.0
 pkgrel=1
 pkgdesc="A local-first desktop control center for development projects"
 arch=('x86_64')

@@ -1,6 +1,6 @@
 [package]
 name = "localhost-hub"
-version = "0.9.0-alpha.0"
+version = "0.9.0"
 description = "Localhost Hub — mission control for local development"
 authors = ["Chris Madsen <chris@madsens.dev>"]
 license = "MIT"
