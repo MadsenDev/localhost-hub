@@ -5,9 +5,16 @@ name: Desktop builds
 # with its packages already on it and nobody can download a release that has none.
 # Publishing it is a human decision, and the last one.
 #
-# Release prep (release-prep.yml) is what pushes the tag. Publishing a release by hand
-# still works and still builds — that was the only trigger before, and the three
-# releases that predate this workflow were packaged by hand.
+# Release prep (release-prep.yml) is what pushes the tag — and it also has to start
+# this workflow explicitly, because GitHub does not start workflows from events created
+# with the default GITHUB_TOKEN. So the run for a release arrives as a
+# `workflow_dispatch` against the tag rather than as a tag push. Both look the same
+# here: the jobs below key off `github.ref_type == 'tag'`, not off the event name, so a
+# real tag push and a dispatch against a tag behave identically. A manual run against a
+# branch still just produces artifacts.
+#
+# Publishing a release by hand still works and still builds — that was the only trigger
+# before, and the three releases that predate this workflow were packaged by hand.
 #
 # The trigger used to list src/** and src-tauri/**, so the full three-platform matrix
 # plus an Arch container build ran on very nearly every pull request — a lot of runner
@@ -69,18 +76,18 @@ jobs:
       release_id: ${{ steps.draft.outputs.release_id }}
     steps:
       - name: Check out repository
-        if: github.event_name == 'push'
+        if: github.ref_type == 'tag'
         uses: actions/checkout@v4
 
       - name: Set up Node.js
-        if: github.event_name == 'push'
+        if: github.ref_type == 'tag'
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Draft the release for this tag
         id: draft
-        if: github.event_name == 'push'
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
@@ -223,7 +230,7 @@ jobs:
       # so has to be attached here. Uploaded by release id rather than by tag, because
       # a draft release has no tag lookup to resolve against.
       - name: Attach Arch package to the release
-        if: runner.os == 'Linux' && (github.event_name == 'release' || github.event_name == 'push')
+        if: runner.os == 'Linux' && (github.event_name == 'release' || github.ref_type == 'tag')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_ID: ${{ github.event_name == 'release' && github.event.release.id || needs.draft.outputs.release_id }}
