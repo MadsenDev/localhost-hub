@@ -263,3 +263,36 @@ export function density(session: DerivedSession, buckets = 64): number[] {
 export function densityIsFlat(strip: number[]): boolean {
   return strip.length === 0 || strip.every((value) => value === strip[0]);
 }
+
+/**
+ * Which stored workspace a session belonged to, if any.
+ *
+ * This is a real join rather than a guess: a run records the `service_id` it was
+ * started with, and `start_workspace` passes the stored workspace service's own id
+ * straight through to `begin_run`. So the ids in a session's tracks *are* workspace
+ * service ids whenever a workspace started them.
+ *
+ * Services started outside a workspace — a script run directly from a project — get
+ * an id of the form `project::{projectId}::{script}`, which belongs to no workspace
+ * and simply will not match. A session of only those returns `null`, and the caller
+ * should offer no resume rather than attribute it to something arbitrary.
+ *
+ * The best match wins when a session touches more than one workspace, which happens
+ * if two were run in the same burst of work. Ties go to the first, and the count is
+ * returned so a caller can tell a complete match from a partial one.
+ */
+export function attributeSession<W extends { id: string; services: { id: string }[] }>(
+  session: DerivedSession,
+  workspaces: W[],
+): { workspace: W; matched: number } | null {
+  const ids = new Set(session.tracks.map((track) => track.serviceId));
+  let best: { workspace: W; matched: number } | null = null;
+
+  for (const workspace of workspaces) {
+    const matched = workspace.services.filter((service) => ids.has(service.id)).length;
+    if (matched > 0 && (best === null || matched > best.matched)) {
+      best = { workspace, matched };
+    }
+  }
+  return best;
+}

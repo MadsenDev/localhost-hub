@@ -353,15 +353,38 @@ found it was reading where the data came from.
 
 **Fixed:** sessions are derived from `history/runs.json` — real runs clustered into
 bursts of work, real spans, real outcomes as markers, real counts. The derivation is in
-`src/sessions.ts` with 16 tests. The two invented statistics are gone rather than
+`src/sessions.ts` with 20 tests. The two invented statistics are gone rather than
 replaced, because Hub has no build or request telemetry to put there.
 
-**Related and still open:** the same always-empty array feeds Home's "Pick up where you
-left off" resume card and the command palette's `Resume "…"` entries, so both are
-equally dead — which is why Home always greets with "Good to see you". Wiring them
-needs a decision the records cannot answer on their own: a run knows its `service_id`
-but not which workspace it belonged to, so "resume that session" has to be inferred by
-matching service ids back to stored workspaces.
+**Also fixed — the other two readers of that array.** Home's "Pick up where you left
+off" card and the command palette's `Resume "…"` entries were dead for the same reason,
+which is why Home always greeted with "Good to see you".
+
+Attributing a session to a workspace turned out not to need an inference. A run records
+the `service_id` it was started with, and `start_workspace` passes the stored workspace
+service's own id straight through to `begin_run` — so the ids in a session's tracks *are*
+workspace service ids whenever a workspace started them. Scripts run directly from a
+project get `project::{projectId}::{script}`, which matches no workspace and correctly
+attributes to nothing, so no resume is offered rather than an arbitrary one. That join is
+`attributeSession` in `src/sessions.ts`.
+
+Two things the card only revealed once it could render at all. It described a still-live
+session in the past tense — "you *were* working on Storefront" while Storefront was
+running — and offered to resume what was already up; it now reads "Still running" and
+offers only "Open workspace". And its duration froze at whatever the session had lasted
+when Home mounted, because it came from a single fetch; it is now measured against the
+current render, and the history is refetched whenever the count of running services
+changes, so a start or stop from Home itself is reflected without adding any polling.
+
+The palette's `Resume "…"` entries are deleted rather than rewired, along with the
+`"Session"` tab filter that had nothing left to filter.
+
+**Same pattern, same fix — `HubDataShape.activity`.** Home's "Recent activity" panel read
+another field that `buildHubData` and `EMPTY_HUB` both set to `[]`, so it permanently
+showed "Activity will appear here once services are running" — which was false precisely
+when it mattered, with three services running. It now renders the newest session's own
+events (started, exited, failed, stopped, interrupted) with real times, real service
+names and real commands. `ActivityItem` and the field are deleted.
 
 ### H1 — Content Security Policy disabled
 

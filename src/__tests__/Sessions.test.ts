@@ -5,6 +5,7 @@ import type { RunOutcome } from '../generated/RunOutcome';
 import {
   SESSION_GAP_MS,
   activeAt,
+  attributeSession,
   density,
   densityIsFlat,
   deriveSessions,
@@ -280,5 +281,52 @@ describe('density', () => {
       BASE + 20 * MINUTE,
     );
     expect(densityIsFlat(density(varied[0], 10))).toBe(false);
+  });
+});
+
+describe('attributeSession', () => {
+  const storefront = {
+    id: 'ws-storefront',
+    services: [{ id: 'svc-web' }, { id: 'svc-api' }, { id: 'svc-worker' }],
+  };
+  const other = { id: 'ws-docs', services: [{ id: 'svc-docs' }] };
+
+  function sessionOf(...serviceIds: string[]) {
+    return deriveSessions(
+      serviceIds.map((service_id, index) =>
+        run({
+          started_at_ms: BASE + index,
+          ended_at_ms: BASE + MINUTE,
+          service_id,
+        }),
+      ),
+      BASE + 2 * MINUTE,
+    )[0];
+  }
+
+  it('matches a session to the workspace whose services ran', () => {
+    const result = attributeSession(sessionOf('svc-web', 'svc-api'), [storefront, other]);
+    expect(result?.workspace.id).toBe('ws-storefront');
+    expect(result?.matched).toBe(2);
+  });
+
+  it('prefers the workspace covering more of the session', () => {
+    const result = attributeSession(
+      sessionOf('svc-web', 'svc-api', 'svc-docs'),
+      [other, storefront],
+    );
+    expect(result?.workspace.id).toBe('ws-storefront');
+  });
+
+  it('attributes nothing when a script was run straight from a project', () => {
+    // `directProjectServiceId` produces this shape, and it belongs to no
+    // workspace. Attributing it to one anyway would offer a resume that restarts
+    // something the user never ran.
+    expect(attributeSession(sessionOf('project::repo-1::dev'), [storefront])).toBeNull();
+  });
+
+  it('attributes nothing when the workspace has since been deleted', () => {
+    expect(attributeSession(sessionOf('svc-web'), [other])).toBeNull();
+    expect(attributeSession(sessionOf('svc-web'), [])).toBeNull();
   });
 });

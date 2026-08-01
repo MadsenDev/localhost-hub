@@ -42,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bundle is byte-identical afterwards, which is the point — this was never reaching
   users, only readers.
 
+- Removed the command palette's `Resume "…"` entries and its "Session" tab. Both were
+  generated from the empty sessions array, so the tab filtered nothing and the entries
+  never existed; the palette now offers only actions that do something.
+
+- Deleted the interface types that carried no data: `Session`, `ActivityItem`, and the
+  `sessions` field on both the application state and each workspace. Each was written
+  and never read, which is what let the views above hold placeholders without anything
+  failing to point out they had no source.
+
 ### Security
 
 - Validated process identifiers before signalling anything. `kill_process` accepts a
@@ -72,7 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     stopped, or interrupted, with a clean exit distinguished from a non-zero one. The
     counts are of real records, and the scrubber's "failures before this point" is
     computed from real timestamps.
-  - The derivation lives in `src/sessions.ts`, apart from the view, with 16 tests
+  - The derivation lives in `src/sessions.ts`, apart from the view, with 20 tests
     covering the clustering rules — including that a long-lived server spanning a quiet
     period keeps one session open rather than splitting it.
   - The density strip above the scrubber is now measured against the number of
@@ -80,6 +89,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     bucket is identical. Normalising to the peak drew a solid full-height bar across
     the width for the common case of everything running start to finish, which is a
     chart that says nothing.
+
+- The Home screen now shows the session you were last in. Its "Pick up where you left
+  off" card read the same always-empty array as the Sessions view, so it had never once
+  appeared and Home always greeted with "Good to see you". It now names the workspace,
+  how long ago the session was, how many runs and services it covered, and starts the
+  whole group again.
+  - Which workspace a session belonged to is a real join, not a guess. A run records
+    the `service_id` it was started with, and starting a workspace passes the stored
+    service's own id straight through — so the ids in a session are workspace service
+    ids whenever a workspace started them. A script run directly from a project gets an
+    id that belongs to no workspace and matches nothing, and Hub offers no resume for
+    it rather than attributing it to something arbitrary.
+  - When the session is still live the card says so — "Still running", present tense,
+    with "Open workspace" as the only action, because there is nothing to resume. Its
+    duration counts against the clock rather than freezing at whatever the session had
+    lasted when the screen was opened, and starting or stopping anything refreshes it,
+    including from Home itself. No new polling: the refresh rides on service state the
+    screen already receives.
+
+- "Recent activity" on Home now shows activity. It read a second field that was `[]` on
+  every code path, so it permanently displayed "Activity will appear here once services
+  are running" — including with three services running, which is the one moment it was
+  meant to be useful. It now lists the newest session's real events, newest first, with
+  each one's time, service and command or outcome.
 
 - Added tests for the IPC boundary, which had none. `src-tauri/src/command_tests.rs`
   sends real invoke requests through the same handler list the application registers,

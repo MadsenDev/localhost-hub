@@ -11,7 +11,7 @@ Local-first · no telemetry · MIT
 
 </div>
 
-![The Home view: system load, a running workspace, and detected projects](./docs/screenshots/home.png)
+![The Home view: the session in progress, system load, a running workspace, and what has run so far](./docs/screenshots/home.png)
 
 ---
 
@@ -80,7 +80,7 @@ Uncommitted work that has been sitting too long, unpushed commits, branches nobo
 - **Packages** — dependency inspection, audit, and outdated checks across npm, pnpm, yarn, and Bun.
 - **New project** — a scaffolder for a starter with the scripts, dependencies, and styling you actually want.
 - **Environment profiles** — named sets of variables per project, applied per service, with secret values held in your operating system's credential store rather than a file.
-- **Sessions** — recorded runs grouped into bursts of work, as a timeline you can scrub: what was running at a given moment, and where it stopped.
+- **Sessions** — recorded runs grouped into bursts of work, as a timeline you can scrub: what was running at a given moment, and where it stopped. Home opens on the latest one, so starting yesterday's group again is one click.
 - **Close to the tray** — optionally keep supervised services running when you close the window, and reopen from the tray icon. Quitting stops everything it started.
 - **Start at login** — optionally launch straight to the tray, for when something other than the window needs Hub running: a workspace booted before you sit down, or a remote such as [Localhost Companion](docs/LOCALHOST_COMPANION.md).
 

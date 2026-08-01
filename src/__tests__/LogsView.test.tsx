@@ -33,7 +33,6 @@ const workspace: Workspace = {
   path: '/code',
   projects: ['localhost-hub'],
   services: [service],
-  sessions: 0,
   lastOpened: 'now',
 };
 

@@ -701,6 +701,11 @@ html[data-sidebar="collapsed"] .sb-ws .count { display: none; }
   border: 1px solid var(--line-soft);
   font-size: 11px;
 }
+/* The port belongs to the name in front of it, so it should not sit behind the
+   6px gap its container uses between everything else — "web:5174" rather than
+   "web :5174". Shared by the resume card and the workspace cards below it, which
+   list the same services and should read the same way. */
+.port-suffix { margin-left: -6px; color: var(--fg-4); }
 .resume-actions {
   display: flex; flex-direction: column; gap: 8px;
   padding: 18px 22px;

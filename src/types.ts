@@ -69,7 +69,6 @@ export interface Workspace {
   path: string;
   projects: string[];
   services: Service[];
-  sessions: number;
   lastOpened: string;
 }
 
@@ -109,24 +108,6 @@ export interface Project {
   ports: number[];
   deps: number;
   dev: number;
-}
-
-export interface ActivityItem {
-  ts: string;
-  project: string;
-  label: string;
-  kind: 'ok' | 'info' | 'warn' | 'error';
-}
-
-export interface Session {
-  id: string;
-  title: string;
-  when: string;
-  duration: number;
-  ws: string;
-  projects: number;
-  services: number;
-  badge?: string;
 }
 
 export interface LogLine {
@@ -174,8 +155,6 @@ export interface Repo {
 export interface HubDataShape {
   workspaces: Workspace[];
   projects: Record<string, Project>;
-  activity: ActivityItem[];
-  sessions: Session[];
   logSeeds: Record<string, { kind: LogLine['kind']; msg: string }[]>;
   ports: Port[];
   portEdges: PortEdge[];
