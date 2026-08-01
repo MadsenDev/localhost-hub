@@ -187,7 +187,7 @@ Continuous integration runs the lot on every pull request: lint, both typecheck 
 
 ## Packaging and releases
 
-Packaging is driven by Releases. Publishing a GitHub release builds every platform and attaches the installers to it:
+Packaging is driven by tags. The **Release prep** workflow sets the version everywhere it appears, rolls the changelog over, runs the gate, and pushes a `v*` tag; the tag then builds every platform and attaches the installers to a draft release for you to review and publish:
 
 | Platform | Formats |
 | --- | --- |

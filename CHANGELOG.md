@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A release can now be cut without doing six edits by hand. **Release prep**
+  (`.github/workflows/release-prep.yml`) takes a version, sets it everywhere it
+  appears, rolls `[Unreleased]` into a dated changelog section, runs lint, both
+  typechecks, the tests and a production build, then commits and pushes the tag. It
+  defaults to a dry run that shows the diff and the release notes in the run summary
+  and commits nothing, so both can be read before a tag exists.
+  - Six files carry the version, in four notations, and `Cargo.lock` is one of them.
+    Continuous integration builds `--locked`, so a manifest bumped without its
+    lockfile fails every Rust job — at a point where the tag already exists. The
+    synchronization check never looked at the lockfile before; it does now, and covers
+    six files rather than five.
+  - The writer and the checker read one shared definition of where the version lives
+    (`scripts/release-version.cjs`), so the thing that sets the versions and the thing
+    that verifies them cannot drift apart. The prep script validates everything it can
+    reject before writing a single file, because a half-bumped tree is worse than an
+    untouched one.
+  - Release notes are the changelog section, read from the tagged commit, so what is
+    attached to a release and what is in the tree cannot say different things.
+
+- Packaging now runs from the tag and drafts the release itself, which is what the
+  documented ordering always described but could not do: the trigger was a *published*
+  release, so publishing was what started the build, and the release was public and
+  empty for the up-to-an-hour the matrix took. A `v*` tag now drafts the release,
+  attaches every installer to the draft, and leaves publishing as a human decision
+  taken with the packages already in place. Publishing by hand still builds, as before.
+  - The draft is created once by its own job before the matrix fans out, because three
+    jobs each creating a release would leave three drafts holding a third of the
+    installers each. Re-running for a tag reuses the existing draft.
+
+### Changed
+
+- Settled the release tag convention on a `v` prefix — `v0.9.0` — which is what the
+  version check already enforced and what the documentation already described, while
+  every tag in the repository's history was bare. Following that history would have
+  failed the check. The three tags that predate the convention are left alone;
+  retagging published releases breaks existing links and buys nothing.
+
 ### Performance
 
 - Stopped rebuilding the whole process table on every poll, and fixed the CPU column

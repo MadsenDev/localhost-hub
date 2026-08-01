@@ -1,12 +1,21 @@
 name: Desktop builds
 
-# Packaging is driven by Releases: publishing a release builds every platform and
-# attaches the installers to it.
+# Packaging is driven by tags: pushing v* builds every platform, drafts the release,
+# and attaches the installers to it. The release stays a draft, so it is reviewable
+# with its packages already on it and nobody can download a release that has none.
+# Publishing it is a human decision, and the last one.
 #
-# The previous trigger listed src/** and src-tauri/**, so the full three-platform
-# matrix plus an Arch container build ran on very nearly every pull request — a lot
-# of runner time to prove something the release itself proves.
+# Release prep (release-prep.yml) is what pushes the tag. Publishing a release by hand
+# still works and still builds — that was the only trigger before, and the three
+# releases that predate this workflow were packaged by hand.
+#
+# The trigger used to list src/** and src-tauri/**, so the full three-platform matrix
+# plus an Arch container build ran on very nearly every pull request — a lot of runner
+# time to prove something the release itself proves.
 on:
+  push:
+    tags:
+      - "v*"
   release:
     types: [published]
   workflow_dispatch:
@@ -46,9 +55,75 @@ jobs:
             printf 'include=[%s,%s,%s]\n' "$LINUX" "$MACOS" "$WINDOWS" >> "$GITHUB_OUTPUT"
           fi
 
+  # Creates the draft the packages attach to, once, before the matrix fans out — three
+  # jobs each creating their own release would leave three drafts holding a third of
+  # the installers each.
+  #
+  # The job runs on every event so that `needs` is satisfied and the matrix is never
+  # skipped; its steps are what is conditional. On a published release the id comes
+  # from the event instead, and this outputs nothing.
+  draft:
+    name: Draft release
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.draft.outputs.release_id }}
+    steps:
+      - name: Check out repository
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        if: github.event_name == 'push'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Draft the release for this tag
+        id: draft
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Re-running this workflow for the same tag must reuse the draft rather than
+          # add another. Drafts are absent from the by-tag endpoint, so this lists.
+          existing=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"${TAG}\") | .id" | head -n 1)
+          if [ -n "$existing" ]; then
+            echo "::notice::Reusing existing release ${existing} for ${TAG}."
+            echo "release_id=${existing}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          version="${TAG#v}"
+
+          # The notes are the changelog section the release commit already carries, so
+          # the release body and the file in the tree cannot disagree.
+          node scripts/release-notes.cjs "$version" > notes.md
+
+          # A version with a prerelease identifier is marked as one, so an alpha does
+          # not present itself as the latest stable release.
+          case "$version" in
+            *-*) prerelease=true ;;
+            *)   prerelease=false ;;
+          esac
+
+          id=$(jq -n \
+            --arg tag "$TAG" \
+            --arg name "$version" \
+            --rawfile body notes.md \
+            --argjson prerelease "$prerelease" \
+            '{tag_name: $tag, name: $name, body: $body, draft: true, prerelease: $prerelease}' \
+            | gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" --input - --jq .id)
+
+          echo "::notice::Drafted release ${id} for ${TAG} (prerelease: ${prerelease})."
+          echo "release_id=${id}" >> "$GITHUB_OUTPUT"
+
   package:
     name: ${{ matrix.name }}
-    needs: platforms
+    needs: [platforms, draft]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
@@ -109,9 +184,10 @@ jobs:
           retryAttempts: 1
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: "localhost-hub-[version]-[platform]-[arch]-[bundle]"
-          # Attach to the release that triggered this run. Empty on other events,
-          # which leaves the packages as workflow artifacts only.
-          releaseId: ${{ github.event_name == 'release' && github.event.release.id || '' }}
+          # The release this run belongs to: the draft created for the tag, or the
+          # release that was published by hand. Empty on a pull request or a manual
+          # run, which leaves the packages as workflow artifacts only.
+          releaseId: ${{ github.event_name == 'release' && github.event.release.id || needs.draft.outputs.release_id }}
           releaseAssetNamePattern: "localhost-hub-[version]-[platform]-[arch]-[bundle][setup][ext]"
 
       - name: Prepare Arch package input
@@ -143,8 +219,27 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # tauri-action handles its own bundles; the Arch package is built outside it and
+      # so has to be attached here. Uploaded by release id rather than by tag, because
+      # a draft release has no tag lookup to resolve against.
       - name: Attach Arch package to the release
-        if: runner.os == 'Linux' && github.event_name == 'release'
+        if: runner.os == 'Linux' && (github.event_name == 'release' || github.event_name == 'push')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" dist-arch/*.pkg.tar.zst --clobber
+          RELEASE_ID: ${{ github.event_name == 'release' && github.event.release.id || needs.draft.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          for package in dist-arch/*.pkg.tar.zst; do
+            name=$(basename "$package")
+            echo "Attaching ${name} to release ${RELEASE_ID}."
+            # The documented asset upload endpoint, on its own host. Used directly
+            # rather than through `gh release upload`, which resolves a release by tag
+            # — and a draft release's tag does not resolve.
+            curl --fail-with-body -sS -X POST \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -H "Content-Type: application/zstd" \
+              --data-binary @"$package" \
+              "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=${name}" \
+              > /dev/null
+          done
