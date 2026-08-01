@@ -80,6 +80,28 @@ Publishing a release by hand still builds and still attaches, because that was t
 only trigger before this workflow existed. It skips step 1, so the versions in the
 tree are whatever they already were.
 
+### When Something Goes Wrong After the Tag
+
+Release prep is not the way back. It refuses a version it has already prepared, and
+that refusal is correct — the version files and the changelog section are already
+committed, so there is nothing left for it to write. Re-running it only produces
+`0.9.0 has already been prepared`.
+
+What to do depends on what is missing:
+
+| Situation | Fix |
+| --- | --- |
+| The tag exists, packaging did not run | `gh workflow run desktop-builds.yml --ref v0.9.0` |
+| The tag is missing, the release commit is on the branch | `git tag v0.9.0 origin/main && git push origin v0.9.0` |
+| Packaging ran but a platform failed | Re-run the failed jobs. The draft is reused, not duplicated. |
+| The notes are wrong | Edit the draft release, and fix `CHANGELOG.md` on the branch separately |
+
+Recreate a tag from a clone rather than from a workflow. A tag pushed by a workflow
+using `GITHUB_TOKEN` starts nothing, for the reason described above.
+
+Deleting a draft release and its tag returns you to the second row, which is a safe
+place to be: nothing was ever public.
+
 ### Tag Convention
 
 Tags are the version with a `v` prefix: `v0.9.0`, `v0.9.0-alpha.1`. The synchronized

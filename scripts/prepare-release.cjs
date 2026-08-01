@@ -17,8 +17,15 @@
 const fs = require('node:fs');
 
 const changelog = require('./changelog.cjs');
-const { archVersionFor, files, msiVersionFor, parseVersion, readCargoLockVersion, tagFor } =
-  require('./release-version.cjs');
+const {
+  archVersionFor,
+  files,
+  msiVersionFor,
+  parseVersion,
+  readCargoLockVersion,
+  readVersions,
+  tagFor,
+} = require('./release-version.cjs');
 
 function fail(message) {
   console.error(message);
@@ -60,6 +67,31 @@ function replaceOnce(filePath, pattern, replacement, description) {
     );
   }
   fs.writeFileSync(filePath, contents.replace(pattern, replacement));
+}
+
+// "This version already has a changelog section" has two very different causes, and
+// the same message for both sent someone down the wrong path: after v0.9.0 was
+// prepared but its packaging never started, re-running this was the natural thing to
+// try, and "already has a section for 0.9.0" did not hint that the work was already
+// done and only the tag was missing.
+//
+// So the two are told apart by whether the tree is already *at* this version.
+if (changelog.sectionFor(version) !== null) {
+  const prepared = readVersions().packageVersion === version;
+  fail(
+    prepared
+      ? `${version} has already been prepared: the tree is at ${version} and CHANGELOG.md ` +
+        `already has its section, so there is nothing left to do here.\n\n` +
+        `If its packaging never ran, the release commit exists and only the tag is ` +
+        `missing. Recreate it from a clone rather than re-running this workflow:\n` +
+        `    git tag ${tagFor(version)} origin/main && git push origin ${tagFor(version)}\n\n` +
+        `Or, if the tag does exist, start packaging against it directly:\n` +
+        `    gh workflow run desktop-builds.yml --ref ${tagFor(version)}\n\n` +
+        `To release something new, choose the next version instead.`
+      : `${version} has already been released — CHANGELOG.md has its section, and the ` +
+        `tree is at ${readVersions().packageVersion}. A published version is never ` +
+        `re-cut; choose the next one.`,
+  );
 }
 
 // Everything that can be rejected is rejected before a single file is written.
