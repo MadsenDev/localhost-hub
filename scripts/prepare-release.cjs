@@ -133,4 +133,10 @@ if (lockVersion !== version) {
 
 console.log(`Prepared ${version} (tag ${tagFor(version)}, MSI ${msiVersionFor(version)}).`);
 console.log(`Changelog section "[${version}] - ${date}" holds ${rolled.notes.split('\n').length} lines.`);
+console.log(
+  rolled.previousTag
+    ? `Compare links repointed: [${version}] covers ${rolled.previousTag}...${tagFor(version)}, ` +
+      `and [Unreleased] now starts at ${tagFor(version)}.`
+    : 'No [Unreleased] compare link to repoint; the link definitions were left alone.',
+);
 if (notesOut) console.log(`Release notes written to ${notesOut}.`);
